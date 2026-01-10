@@ -22,7 +22,33 @@ import {
   quickReplies,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, ilike, sql, asc } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
+
+// Helper to normalize WhatsApp JIDs to consistent phone number format
+function normalizeWhatsAppId(id: string): string[] {
+  // Remove WhatsApp suffixes
+  const stripped = id
+    .replace("@s.whatsapp.net", "")
+    .replace("@lid", "")
+    .replace("@c.us", "");
+  
+  // Generate all possible variants for lookup
+  const variants = new Set<string>();
+  variants.add(stripped);
+  variants.add(`${stripped}@s.whatsapp.net`);
+  
+  // If it starts with +, also add without +
+  if (stripped.startsWith("+")) {
+    const noPlus = stripped.substring(1);
+    variants.add(noPlus);
+    variants.add(`${noPlus}@s.whatsapp.net`);
+  } else {
+    // Add with + prefix
+    variants.add(`+${stripped}`);
+  }
+  
+  return Array.from(variants);
+}
 
 export interface IStorage {
   // Users
@@ -104,6 +130,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getContactByPlatformId(platformId: string, platform: Platform): Promise<Contact | undefined> {
+    // For WhatsApp, search using normalized variants to handle different JID formats
+    if (platform === "whatsapp") {
+      const variants = normalizeWhatsAppId(platformId);
+      const [contact] = await db
+        .select()
+        .from(contacts)
+        .where(and(
+          inArray(contacts.platformId, variants),
+          eq(contacts.platform, platform)
+        ));
+      return contact || undefined;
+    }
+    
     const [contact] = await db
       .select()
       .from(contacts)

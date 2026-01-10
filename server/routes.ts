@@ -684,45 +684,61 @@ export async function registerRoutes(
     onContactsSync: async (contacts) => {
       console.log(`Syncing ${contacts.length} phone book contacts...`);
       let updatedCount = 0;
+      let createdCount = 0;
       
       for (const waContact of contacts) {
         try {
-          const phoneNumber = waContact.jid.replace("@s.whatsapp.net", "");
+          const phoneNumber = waContact.jid.replace("@s.whatsapp.net", "").replace("@lid", "");
+          const formattedPhone = phoneNumber.startsWith("+") ? phoneNumber : `+${phoneNumber}`;
           
-          // Find existing contact by platform ID
-          const existingContact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          // Determine best available name - use phonebook name if it's a proper name, otherwise use phone number
+          const hasProperName = waContact.name && 
+            !waContact.name.includes("@") && 
+            waContact.name !== phoneNumber &&
+            !waContact.name.match(/^\+?\d+$/);
+          const displayName = hasProperName ? waContact.name : null;
+          
+          // Find existing contact by platform ID (check both phone number and original jid)
+          let existingContact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          if (!existingContact) {
+            existingContact = await storage.getContactByPlatformId(waContact.jid, "whatsapp");
+          }
           
           if (existingContact) {
             const currentName = existingContact.name;
-            const newName = waContact.name;
             
-            // Skip if new name is just the phone number or looks like a jid
-            if (newName.includes("@") || newName === phoneNumber) {
-              continue;
-            }
-            
-            // Update if current name is empty, undefined, or looks like a jid/phone number
-            const needsUpdate = !currentName || 
+            // Only update name if we have a proper new name and current name is empty or looks like a jid/phone number
+            const needsNameUpdate = hasProperName && (!currentName || 
               currentName.includes("@") || 
-              currentName === `+${phoneNumber}` || 
+              currentName === formattedPhone || 
               currentName === phoneNumber ||
-              currentName.match(/^\+?\d+$/);
+              currentName.match(/^\+?\d+$/));
             
-            if (needsUpdate) {
+            if (needsNameUpdate) {
               await storage.updateContact(existingContact.id, {
-                name: newName,
+                name: displayName,
+                phoneNumber: formattedPhone,
               });
               updatedCount++;
             }
+          } else {
+            // Create new contact from phonebook - store all contacts, even those without proper names
+            await storage.createContact({
+              platformId: phoneNumber,
+              platform: "whatsapp",
+              name: displayName,
+              phoneNumber: formattedPhone,
+            });
+            createdCount++;
           }
         } catch (error) {
           console.error("Error syncing contact:", error);
         }
       }
       
-      console.log(`Updated ${updatedCount} contact names from phone book`);
-      if (updatedCount > 0) {
-        broadcast({ type: "contacts_synced", count: updatedCount });
+      console.log(`Phone book sync: Created ${createdCount} new contacts, updated ${updatedCount} existing contacts`);
+      if (createdCount > 0 || updatedCount > 0) {
+        broadcast({ type: "contacts_synced", created: createdCount, updated: updatedCount });
       }
     },
   });
