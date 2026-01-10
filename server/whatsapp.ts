@@ -178,6 +178,15 @@ class WhatsAppService {
     return this.connectionState === "connected" && this.socket !== null;
   }
 
+  hasExistingAuth(): boolean {
+    try {
+      const credsPath = path.join(this.authFolder, "creds.json");
+      return fs.existsSync(credsPath);
+    } catch {
+      return false;
+    }
+  }
+
   setEventHandlers(handlers: WhatsAppEventHandlers) {
     this.eventHandlers = handlers;
   }

@@ -704,6 +704,14 @@ export async function registerRoutes(
     },
   });
 
+  // Auto-reconnect WhatsApp if credentials exist on server startup
+  if (whatsappService.hasExistingAuth()) {
+    console.log("Found existing WhatsApp credentials, auto-connecting...");
+    whatsappService.connect().catch((error) => {
+      console.error("Auto-connect failed:", error);
+    });
+  }
+
   app.get("/api/whatsapp/status", (req, res) => {
     res.json({
       status: whatsappService.getConnectionState(),
