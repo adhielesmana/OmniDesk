@@ -1,4 +1,4 @@
-import { MessageCircle, Settings, Archive, Star, Users } from "lucide-react";
+import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Link, useLocation } from "wouter";
@@ -16,6 +16,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { WhatsAppConnect } from "./whatsapp-connect";
+import { useAuth } from "@/hooks/use-auth";
 import type { Platform } from "@shared/schema";
 
 interface AppSidebarProps {
@@ -159,7 +160,37 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <UserMenu />
       </SidebarFooter>
     </Sidebar>
+  );
+}
+
+function UserMenu() {
+  const { user, isAdmin, logout } = useAuth();
+  const [, setLocation] = useLocation();
+
+  if (!user) return null;
+
+  return (
+    <SidebarMenu>
+      {isAdmin && (
+        <SidebarMenuItem>
+          <SidebarMenuButton onClick={() => setLocation("/admin")} data-testid="button-admin">
+            <Shield className="h-5 w-5" />
+            <span>Admin Panel</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      )}
+      <SidebarMenuItem>
+        <SidebarMenuButton onClick={logout} data-testid="button-logout">
+          <LogOut className="h-5 w-5" />
+          <span>Logout</span>
+          <span className="ml-auto text-xs text-muted-foreground truncate max-w-[80px]">
+            {user.displayName || user.username}
+          </span>
+        </SidebarMenuButton>
+      </SidebarMenuItem>
+    </SidebarMenu>
   );
 }
