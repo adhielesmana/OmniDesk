@@ -57,6 +57,7 @@ export interface IStorage {
   getConversations(): Promise<ConversationWithContact[]>;
   getConversation(id: string): Promise<ConversationWithMessages | undefined>;
   getConversationByContactId(contactId: string): Promise<Conversation | undefined>;
+  getConversationsByContactId(contactId: string): Promise<Conversation[]>;
   createConversation(conversation: InsertConversation): Promise<Conversation>;
   updateConversation(id: string, conversation: Partial<InsertConversation>): Promise<Conversation | undefined>;
   markConversationAsRead(conversationId: string): Promise<void>;
@@ -308,6 +309,14 @@ export class DatabaseStorage implements IStorage {
       .from(conversations)
       .where(eq(conversations.contactId, contactId));
     return conversation || undefined;
+  }
+
+  async getConversationsByContactId(contactId: string): Promise<Conversation[]> {
+    return db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.contactId, contactId))
+      .orderBy(desc(conversations.lastMessageAt));
   }
 
   async createConversation(conversation: InsertConversation): Promise<Conversation> {

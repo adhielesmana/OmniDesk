@@ -1,4 +1,4 @@
-import { MessageCircle, Settings, Archive, Star, Users } from "lucide-react";
+import { Users, Star, Ban, Tag, MessageCircle } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Link, useLocation } from "wouter";
@@ -15,29 +15,40 @@ import {
   SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { WhatsAppConnect } from "./whatsapp-connect";
 import type { Platform } from "@shared/schema";
 
-interface AppSidebarProps {
+interface ContactsSidebarProps {
   selectedPlatform: Platform | "all";
   onSelectPlatform: (platform: Platform | "all") => void;
-  unreadCounts: Record<Platform | "all", number>;
-  onSettingsClick: () => void;
+  platformCounts: Record<Platform | "all", number>;
+  showFavorites: boolean;
+  onToggleFavorites: () => void;
+  showBlocked: boolean;
+  onToggleBlocked: () => void;
+  allTags: string[];
+  selectedTag: string | null;
+  onSelectTag: (tag: string | null) => void;
 }
 
-export function AppSidebar({
+export function ContactsSidebar({
   selectedPlatform,
   onSelectPlatform,
-  unreadCounts,
-  onSettingsClick,
-}: AppSidebarProps) {
+  platformCounts,
+  showFavorites,
+  onToggleFavorites,
+  showBlocked,
+  onToggleBlocked,
+  allTags,
+  selectedTag,
+  onSelectTag,
+}: ContactsSidebarProps) {
   const [location] = useLocation();
 
   const platforms: { id: Platform | "all"; name: string; icon: React.ReactNode; color: string }[] = [
     {
       id: "all",
-      name: "All Inboxes",
-      icon: <MessageCircle className="h-5 w-5" />,
+      name: "All Contacts",
+      icon: <Users className="h-5 w-5" />,
       color: "",
     },
     {
@@ -64,8 +75,8 @@ export function AppSidebar({
     <Sidebar>
       <SidebarHeader className="p-4">
         <h1 className="text-lg font-semibold flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-primary" />
-          Unified Inbox
+          <Users className="h-5 w-5 text-primary" />
+          Contacts
         </h1>
       </SidebarHeader>
 
@@ -101,21 +112,26 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               {platforms.map((platform) => {
-                const isSelected = selectedPlatform === platform.id;
-                const unreadCount = unreadCounts[platform.id] || 0;
+                const isSelected = selectedPlatform === platform.id && !showFavorites && !showBlocked;
+                const count = platformCounts[platform.id] || 0;
 
                 return (
                   <SidebarMenuItem key={platform.id}>
                     <SidebarMenuButton
-                      onClick={() => onSelectPlatform(platform.id)}
+                      onClick={() => {
+                        onSelectPlatform(platform.id);
+                        if (showFavorites) onToggleFavorites();
+                        if (showBlocked) onToggleBlocked();
+                        if (selectedTag) onSelectTag(null);
+                      }}
                       isActive={isSelected}
                       data-testid={`button-platform-${platform.id}`}
                     >
                       <span className={platform.color}>{platform.icon}</span>
                       <span className="flex-1">{platform.name}</span>
-                      {unreadCount > 0 && (
-                        <Badge variant="default" className="min-w-[24px] justify-center">
-                          {unreadCount > 99 ? "99+" : unreadCount}
+                      {count > 0 && (
+                        <Badge variant="secondary" className="min-w-[24px] justify-center">
+                          {count}
                         </Badge>
                       )}
                     </SidebarMenuButton>
@@ -133,32 +149,59 @@ export function AppSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton data-testid="button-starred">
+                <SidebarMenuButton
+                  onClick={onToggleFavorites}
+                  isActive={showFavorites}
+                  data-testid="button-favorites"
+                >
                   <Star className="h-5 w-5" />
-                  <span>Starred</span>
+                  <span>Favorites</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton data-testid="button-archived">
-                  <Archive className="h-5 w-5" />
-                  <span>Archived</span>
+                <SidebarMenuButton
+                  onClick={onToggleBlocked}
+                  isActive={showBlocked}
+                  data-testid="button-blocked"
+                >
+                  <Ban className="h-5 w-5" />
+                  <span>Blocked</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {allTags.length > 0 && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Tags</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {allTags.map((tag) => (
+                    <SidebarMenuItem key={tag}>
+                      <SidebarMenuButton
+                        onClick={() => onSelectTag(selectedTag === tag ? null : tag)}
+                        isActive={selectedTag === tag}
+                        data-testid={`button-tag-${tag}`}
+                      >
+                        <Tag className="h-4 w-4" />
+                        <span>{tag}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
-      <SidebarFooter className="p-2 space-y-2">
-        <WhatsAppConnect />
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={onSettingsClick} data-testid="button-settings">
-              <Settings className="h-5 w-5" />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="p-2">
+        <p className="text-xs text-muted-foreground text-center">
+          Manage your contacts
+        </p>
       </SidebarFooter>
     </Sidebar>
   );

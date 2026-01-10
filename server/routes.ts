@@ -3,10 +3,11 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
+import { z } from "zod";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
-import type { Platform } from "@shared/schema";
+import { updateContactSchema, type Platform } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -302,6 +303,156 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Webhook error:", error);
       res.sendStatus(200); // Always return 200 to acknowledge receipt
+    }
+  });
+
+  // Contact management endpoints
+  app.get("/api/contacts", async (req, res) => {
+    try {
+      const { search, platform, isFavorite, isBlocked, tag, sortBy, sortOrder, limit, offset } = req.query;
+      
+      const result = await storage.getAllContacts({
+        search: search as string | undefined,
+        platform: platform as Platform | undefined,
+        isFavorite: isFavorite === "true" ? true : isFavorite === "false" ? false : undefined,
+        isBlocked: isBlocked === "true" ? true : isBlocked === "false" ? false : undefined,
+        tag: tag as string | undefined,
+        sortBy: sortBy as "name" | "lastContacted" | "createdAt" | undefined,
+        sortOrder: sortOrder as "asc" | "desc" | undefined,
+        limit: limit ? parseInt(limit as string) : undefined,
+        offset: offset ? parseInt(offset as string) : undefined,
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching contacts:", error);
+      res.status(500).json({ error: "Failed to fetch contacts" });
+    }
+  });
+
+  app.get("/api/contacts/tags", async (req, res) => {
+    try {
+      const tags = await storage.getAllTags();
+      res.json(tags);
+    } catch (error) {
+      console.error("Error fetching tags:", error);
+      res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  app.get("/api/contacts/:id", async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(contact);
+    } catch (error) {
+      console.error("Error fetching contact:", error);
+      res.status(500).json({ error: "Failed to fetch contact" });
+    }
+  });
+
+  app.patch("/api/contacts/:id", async (req, res) => {
+    try {
+      const parseResult = updateContactSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid contact data", 
+          details: parseResult.error.flatten() 
+        });
+      }
+      
+      const updated = await storage.updateContact(req.params.id, parseResult.data);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating contact:", error);
+      res.status(500).json({ error: "Failed to update contact" });
+    }
+  });
+
+  app.get("/api/contacts/:id/conversations", async (req, res) => {
+    try {
+      const conversations = await storage.getConversationsByContactId(req.params.id);
+      res.json(conversations);
+    } catch (error) {
+      console.error("Error fetching contact conversations:", error);
+      res.status(500).json({ error: "Failed to fetch contact conversations" });
+    }
+  });
+
+  app.delete("/api/contacts/:id", async (req, res) => {
+    try {
+      await storage.deleteContact(req.params.id);
+      res.sendStatus(204);
+    } catch (error) {
+      console.error("Error deleting contact:", error);
+      res.status(500).json({ error: "Failed to delete contact" });
+    }
+  });
+
+  app.post("/api/contacts/:id/favorite", async (req, res) => {
+    try {
+      const updated = await storage.toggleFavorite(req.params.id);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error toggling favorite:", error);
+      res.status(500).json({ error: "Failed to toggle favorite" });
+    }
+  });
+
+  app.post("/api/contacts/:id/block", async (req, res) => {
+    try {
+      const updated = await storage.toggleBlocked(req.params.id);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error toggling block:", error);
+      res.status(500).json({ error: "Failed to toggle block" });
+    }
+  });
+
+  const tagSchema = z.object({ tag: z.string().min(1, "Tag cannot be empty") });
+
+  app.post("/api/contacts/:id/tags", async (req, res) => {
+    try {
+      const parseResult = tagSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ 
+          error: "Invalid tag data", 
+          details: parseResult.error.flatten() 
+        });
+      }
+      
+      const updated = await storage.addTagToContact(req.params.id, parseResult.data.tag);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error adding tag:", error);
+      res.status(500).json({ error: "Failed to add tag" });
+    }
+  });
+
+  app.delete("/api/contacts/:id/tags/:tag", async (req, res) => {
+    try {
+      const updated = await storage.removeTagFromContact(req.params.id, req.params.tag);
+      if (!updated) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error removing tag:", error);
+      res.status(500).json({ error: "Failed to remove tag" });
     }
   });
 
