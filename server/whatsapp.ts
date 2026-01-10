@@ -35,6 +35,12 @@ export interface WhatsAppMessage {
   mediaType?: "image" | "video" | "audio" | "document";
 }
 
+export interface WhatsAppContact {
+  jid: string;
+  name: string;
+  phoneNumber: string;
+}
+
 export interface WhatsAppEventHandlers {
   onQR: (qrDataUrl: string) => void;
   onConnectionUpdate: (state: WhatsAppConnectionState) => void;
@@ -42,6 +48,7 @@ export interface WhatsAppEventHandlers {
   onMessageSent: (messageId: string, status: "sent" | "delivered" | "read") => void;
   onChatsSync?: (chats: WhatsAppChat[]) => void;
   onHistorySync?: (messages: WhatsAppMessage[]) => void;
+  onContactsSync?: (contacts: WhatsAppContact[]) => void;
 }
 
 class WhatsAppService {
@@ -213,9 +220,39 @@ class WhatsAppService {
         }
       });
 
+      // Helper function to process contacts from phone book
+      const processContacts = (contactList: { id: string; name?: string | null; notify?: string | null }[]) => {
+        const syncedContacts: WhatsAppContact[] = contactList
+          .filter((contact) => {
+            if (!contact.id) return false;
+            if (contact.id.endsWith("@g.us")) return false;
+            if (contact.id === "status@broadcast") return false;
+            if (contact.id.includes("broadcast")) return false;
+            return true;
+          })
+          .map((contact) => {
+            const phoneNumber = contact.id.replace("@s.whatsapp.net", "");
+            return {
+              jid: contact.id,
+              name: contact.name || contact.notify || phoneNumber,
+              phoneNumber: `+${phoneNumber}`,
+            };
+          });
+
+        if (syncedContacts.length > 0) {
+          console.log(`Syncing ${syncedContacts.length} contacts from phone book`);
+          this.eventHandlers?.onContactsSync?.(syncedContacts);
+        }
+      };
+
       // Handle historical message sync
       this.socket.ev.on("messaging-history.set", ({ chats, contacts: waContacts, messages: historyMessages, isLatest }) => {
-        console.log(`History sync received: ${chats.length} chats, ${historyMessages.length} messages, isLatest: ${isLatest}`);
+        console.log(`History sync received: ${chats.length} chats, ${waContacts?.length || 0} contacts, ${historyMessages.length} messages, isLatest: ${isLatest}`);
+        
+        // Sync contacts from history sync
+        if (waContacts && waContacts.length > 0) {
+          processContacts(waContacts);
+        }
         
         const parsedMessages: WhatsAppMessage[] = [];
         
@@ -283,6 +320,11 @@ class WhatsAppService {
         if (syncedChats.length > 0) {
           this.eventHandlers?.onChatsSync?.(syncedChats);
         }
+      });
+
+      // contacts.upsert fires when contacts are updated
+      this.socket.ev.on("contacts.upsert", (contacts) => {
+        processContacts(contacts);
       });
 
       this.socket.ev.on("messages.upsert", async (messageUpdate) => {

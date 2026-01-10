@@ -507,6 +507,50 @@ export async function registerRoutes(
       console.log(`Saved ${savedCount} new historical messages`);
       broadcast({ type: "history_synced", count: savedCount });
     },
+    onContactsSync: async (contacts) => {
+      console.log(`Syncing ${contacts.length} phone book contacts...`);
+      let updatedCount = 0;
+      
+      for (const waContact of contacts) {
+        try {
+          const phoneNumber = waContact.jid.replace("@s.whatsapp.net", "");
+          
+          // Find existing contact by platform ID
+          const existingContact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          
+          if (existingContact) {
+            const currentName = existingContact.name;
+            const newName = waContact.name;
+            
+            // Skip if new name is just the phone number or looks like a jid
+            if (newName.includes("@") || newName === phoneNumber) {
+              continue;
+            }
+            
+            // Update if current name is empty, undefined, or looks like a jid/phone number
+            const needsUpdate = !currentName || 
+              currentName.includes("@") || 
+              currentName === `+${phoneNumber}` || 
+              currentName === phoneNumber ||
+              currentName.match(/^\+?\d+$/);
+            
+            if (needsUpdate) {
+              await storage.updateContact(existingContact.id, {
+                name: newName,
+              });
+              updatedCount++;
+            }
+          }
+        } catch (error) {
+          console.error("Error syncing contact:", error);
+        }
+      }
+      
+      console.log(`Updated ${updatedCount} contact names from phone book`);
+      if (updatedCount > 0) {
+        broadcast({ type: "contacts_synced", count: updatedCount });
+      }
+    },
   });
 
   app.get("/api/whatsapp/status", (req, res) => {
