@@ -13,6 +13,13 @@ import fs from "fs";
 
 export type WhatsAppConnectionState = "disconnected" | "connecting" | "qr" | "connected";
 
+export interface WhatsAppChat {
+  jid: string;
+  name: string;
+  lastMessageTime: Date;
+  unreadCount: number;
+}
+
 export interface WhatsAppEventHandlers {
   onQR: (qrDataUrl: string) => void;
   onConnectionUpdate: (state: WhatsAppConnectionState) => void;
@@ -25,6 +32,7 @@ export interface WhatsAppEventHandlers {
     isGroup: boolean;
   }) => void;
   onMessageSent: (messageId: string, status: "sent" | "delivered" | "read") => void;
+  onChatsSync?: (chats: WhatsAppChat[]) => void;
 }
 
 class WhatsAppService {
@@ -104,6 +112,22 @@ class WhatsAppService {
           this.reconnectAttempts = 0;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
+        }
+      });
+
+      // Sync existing chats when they're loaded
+      this.socket.ev.on("chats.upsert", (chats) => {
+        const syncedChats: WhatsAppChat[] = chats
+          .filter((chat) => chat.id && !chat.id.endsWith("@g.us")) // Skip groups and invalid chats
+          .map((chat) => ({
+            jid: chat.id!,
+            name: chat.name || chat.id!.replace("@s.whatsapp.net", ""),
+            lastMessageTime: new Date((chat.conversationTimestamp as number || 0) * 1000),
+            unreadCount: chat.unreadCount || 0,
+          }));
+        
+        if (syncedChats.length > 0) {
+          this.eventHandlers?.onChatsSync?.(syncedChats);
         }
       });
 

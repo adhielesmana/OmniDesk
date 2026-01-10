@@ -402,6 +402,38 @@ export async function registerRoutes(
         console.error("Error updating message status:", error);
       }
     },
+    onChatsSync: async (chats) => {
+      console.log(`Syncing ${chats.length} WhatsApp chats...`);
+      for (const chat of chats) {
+        try {
+          const phoneNumber = chat.jid.replace("@s.whatsapp.net", "");
+          
+          let contact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          if (!contact) {
+            contact = await storage.createContact({
+              platformId: phoneNumber,
+              platform: "whatsapp",
+              name: chat.name,
+              phoneNumber: `+${phoneNumber}`,
+            });
+          }
+
+          let conversation = await storage.getConversationByContactId(contact.id);
+          if (!conversation) {
+            await storage.createConversation({
+              contactId: contact.id,
+              platform: "whatsapp",
+              lastMessageAt: chat.lastMessageTime,
+              lastMessagePreview: "Chat synced from WhatsApp",
+              unreadCount: chat.unreadCount,
+            });
+          }
+        } catch (error) {
+          console.error("Error syncing chat:", error);
+        }
+      }
+      broadcast({ type: "chats_synced" });
+    },
   });
 
   app.get("/api/whatsapp/status", (req, res) => {

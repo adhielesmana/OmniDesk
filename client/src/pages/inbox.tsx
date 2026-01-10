@@ -26,7 +26,7 @@ export default function InboxPage() {
   const [isMobileConversationListOpen, setIsMobileConversationListOpen] = useState(true);
 
   const handleWebSocketMessage = useCallback((data: { type: string; conversationId?: string }) => {
-    if (data.type === "new_message" || data.type === "conversation_updated") {
+    if (data.type === "new_message" || data.type === "conversation_updated" || data.type === "chats_synced") {
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
       if (data.conversationId && data.conversationId === selectedConversationId) {
         queryClient.invalidateQueries({
