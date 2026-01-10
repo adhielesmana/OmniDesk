@@ -58,7 +58,9 @@ class WhatsAppService {
   private authFolder = path.join(process.cwd(), ".whatsapp-auth");
   private mediaFolder = path.join(process.cwd(), "media", "whatsapp");
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private reconnectDelay = 3000; // Start with 3 seconds
+  private maxReconnectDelay = 60000; // Max 60 seconds between retries
+  private healthCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     // Ensure media folder exists
@@ -144,6 +146,30 @@ class WhatsAppService {
     return Buffer.concat(chunks);
   }
 
+  private startHealthCheck() {
+    this.stopHealthCheck();
+    // Check connection health every 30 seconds
+    this.healthCheckInterval = setInterval(() => {
+      if (this.connectionState === "connected") {
+        // Check if socket is still usable
+        if (!this.socket || !this.socket.user) {
+          console.log("Health check detected disconnected socket, triggering reconnect");
+          this.connectionState = "disconnected";
+          this.eventHandlers?.onConnectionUpdate("disconnected");
+          this.stopHealthCheck();
+          setTimeout(() => this.connect(), 1000);
+        }
+      }
+    }, 30000);
+  }
+
+  private stopHealthCheck() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+  }
+
   getConnectionState(): WhatsAppConnectionState {
     return this.connectionState;
   }
@@ -200,20 +226,29 @@ class WhatsAppService {
 
           this.connectionState = "disconnected";
           this.eventHandlers?.onConnectionUpdate("disconnected");
+          this.stopHealthCheck();
 
-          if (shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            console.log(`WhatsApp reconnecting... attempt ${this.reconnectAttempts}`);
-            setTimeout(() => this.connect(), 3000);
-          } else if (statusCode === DisconnectReason.loggedOut) {
+          if (statusCode === DisconnectReason.loggedOut) {
             console.log("WhatsApp logged out, clearing auth data");
+            this.reconnectAttempts = 0;
+            this.reconnectDelay = 3000;
             await this.clearAuthData();
+          } else if (shouldReconnect) {
+            this.reconnectAttempts++;
+            // Exponential backoff: 3s, 6s, 12s, 24s, 48s, max 60s
+            const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectDelay);
+            console.log(`WhatsApp disconnected. Reconnecting in ${Math.round(delay / 1000)}s... (attempt ${this.reconnectAttempts})`);
+            setTimeout(() => this.connect(), delay);
           }
         } else if (connection === "open") {
           this.connectionState = "connected";
           this.reconnectAttempts = 0;
+          this.reconnectDelay = 3000;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
+          
+          // Start health check to detect silent disconnects
+          this.startHealthCheck();
           
           // Fetch recent chats after connection is established
           setTimeout(() => this.fetchAllChatsWithMessages(), 2000);
