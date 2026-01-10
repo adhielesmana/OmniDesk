@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
@@ -14,7 +14,10 @@ import type { Platform, Contact } from "@shared/schema";
 export default function ContactsPage() {
   const { toast } = useToast();
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | "all">("all");
-  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("selected");
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [showFavorites, setShowFavorites] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);

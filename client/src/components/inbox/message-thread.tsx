@@ -1,5 +1,6 @@
 import { useRef, useEffect } from "react";
-import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, Image as ImageIcon, FileText } from "lucide-react";
+import { useLocation } from "wouter";
+import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, Image as ImageIcon, FileText, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -69,8 +70,15 @@ export function MessageThread({
   isSending,
   isLoading,
 }: MessageThreadProps) {
+  const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleViewContactInfo = () => {
+    if (conversation?.contact?.id) {
+      setLocation(`/contacts?selected=${conversation.contact.id}`);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -184,7 +192,10 @@ export function MessageThread({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem>View Contact Info</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleViewContactInfo} data-testid="menu-view-contact">
+                <User className="h-4 w-4 mr-2" />
+                View Contact Info
+              </DropdownMenuItem>
               <DropdownMenuItem>Mark as Unread</DropdownMenuItem>
               <DropdownMenuItem>Block Contact</DropdownMenuItem>
             </DropdownMenuContent>
@@ -227,7 +238,7 @@ export function MessageThread({
                           : "bg-card border border-card-border rounded-bl-md"
                       }`}
                     >
-                      {message.mediaUrl && (
+                      {message.mediaUrl ? (
                         <div className="mb-2">
                           {message.mediaType === "image" ? (
                             <img
@@ -236,6 +247,7 @@ export function MessageThread({
                               className="max-w-full max-h-80 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
                               onClick={() => window.open(message.mediaUrl!, "_blank")}
                               loading="lazy"
+                              data-testid={`media-image-${message.id}`}
                             />
                           ) : message.mediaType === "video" ? (
                             <video
@@ -243,17 +255,37 @@ export function MessageThread({
                               controls
                               className="max-w-full max-h-80 rounded-lg"
                               preload="metadata"
+                              data-testid={`media-video-${message.id}`}
+                            />
+                          ) : message.mediaType === "audio" ? (
+                            <audio
+                              src={message.mediaUrl}
+                              controls
+                              className="w-full"
+                              preload="metadata"
+                              data-testid={`media-audio-${message.id}`}
                             />
                           ) : (
-                            <div className="flex items-center gap-2 p-2 bg-background/10 rounded-lg">
+                            <a 
+                              href={message.mediaUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 p-2 bg-background/10 rounded-lg hover-elevate"
+                              data-testid={`media-file-${message.id}`}
+                            >
                               <FileText className="h-5 w-5" />
-                              <span className="text-sm">Attachment</span>
-                            </div>
+                              <span className="text-sm">Download attachment</span>
+                            </a>
                           )}
+                        </div>
+                      ) : (message.content === "[Image]" || message.content === "[Video]" || message.content === "[Audio]" || message.content === "[Document]") && (
+                        <div className="mb-2 flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-muted-foreground">
+                          <ImageIcon className="h-5 w-5" />
+                          <span className="text-sm">Media not available (historical message)</span>
                         </div>
                       )}
 
-                      {message.content && (
+                      {message.content && !["[Image]", "[Video]", "[Audio]", "[Document]"].includes(message.content) && (
                         <p className={`text-sm whitespace-pre-wrap ${isOutbound ? "" : "text-foreground"}`}>
                           {message.content}
                         </p>
