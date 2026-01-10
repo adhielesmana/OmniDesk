@@ -11,6 +11,8 @@ import {
   type InsertPlatformSettings,
   type QuickReply,
   type InsertQuickReply,
+  type Department,
+  type InsertDepartment,
   type ConversationWithContact,
   type ConversationWithMessages,
   type Platform,
@@ -20,6 +22,8 @@ import {
   messages,
   platformSettings,
   quickReplies,
+  departments,
+  userDepartments,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
@@ -54,7 +58,23 @@ export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, user: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
+
+  // Departments
+  getDepartment(id: string): Promise<Department | undefined>;
+  getAllDepartments(): Promise<Department[]>;
+  createDepartment(department: InsertDepartment): Promise<Department>;
+  updateDepartment(id: string, department: Partial<InsertDepartment>): Promise<Department | undefined>;
+  deleteDepartment(id: string): Promise<boolean>;
+
+  // User-Department relationships
+  getUserDepartments(userId: string): Promise<Department[]>;
+  addUserToDepartment(userId: string, departmentId: string): Promise<void>;
+  removeUserFromDepartment(userId: string, departmentId: string): Promise<void>;
+  setUserDepartments(userId: string, departmentIds: string[]): Promise<void>;
 
   // Contacts
   getContact(id: string): Promise<Contact | undefined>;
@@ -121,6 +141,92 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(asc(users.username));
+  }
+
+  async updateUser(id: string, userData: Partial<InsertUser>): Promise<User | undefined> {
+    const [updated] = await db
+      .update(users)
+      .set({ ...userData, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const user = await this.getUser(id);
+    if (!user || !user.isDeletable) {
+      return false;
+    }
+    await db.delete(users).where(eq(users.id, id));
+    return true;
+  }
+
+  // Departments
+  async getDepartment(id: string): Promise<Department | undefined> {
+    const [dept] = await db.select().from(departments).where(eq(departments.id, id));
+    return dept || undefined;
+  }
+
+  async getAllDepartments(): Promise<Department[]> {
+    return db.select().from(departments).orderBy(asc(departments.name));
+  }
+
+  async createDepartment(department: InsertDepartment): Promise<Department> {
+    const [newDept] = await db.insert(departments).values(department).returning();
+    return newDept;
+  }
+
+  async updateDepartment(id: string, department: Partial<InsertDepartment>): Promise<Department | undefined> {
+    const [updated] = await db
+      .update(departments)
+      .set({ ...department, updatedAt: new Date() })
+      .where(eq(departments.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteDepartment(id: string): Promise<boolean> {
+    await db.delete(departments).where(eq(departments.id, id));
+    return true;
+  }
+
+  // User-Department relationships
+  async getUserDepartments(userId: string): Promise<Department[]> {
+    const result = await db
+      .select({ department: departments })
+      .from(userDepartments)
+      .innerJoin(departments, eq(userDepartments.departmentId, departments.id))
+      .where(eq(userDepartments.userId, userId));
+    return result.map((r) => r.department);
+  }
+
+  async addUserToDepartment(userId: string, departmentId: string): Promise<void> {
+    const existing = await db
+      .select()
+      .from(userDepartments)
+      .where(and(eq(userDepartments.userId, userId), eq(userDepartments.departmentId, departmentId)));
+    if (existing.length === 0) {
+      await db.insert(userDepartments).values({ userId, departmentId });
+    }
+  }
+
+  async removeUserFromDepartment(userId: string, departmentId: string): Promise<void> {
+    await db
+      .delete(userDepartments)
+      .where(and(eq(userDepartments.userId, userId), eq(userDepartments.departmentId, departmentId)));
+  }
+
+  async setUserDepartments(userId: string, departmentIds: string[]): Promise<void> {
+    await db.delete(userDepartments).where(eq(userDepartments.userId, userId));
+    if (departmentIds.length > 0) {
+      await db.insert(userDepartments).values(
+        departmentIds.map((departmentId) => ({ userId, departmentId }))
+      );
+    }
   }
 
   // Contacts

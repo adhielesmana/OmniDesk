@@ -40,6 +40,7 @@ export const conversations = pgTable("conversations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   contactId: varchar("contact_id").notNull().references(() => contacts.id),
   platform: platformEnum("platform").notNull(),
+  departmentId: varchar("department_id"),
   lastMessageAt: timestamp("last_message_at").defaultNow(),
   lastMessagePreview: text("last_message_preview"),
   unreadCount: integer("unread_count").default(0),
@@ -51,6 +52,7 @@ export const conversations = pgTable("conversations", {
   index("conversations_contact_id_idx").on(table.contactId),
   index("conversations_platform_idx").on(table.platform),
   index("conversations_last_message_at_idx").on(table.lastMessageAt),
+  index("conversations_department_id_idx").on(table.departmentId),
 ]);
 
 // Messages table - individual messages in a conversation
@@ -105,6 +107,10 @@ export const conversationsRelations = relations(conversations, ({ one, many }) =
   contact: one(contacts, {
     fields: [conversations.contactId],
     references: [contacts.id],
+  }),
+  department: one(departments, {
+    fields: [conversations.departmentId],
+    references: [departments.id],
   }),
   messages: many(messages),
 }));
@@ -182,17 +188,93 @@ export type ConversationWithMessages = Conversation & {
   messages: Message[];
 };
 
-// Legacy user types (keeping for compatibility)
+// User role enum
+export const userRoleEnum = pgEnum("user_role", ["superadmin", "admin", "user"]);
+
+// Users table with roles
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: userRoleEnum("role").notNull().default("user"),
+  displayName: text("display_name"),
+  email: text("email"),
+  isActive: boolean("is_active").default(true),
+  isDeletable: boolean("is_deletable").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+// Departments table
+export const departments = pgTable("departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User-Department join table
+export const userDepartments = pgTable("user_departments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  departmentId: varchar("department_id").notNull().references(() => departments.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("user_departments_user_idx").on(table.userId),
+  index("user_departments_department_idx").on(table.departmentId),
+]);
+
+// User relations
+export const usersRelations = relations(users, ({ many }) => ({
+  userDepartments: many(userDepartments),
+}));
+
+// Department relations
+export const departmentsRelations = relations(departments, ({ many }) => ({
+  userDepartments: many(userDepartments),
+  conversations: many(conversations),
+}));
+
+// User-Department relations
+export const userDepartmentsRelations = relations(userDepartments, ({ one }) => ({
+  user: one(users, {
+    fields: [userDepartments.userId],
+    references: [users.id],
+  }),
+  department: one(departments, {
+    fields: [userDepartments.departmentId],
+    references: [departments.id],
+  }),
+}));
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertDepartmentSchema = createInsertSchema(departments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertUserDepartmentSchema = createInsertSchema(userDepartments).omit({
+  id: true,
+  createdAt: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+export type UserRole = "superadmin" | "admin" | "user";
+
+export type Department = typeof departments.$inferSelect;
+export type InsertDepartment = z.infer<typeof insertDepartmentSchema>;
+
+export type UserDepartment = typeof userDepartments.$inferSelect;
+export type InsertUserDepartment = z.infer<typeof insertUserDepartmentSchema>;
+
+export type UserWithDepartments = User & {
+  departments: Department[];
+};
