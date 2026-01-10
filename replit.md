@@ -8,6 +8,14 @@ A multi-platform messaging inbox application that consolidates conversations fro
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+- **Authentication System**: Added user authentication with session management using express-session and PostgreSQL session store
+- **User Roles**: Implemented superadmin, admin, and user roles with role-based access control
+- **Department Management**: Added departments for organizing conversations and users
+- **Superadmin Seeding**: Hardcoded superadmin (username: adhielesmana, password: admin123) created on startup, non-deletable
+- **Admin Panel**: New admin page for managing users and departments
+
 ## System Architecture
 
 ### Frontend Architecture
@@ -17,6 +25,7 @@ Preferred communication style: Simple, everyday language.
 - **UI Components**: shadcn/ui component library built on Radix UI primitives
 - **Styling**: Tailwind CSS with CSS variables for theming (light/dark mode support)
 - **Real-time Updates**: WebSocket connection for live message updates
+- **Authentication**: Protected routes with login page, auth context hook
 
 **Design Pattern**: The frontend follows a 3-column layout architecture inspired by Linear and Slack - platform sidebar, conversation list, and message thread view. Components are organized by feature (inbox components) and shared UI elements.
 
@@ -24,12 +33,15 @@ Preferred communication style: Simple, everyday language.
 - **Framework**: Express.js with TypeScript
 - **API Style**: RESTful endpoints under `/api/*` prefix
 - **Real-time**: WebSocket server (ws) for broadcasting message updates to connected clients
+- **Authentication**: express-session with PostgreSQL session store, bcrypt password hashing
 - **Build System**: esbuild for server bundling, Vite for client bundling
 
 **Key Server Files**:
 - `server/routes.ts` - API endpoint definitions and WebSocket setup
 - `server/storage.ts` - Data access layer with storage interface
+- `server/auth.ts` - Authentication helpers, password hashing, superadmin seeding
 - `server/meta-api.ts` - Meta Graph API integration for WhatsApp/Instagram/Facebook
+- `server/whatsapp.ts` - Unofficial WhatsApp integration using Baileys library
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect
@@ -37,22 +49,34 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Drizzle Kit for schema migrations (`drizzle-kit push`)
 
 **Core Entities**:
+- `users` - System users with roles (superadmin, admin, user) and authentication
+- `departments` - Organizational units for conversation assignment
+- `user_departments` - Many-to-many relationship between users and departments
 - `contacts` - Customer/contact information with platform-specific IDs
-- `conversations` - Message threads linked to contacts
+- `conversations` - Message threads linked to contacts and optionally departments
 - `messages` - Individual messages with direction, status, and media support
 - `platformSettings` - API credentials and configuration per platform
 - `quickReplies` - Saved quick reply templates
 
+### Authentication & Authorization
+- **Session Management**: PostgreSQL-backed session store with 24-hour expiry
+- **Password Security**: bcrypt with 12 salt rounds
+- **Role Hierarchy**:
+  - Superadmin: Full access, cannot be deleted, sees all departments
+  - Admin: User/department management, same privileges as superadmin
+  - User: Limited to assigned departments only
+
 ### API Integration
-- **Meta Graph API**: Integration for WhatsApp Business API, Instagram Messaging, and Facebook Messenger
+- **Unofficial WhatsApp (Baileys)**: Primary WhatsApp integration with QR code auth
+- **Meta Graph API**: Integration for Instagram and Facebook Messenger
 - **Webhook Support**: Endpoints for receiving inbound messages from Meta platforms
 - **Message Status Tracking**: Sent, delivered, read, and failed states
 
 ## External Dependencies
 
 ### Third-Party Services
-- **Meta Graph API (v21.0)**: Primary integration for all messaging platforms
-  - WhatsApp Business API
+- **Baileys Library**: Unofficial WhatsApp Web API
+- **Meta Graph API (v21.0)**: For Instagram/Facebook platforms
   - Instagram Messaging API
   - Facebook Messenger API
 
@@ -63,7 +87,14 @@ Preferred communication style: Simple, everyday language.
 ### Key NPM Packages
 - `drizzle-orm` / `drizzle-kit`: Database ORM and migrations
 - `@tanstack/react-query`: Server state management
+- `@whiskeysockets/baileys`: Unofficial WhatsApp library
+- `express-session` / `connect-pg-simple`: Session management
+- `bcrypt`: Password hashing
 - `ws`: WebSocket server implementation
 - `date-fns`: Date formatting utilities
 - `zod` / `drizzle-zod`: Schema validation
 - Radix UI primitives: Accessible UI component foundations
+
+## Known Issues
+
+- **Profile Pictures**: WhatsApp profile picture URLs are temporary and expire. Users can click refresh button to update profile pictures, but they may become unavailable after some time.
