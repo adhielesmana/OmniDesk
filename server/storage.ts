@@ -22,7 +22,7 @@ import {
   quickReplies,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, asc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -33,8 +33,25 @@ export interface IStorage {
   // Contacts
   getContact(id: string): Promise<Contact | undefined>;
   getContactByPlatformId(platformId: string, platform: Platform): Promise<Contact | undefined>;
+  getAllContacts(options?: {
+    search?: string;
+    platform?: Platform;
+    isFavorite?: boolean;
+    isBlocked?: boolean;
+    tag?: string;
+    sortBy?: "name" | "lastContacted" | "createdAt";
+    sortOrder?: "asc" | "desc";
+    limit?: number;
+    offset?: number;
+  }): Promise<{ contacts: Contact[]; total: number }>;
   createContact(contact: InsertContact): Promise<Contact>;
   updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined>;
+  deleteContact(id: string): Promise<void>;
+  toggleFavorite(id: string): Promise<Contact | undefined>;
+  toggleBlocked(id: string): Promise<Contact | undefined>;
+  addTagToContact(id: string, tag: string): Promise<Contact | undefined>;
+  removeTagFromContact(id: string, tag: string): Promise<Contact | undefined>;
+  getAllTags(): Promise<string[]>;
 
   // Conversations
   getConversations(): Promise<ConversationWithContact[]>;
@@ -105,6 +122,147 @@ export class DatabaseStorage implements IStorage {
       .where(eq(contacts.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  async getAllContacts(options?: {
+    search?: string;
+    platform?: Platform;
+    isFavorite?: boolean;
+    isBlocked?: boolean;
+    tag?: string;
+    sortBy?: "name" | "lastContacted" | "createdAt";
+    sortOrder?: "asc" | "desc";
+    limit?: number;
+    offset?: number;
+  }): Promise<{ contacts: Contact[]; total: number }> {
+    const conditions = [];
+
+    if (options?.search) {
+      conditions.push(
+        or(
+          ilike(contacts.name, `%${options.search}%`),
+          ilike(contacts.phoneNumber, `%${options.search}%`),
+          ilike(contacts.email, `%${options.search}%`)
+        )
+      );
+    }
+
+    if (options?.platform) {
+      conditions.push(eq(contacts.platform, options.platform));
+    }
+
+    if (options?.isFavorite !== undefined) {
+      conditions.push(eq(contacts.isFavorite, options.isFavorite));
+    }
+
+    if (options?.isBlocked !== undefined) {
+      conditions.push(eq(contacts.isBlocked, options.isBlocked));
+    }
+
+    if (options?.tag) {
+      conditions.push(sql`${options.tag} = ANY(${contacts.tags})`);
+    }
+
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    // Get total count
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(contacts)
+      .where(whereClause);
+
+    // Determine sort column and order
+    const sortColumn = options?.sortBy === "lastContacted" 
+      ? contacts.lastContactedAt 
+      : options?.sortBy === "name" 
+        ? contacts.name 
+        : contacts.createdAt;
+    
+    const sortFn = options?.sortOrder === "asc" ? asc : desc;
+
+    // Get contacts with pagination
+    const result = await db
+      .select()
+      .from(contacts)
+      .where(whereClause)
+      .orderBy(sortFn(sortColumn))
+      .limit(options?.limit || 50)
+      .offset(options?.offset || 0);
+
+    return { contacts: result, total: count };
+  }
+
+  async deleteContact(id: string): Promise<void> {
+    await db.delete(contacts).where(eq(contacts.id, id));
+  }
+
+  async toggleFavorite(id: string): Promise<Contact | undefined> {
+    const contact = await this.getContact(id);
+    if (!contact) return undefined;
+
+    const [updated] = await db
+      .update(contacts)
+      .set({ isFavorite: !contact.isFavorite, updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async toggleBlocked(id: string): Promise<Contact | undefined> {
+    const contact = await this.getContact(id);
+    if (!contact) return undefined;
+
+    const [updated] = await db
+      .update(contacts)
+      .set({ isBlocked: !contact.isBlocked, updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async addTagToContact(id: string, tag: string): Promise<Contact | undefined> {
+    const contact = await this.getContact(id);
+    if (!contact) return undefined;
+
+    const currentTags = contact.tags || [];
+    if (currentTags.includes(tag)) return contact;
+
+    const [updated] = await db
+      .update(contacts)
+      .set({ tags: [...currentTags, tag], updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async removeTagFromContact(id: string, tag: string): Promise<Contact | undefined> {
+    const contact = await this.getContact(id);
+    if (!contact) return undefined;
+
+    const currentTags = contact.tags || [];
+    const [updated] = await db
+      .update(contacts)
+      .set({ tags: currentTags.filter(t => t !== tag), updatedAt: new Date() })
+      .where(eq(contacts.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getAllTags(): Promise<string[]> {
+    const result = await db
+      .select({ tags: contacts.tags })
+      .from(contacts)
+      .where(sql`${contacts.tags} IS NOT NULL AND array_length(${contacts.tags}, 1) > 0`);
+    
+    const allTags = new Set<string>();
+    for (const row of result) {
+      if (row.tags) {
+        for (const tag of row.tags) {
+          allTags.add(tag);
+        }
+      }
+    }
+    return Array.from(allTags).sort();
   }
 
   // Conversations

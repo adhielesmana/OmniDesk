@@ -19,13 +19,20 @@ export const contacts = pgTable("contacts", {
   platform: platformEnum("platform").notNull(),
   name: text("name"),
   phoneNumber: text("phone_number"),
+  email: text("email"),
   profilePictureUrl: text("profile_picture_url"),
   isBlocked: boolean("is_blocked").default(false),
+  isFavorite: boolean("is_favorite").default(false),
+  tags: text("tags").array(),
+  notes: text("notes"),
   metadata: text("metadata"),
+  lastContactedAt: timestamp("last_contacted_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("contacts_platform_id_idx").on(table.platformId, table.platform),
+  index("contacts_name_idx").on(table.name),
+  index("contacts_is_favorite_idx").on(table.isFavorite),
 ]);
 
 // Conversations table - represents a thread with a contact
