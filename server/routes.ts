@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
+import { whatsappService } from "./whatsapp";
 import type { Platform } from "@shared/schema";
 
 export async function registerRoutes(
@@ -96,30 +97,31 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Conversation not found" });
       }
 
-      // Get platform settings
-      const settings = await storage.getPlatformSetting(conversation.platform);
-      if (!settings?.isConnected || !settings.accessToken) {
-        // Create message anyway but mark as failed
-        const message = await storage.createMessage({
-          conversationId,
-          direction: "outbound",
-          content,
-          mediaUrl,
-          status: "failed",
-          timestamp: new Date(),
-        });
-        return res.json(message);
+      let result: { success: boolean; messageId: string | undefined } = { success: false, messageId: undefined };
+
+      // Use unofficial WhatsApp for WhatsApp messages
+      if (conversation.platform === "whatsapp") {
+        if (whatsappService.isConnected()) {
+          const waResult = await whatsappService.sendMessage(
+            conversation.contact.platformId,
+            content
+          );
+          result = { success: waResult.success, messageId: waResult.messageId || undefined };
+        }
+      } else {
+        // Use Meta API for Instagram/Facebook
+        const settings = await storage.getPlatformSetting(conversation.platform);
+        if (settings?.isConnected && settings.accessToken) {
+          const metaApi = new MetaApiService(conversation.platform, {
+            accessToken: settings.accessToken,
+            phoneNumberId: settings.phoneNumberId || undefined,
+            pageId: settings.pageId || undefined,
+            businessId: settings.businessId || undefined,
+          });
+          const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
+          result = { success: metaResult.success, messageId: metaResult.messageId };
+        }
       }
-
-      // Send via Meta API
-      const metaApi = new MetaApiService(conversation.platform, {
-        accessToken: settings.accessToken,
-        phoneNumberId: settings.phoneNumberId || undefined,
-        pageId: settings.pageId || undefined,
-        businessId: settings.businessId || undefined,
-      });
-
-      const result = await metaApi.sendMessage(conversation.contact.platformId, content);
 
       // Create message in database
       const message = await storage.createMessage({
@@ -329,6 +331,124 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting quick reply:", error);
       res.status(500).json({ error: "Failed to delete quick reply" });
+    }
+  });
+
+  // WhatsApp Web connection endpoints
+  let currentQR: string | null = null;
+
+  whatsappService.setEventHandlers({
+    onQR: (qrDataUrl) => {
+      currentQR = qrDataUrl;
+      broadcast({ type: "whatsapp_qr", qr: qrDataUrl });
+    },
+    onConnectionUpdate: (state) => {
+      if (state !== "qr") {
+        currentQR = null;
+      }
+      broadcast({ type: "whatsapp_status", status: state });
+    },
+    onMessage: async (msg) => {
+      try {
+        let contact = await storage.getContactByPlatformId(msg.from, "whatsapp");
+        if (!contact) {
+          contact = await storage.createContact({
+            platformId: msg.from,
+            platform: "whatsapp",
+            name: msg.fromName,
+            phoneNumber: `+${msg.from}`,
+          });
+        }
+
+        let conversation = await storage.getConversationByContactId(contact.id);
+        if (!conversation) {
+          conversation = await storage.createConversation({
+            contactId: contact.id,
+            platform: "whatsapp",
+            lastMessageAt: msg.timestamp,
+            lastMessagePreview: msg.content.slice(0, 100),
+            unreadCount: 1,
+          });
+        }
+
+        const message = await storage.createMessage({
+          conversationId: conversation.id,
+          externalId: msg.messageId,
+          direction: "inbound",
+          content: msg.content,
+          status: "delivered",
+          timestamp: msg.timestamp,
+        });
+
+        broadcast({
+          type: "new_message",
+          message,
+          conversationId: conversation.id,
+        });
+
+        broadcast({
+          type: "conversation_updated",
+          conversationId: conversation.id,
+        });
+      } catch (error) {
+        console.error("Error processing WhatsApp message:", error);
+      }
+    },
+    onMessageSent: async (messageId, status) => {
+      try {
+        await storage.updateMessageStatusByExternalId(messageId, status);
+        broadcast({ type: "message_status", messageId, status });
+      } catch (error) {
+        console.error("Error updating message status:", error);
+      }
+    },
+  });
+
+  app.get("/api/whatsapp/status", (req, res) => {
+    res.json({
+      status: whatsappService.getConnectionState(),
+      qr: currentQR,
+    });
+  });
+
+  app.post("/api/whatsapp/connect", async (req, res) => {
+    try {
+      await whatsappService.connect();
+      res.json({ success: true, status: whatsappService.getConnectionState() });
+    } catch (error) {
+      console.error("Error connecting WhatsApp:", error);
+      res.status(500).json({ error: "Failed to connect WhatsApp" });
+    }
+  });
+
+  app.post("/api/whatsapp/disconnect", async (req, res) => {
+    try {
+      await whatsappService.disconnect();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error disconnecting WhatsApp:", error);
+      res.status(500).json({ error: "Failed to disconnect WhatsApp" });
+    }
+  });
+
+  app.post("/api/whatsapp/logout", async (req, res) => {
+    try {
+      await whatsappService.logout();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error logging out WhatsApp:", error);
+      res.status(500).json({ error: "Failed to logout WhatsApp" });
+    }
+  });
+
+  app.post("/api/whatsapp/send", async (req, res) => {
+    try {
+      const { to, content } = req.body;
+      const result = await whatsappService.sendMessage(to, content);
+      res.json(result);
+    } catch (error) {
+      console.error("Error sending WhatsApp message:", error);
+      res.status(500).json({ error: "Failed to send message" });
     }
   });
 

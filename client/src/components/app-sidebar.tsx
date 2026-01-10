@@ -14,6 +14,7 @@ import {
   SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
+import { WhatsAppConnect } from "./whatsapp-connect";
 import type { Platform } from "@shared/schema";
 
 interface AppSidebarProps {
@@ -119,7 +120,8 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
+      <SidebarFooter className="p-2 space-y-2">
+        <WhatsAppConnect />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={onSettingsClick} data-testid="button-settings">
