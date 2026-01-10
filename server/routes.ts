@@ -319,10 +319,19 @@ export async function registerRoutes(
   });
 
   // ============= CONVERSATION ROUTES =============
-  // Get all conversations
-  app.get("/api/conversations", async (req, res) => {
+  // Get all conversations (filtered by user's departments)
+  app.get("/api/conversations", requireAuth, async (req, res) => {
     try {
-      const conversations = await storage.getConversations();
+      let departmentFilter: string[] | undefined;
+
+      if (req.session.user?.role !== "superadmin") {
+        const userDepartmentIds = await getUserDepartmentIds(req.session.userId!, req.session.user!.role);
+        if (userDepartmentIds !== "all") {
+          departmentFilter = userDepartmentIds;
+        }
+      }
+
+      const conversations = await storage.getConversations(departmentFilter);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);

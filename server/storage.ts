@@ -100,7 +100,7 @@ export interface IStorage {
   getAllTags(): Promise<string[]>;
 
   // Conversations
-  getConversations(): Promise<ConversationWithContact[]>;
+  getConversations(departmentIds?: string[]): Promise<ConversationWithContact[]>;
   getConversation(id: string): Promise<ConversationWithMessages | undefined>;
   getConversationByContactId(contactId: string): Promise<Conversation | undefined>;
   getConversationsByContactId(contactId: string): Promise<Conversation[]>;
@@ -412,12 +412,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Conversations
-  async getConversations(): Promise<ConversationWithContact[]> {
+  async getConversations(departmentIds?: string[]): Promise<ConversationWithContact[]> {
+    let whereClause = eq(conversations.isArchived, false);
+
+    if (departmentIds !== undefined) {
+      if (departmentIds.length === 0) {
+        return [];
+      }
+      whereClause = and(
+        eq(conversations.isArchived, false),
+        or(
+          inArray(conversations.departmentId, departmentIds),
+          sql`${conversations.departmentId} IS NULL`
+        )
+      )!;
+    }
+
     const result = await db
       .select()
       .from(conversations)
       .leftJoin(contacts, eq(conversations.contactId, contacts.id))
-      .where(eq(conversations.isArchived, false))
+      .where(whereClause)
       .orderBy(desc(conversations.lastMessageAt));
 
     return result.map((row) => ({
