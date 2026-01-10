@@ -20,19 +20,23 @@ export interface WhatsAppChat {
   unreadCount: number;
 }
 
+export interface WhatsAppMessage {
+  from: string;
+  fromName: string;
+  content: string;
+  timestamp: Date;
+  messageId: string;
+  isGroup: boolean;
+  isFromMe: boolean;
+}
+
 export interface WhatsAppEventHandlers {
   onQR: (qrDataUrl: string) => void;
   onConnectionUpdate: (state: WhatsAppConnectionState) => void;
-  onMessage: (message: {
-    from: string;
-    fromName: string;
-    content: string;
-    timestamp: Date;
-    messageId: string;
-    isGroup: boolean;
-  }) => void;
+  onMessage: (message: WhatsAppMessage) => void;
   onMessageSent: (messageId: string, status: "sent" | "delivered" | "read") => void;
   onChatsSync?: (chats: WhatsAppChat[]) => void;
+  onHistorySync?: (messages: WhatsAppMessage[]) => void;
 }
 
 class WhatsAppService {
@@ -133,9 +137,10 @@ class WhatsAppService {
 
       this.socket.ev.on("messages.upsert", async (messageUpdate) => {
         for (const msg of messageUpdate.messages) {
-          if (!msg.key.fromMe && msg.message) {
+          if (msg.message) {
             const from = msg.key.remoteJid || "";
             const isGroup = from.endsWith("@g.us");
+            const isFromMe = msg.key.fromMe || false;
             
             let content = "";
             if (msg.message.conversation) {
@@ -162,6 +167,7 @@ class WhatsAppService {
                 timestamp: new Date((msg.messageTimestamp as number) * 1000),
                 messageId: msg.key.id || "",
                 isGroup,
+                isFromMe,
               });
             }
           }

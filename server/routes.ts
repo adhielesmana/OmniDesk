@@ -350,6 +350,9 @@ export async function registerRoutes(
     },
     onMessage: async (msg) => {
       try {
+        // Skip group messages for now
+        if (msg.isGroup) return;
+
         let contact = await storage.getContactByPlatformId(msg.from, "whatsapp");
         if (!contact) {
           contact = await storage.createContact({
@@ -367,16 +370,21 @@ export async function registerRoutes(
             platform: "whatsapp",
             lastMessageAt: msg.timestamp,
             lastMessagePreview: msg.content.slice(0, 100),
-            unreadCount: 1,
+            unreadCount: msg.isFromMe ? 0 : 1,
           });
         }
+
+        // Check if message already exists (avoid duplicates)
+        const existingMessages = await storage.getMessages(conversation.id);
+        const messageExists = existingMessages.some(m => m.externalId === msg.messageId);
+        if (messageExists) return;
 
         const message = await storage.createMessage({
           conversationId: conversation.id,
           externalId: msg.messageId,
-          direction: "inbound",
+          direction: msg.isFromMe ? "outbound" : "inbound",
           content: msg.content,
-          status: "delivered",
+          status: msg.isFromMe ? "sent" : "delivered",
           timestamp: msg.timestamp,
         });
 

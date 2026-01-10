@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, pgEnum, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -24,7 +24,9 @@ export const contacts = pgTable("contacts", {
   metadata: text("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("contacts_platform_id_idx").on(table.platformId, table.platform),
+]);
 
 // Conversations table - represents a thread with a contact
 export const conversations = pgTable("conversations", {
@@ -38,7 +40,11 @@ export const conversations = pgTable("conversations", {
   isPinned: boolean("is_pinned").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("conversations_contact_id_idx").on(table.contactId),
+  index("conversations_platform_idx").on(table.platform),
+  index("conversations_last_message_at_idx").on(table.lastMessageAt),
+]);
 
 // Messages table - individual messages in a conversation
 export const messages = pgTable("messages", {
@@ -52,7 +58,12 @@ export const messages = pgTable("messages", {
   status: messageStatusEnum("status").default("sent"),
   timestamp: timestamp("timestamp").defaultNow(),
   metadata: text("metadata"),
-});
+}, (table) => [
+  index("messages_conversation_id_idx").on(table.conversationId),
+  index("messages_timestamp_idx").on(table.timestamp),
+  index("messages_external_id_idx").on(table.externalId),
+  index("messages_conversation_timestamp_idx").on(table.conversationId, table.timestamp),
+]);
 
 // Platform settings table - stores API credentials per platform
 export const platformSettings = pgTable("platform_settings", {
