@@ -456,6 +456,33 @@ export async function registerRoutes(
     }
   });
 
+  // Fetch and update profile picture for a contact
+  app.post("/api/contacts/:id/profile-picture", async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      let profilePictureUrl: string | null = null;
+
+      // Fetch profile picture based on platform
+      if (contact.platform === "whatsapp" && whatsappService.isConnected()) {
+        profilePictureUrl = await whatsappService.getProfilePicture(contact.platformId);
+      }
+
+      if (profilePictureUrl) {
+        const updated = await storage.updateContact(req.params.id, { profilePictureUrl });
+        res.json(updated);
+      } else {
+        res.json({ message: "No profile picture available", contact });
+      }
+    } catch (error) {
+      console.error("Error fetching profile picture:", error);
+      res.status(500).json({ error: "Failed to fetch profile picture" });
+    }
+  });
+
   // Quick replies
   app.get("/api/quick-replies", async (req, res) => {
     try {

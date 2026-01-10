@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Star, Ban, Tag, X, Plus, Mail, Phone, Edit2, Save, MessageCircle } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Star, Ban, Tag, X, Plus, Mail, Phone, Edit2, Save, MessageCircle, RefreshCw } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +82,16 @@ export function ContactDetail({
     enabled: !!contact.id,
   });
 
+  const refreshProfilePictureMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", `/api/contacts/${contact.id}/profile-picture`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts", contact.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+    },
+  });
+
   const handleSave = () => {
     onUpdate({
       name: editedName || null,
@@ -121,10 +132,25 @@ export function ContactDetail({
     <ScrollArea className="flex-1">
       <div className="p-6 space-y-6">
         <div className="flex items-start gap-4">
-          <Avatar className="h-16 w-16">
-            <AvatarImage src={contact.profilePictureUrl || undefined} />
-            <AvatarFallback className="text-xl">{getInitials(contact.name)}</AvatarFallback>
-          </Avatar>
+          <div className="relative group">
+            <Avatar className="h-16 w-16">
+              <AvatarImage src={contact.profilePictureUrl || undefined} />
+              <AvatarFallback className="text-xl">{getInitials(contact.name)}</AvatarFallback>
+            </Avatar>
+            {contact.platform === "whatsapp" && (
+              <Button
+                size="icon"
+                variant="secondary"
+                className="absolute -bottom-1 -right-1 h-6 w-6 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => refreshProfilePictureMutation.mutate()}
+                disabled={refreshProfilePictureMutation.isPending}
+                title="Refresh profile picture"
+                data-testid="button-refresh-profile-picture"
+              >
+                <RefreshCw className={`h-3 w-3 ${refreshProfilePictureMutation.isPending ? "animate-spin" : ""}`} />
+              </Button>
+            )}
+          </div>
 
           <div className="flex-1 min-w-0">
             {isEditing ? (
