@@ -1,10 +1,42 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { seedSuperadmin, seedDefaultDepartment } from "./auth";
+import pgSession from "connect-pg-simple";
+import { Pool } from "pg";
 
 const app = express();
 const httpServer = createServer(app);
+
+const PgStore = pgSession(session);
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET environment variable is required");
+}
+
+app.use(
+  session({
+    store: new PgStore({
+      pool,
+      tableName: "session",
+      createTableIfMissing: true,
+    }),
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 declare module "http" {
   interface IncomingMessage {
@@ -60,6 +92,8 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  await seedSuperadmin();
+  await seedDefaultDepartment();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

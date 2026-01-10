@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
@@ -7,7 +7,37 @@ import { z } from "zod";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
-import { updateContactSchema, type Platform } from "@shared/schema";
+import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
+import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+    user: {
+      id: string;
+      username: string;
+      role: User["role"];
+      displayName: string | null;
+    };
+  }
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId || !req.session.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (req.session.user.role !== "admin" && req.session.user.role !== "superadmin") {
+    return res.status(403).json({ error: "Forbidden - Admin access required" });
+  }
+  next();
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -31,6 +61,264 @@ export async function registerRoutes(
     });
   };
 
+  // ============= AUTHENTICATION ROUTES =============
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      if (!user || !user.isActive) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      const valid = await verifyPassword(password, user.password);
+      if (!valid) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      req.session.userId = user.id;
+      req.session.user = {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName,
+      };
+
+      res.json({
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        displayName: user.displayName,
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        return res.status(500).json({ error: "Logout failed" });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const user = await storage.getUser(req.session.userId);
+    if (!user) {
+      req.session.destroy(() => {});
+      return res.status(401).json({ error: "User not found" });
+    }
+
+    const departments = await storage.getUserDepartments(user.id);
+    res.json({
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      displayName: user.displayName,
+      departments: user.role === "superadmin" ? "all" : departments,
+    });
+  });
+
+  // ============= ADMIN USER MANAGEMENT =============
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      const usersWithDepartments = await Promise.all(
+        users.map(async (user) => {
+          const departments = await storage.getUserDepartments(user.id);
+          return {
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            displayName: user.displayName,
+            isActive: user.isActive,
+            isDeletable: user.isDeletable,
+            departments,
+            createdAt: user.createdAt,
+          };
+        })
+      );
+      res.json(usersWithDepartments);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.post("/api/admin/users", requireAdmin, async (req, res) => {
+    try {
+      const validation = insertUserSchema.omit({ id: true, password: true }).extend({
+        password: z.string().min(6),
+        departmentIds: z.array(z.string()).optional(),
+      }).safeParse(req.body);
+
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+
+      const { password, departmentIds, ...userData } = validation.data;
+      const hashedPassword = await hashPassword(password);
+
+      const newUser = await storage.createUser({
+        ...userData,
+        password: hashedPassword,
+      });
+
+      if (departmentIds && departmentIds.length > 0) {
+        await storage.setUserDepartments(newUser.id, departmentIds);
+      }
+
+      const departments = await storage.getUserDepartments(newUser.id);
+      res.json({
+        id: newUser.id,
+        username: newUser.username,
+        role: newUser.role,
+        displayName: newUser.displayName,
+        isActive: newUser.isActive,
+        departments,
+      });
+    } catch (error) {
+      console.error("Error creating user:", error);
+      res.status(500).json({ error: "Failed to create user" });
+    }
+  });
+
+  app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      const { password, departmentIds, ...userData } = req.body;
+
+      let updateData: any = { ...userData };
+      if (password) {
+        updateData.password = await hashPassword(password);
+      }
+
+      const updated = await storage.updateUser(req.params.id, updateData);
+      if (!updated) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (departmentIds !== undefined) {
+        await storage.setUserDepartments(req.params.id, departmentIds);
+      }
+
+      const departments = await storage.getUserDepartments(updated.id);
+      res.json({
+        id: updated.id,
+        username: updated.username,
+        role: updated.role,
+        displayName: updated.displayName,
+        isActive: updated.isActive,
+        departments,
+      });
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ error: "Failed to update user" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      if (!user.isDeletable) {
+        return res.status(403).json({ error: "This user cannot be deleted" });
+      }
+
+      await storage.deleteUser(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  // ============= DEPARTMENT MANAGEMENT =============
+  app.get("/api/admin/departments", requireAdmin, async (req, res) => {
+    try {
+      const departments = await storage.getAllDepartments();
+      res.json(departments);
+    } catch (error) {
+      console.error("Error fetching departments:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+
+  app.post("/api/admin/departments", requireAdmin, async (req, res) => {
+    try {
+      const validation = insertDepartmentSchema.omit({ id: true }).safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+
+      const department = await storage.createDepartment(validation.data);
+      res.json(department);
+    } catch (error) {
+      console.error("Error creating department:", error);
+      res.status(500).json({ error: "Failed to create department" });
+    }
+  });
+
+  app.patch("/api/admin/departments/:id", requireAdmin, async (req, res) => {
+    try {
+      const updated = await storage.updateDepartment(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Department not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating department:", error);
+      res.status(500).json({ error: "Failed to update department" });
+    }
+  });
+
+  app.delete("/api/admin/departments/:id", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteDepartment(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting department:", error);
+      res.status(500).json({ error: "Failed to delete department" });
+    }
+  });
+
+  // Get departments for current user
+  app.get("/api/departments", requireAuth, async (req, res) => {
+    try {
+      if (!req.session.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      if (req.session.user.role === "superadmin") {
+        const departments = await storage.getAllDepartments();
+        return res.json(departments);
+      }
+
+      const departments = await storage.getUserDepartments(req.session.userId!);
+      res.json(departments);
+    } catch (error) {
+      console.error("Error fetching user departments:", error);
+      res.status(500).json({ error: "Failed to fetch departments" });
+    }
+  });
+
+  // ============= CONVERSATION ROUTES =============
   // Get all conversations
   app.get("/api/conversations", async (req, res) => {
     try {
