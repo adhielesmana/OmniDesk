@@ -4,12 +4,15 @@ import makeWASocket, {
   WASocket,
   BaileysEventMap,
   proto,
+  downloadContentFromMessage,
+  MediaType,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import * as QRCode from "qrcode";
 import pino from "pino";
 import path from "path";
 import fs from "fs";
+import { Readable } from "stream";
 
 export type WhatsAppConnectionState = "disconnected" | "connecting" | "qr" | "connected";
 
@@ -28,6 +31,8 @@ export interface WhatsAppMessage {
   messageId: string;
   isGroup: boolean;
   isFromMe: boolean;
+  mediaUrl?: string;
+  mediaType?: "image" | "video" | "audio" | "document";
 }
 
 export interface WhatsAppEventHandlers {
@@ -44,8 +49,93 @@ class WhatsAppService {
   private connectionState: WhatsAppConnectionState = "disconnected";
   private eventHandlers: WhatsAppEventHandlers | null = null;
   private authFolder = path.join(process.cwd(), ".whatsapp-auth");
+  private mediaFolder = path.join(process.cwd(), "media", "whatsapp");
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
+
+  constructor() {
+    // Ensure media folder exists
+    if (!fs.existsSync(this.mediaFolder)) {
+      fs.mkdirSync(this.mediaFolder, { recursive: true });
+    }
+  }
+
+  private getExtensionFromMimetype(mimetype: string | null | undefined): string {
+    if (!mimetype) return "bin";
+    const mimeToExt: Record<string, string> = {
+      "image/jpeg": "jpg",
+      "image/jpg": "jpg",
+      "image/png": "png",
+      "image/gif": "gif",
+      "image/webp": "webp",
+      "video/mp4": "mp4",
+      "video/3gpp": "3gp",
+      "video/quicktime": "mov",
+      "video/webm": "webm",
+      "audio/ogg": "ogg",
+      "audio/mpeg": "mp3",
+      "audio/mp4": "m4a",
+      "audio/aac": "aac",
+      "application/pdf": "pdf",
+    };
+    return mimeToExt[mimetype] || mimetype.split("/").pop() || "bin";
+  }
+
+  private async downloadMedia(
+    message: proto.IMessage,
+    messageId: string
+  ): Promise<{ filePath: string; mediaType: "image" | "video" | "audio" | "document"; mimetype: string } | null> {
+    try {
+      let mediaMessage: proto.Message.IImageMessage | proto.Message.IVideoMessage | proto.Message.IAudioMessage | proto.Message.IDocumentMessage | null = null;
+      let mediaType: "image" | "video" | "audio" | "document" = "image";
+      let mimetype = "application/octet-stream";
+
+      if (message.imageMessage) {
+        mediaMessage = message.imageMessage;
+        mediaType = "image";
+        mimetype = message.imageMessage.mimetype || "image/jpeg";
+      } else if (message.videoMessage) {
+        mediaMessage = message.videoMessage;
+        mediaType = "video";
+        mimetype = message.videoMessage.mimetype || "video/mp4";
+      } else if (message.audioMessage) {
+        mediaMessage = message.audioMessage;
+        mediaType = "audio";
+        mimetype = message.audioMessage.mimetype || "audio/ogg";
+      } else if (message.documentMessage) {
+        mediaMessage = message.documentMessage;
+        mediaType = "document";
+        mimetype = message.documentMessage.mimetype || "application/octet-stream";
+      }
+
+      if (!mediaMessage) return null;
+
+      const extension = this.getExtensionFromMimetype(mimetype);
+      const stream = await downloadContentFromMessage(
+        mediaMessage as any,
+        mediaType as MediaType
+      );
+
+      const buffer = await this.streamToBuffer(stream);
+      const fileName = `${messageId}.${extension}`;
+      const filePath = path.join(this.mediaFolder, fileName);
+      
+      fs.writeFileSync(filePath, buffer);
+      
+      return { filePath: `/api/media/${fileName}`, mediaType, mimetype };
+    } catch (error) {
+      console.error("Error downloading media:", error);
+      return null;
+    }
+  }
+
+  private async streamToBuffer(stream: Readable): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+  }
 
   getConnectionState(): WhatsAppConnectionState {
     return this.connectionState;
@@ -205,22 +295,39 @@ class WhatsAppService {
             
             const isGroup = from.endsWith("@g.us");
             const isFromMe = msg.key.fromMe || false;
+            const messageId = msg.key.id || "";
             
             let content = "";
+            let mediaUrl: string | undefined;
+            let mediaType: "image" | "video" | "audio" | "document" | undefined;
+
             if (msg.message.conversation) {
               content = msg.message.conversation;
             } else if (msg.message.extendedTextMessage?.text) {
               content = msg.message.extendedTextMessage.text;
             } else if (msg.message.imageMessage) {
-              content = "[Image]";
+              content = msg.message.imageMessage.caption || "Photo";
+              const media = await this.downloadMedia(msg.message, messageId);
+              if (media) {
+                mediaUrl = media.filePath;
+                mediaType = media.mediaType;
+              }
             } else if (msg.message.videoMessage) {
-              content = "[Video]";
+              content = msg.message.videoMessage.caption || "Video";
+              const media = await this.downloadMedia(msg.message, messageId);
+              if (media) {
+                mediaUrl = media.filePath;
+                mediaType = media.mediaType;
+              }
             } else if (msg.message.audioMessage) {
-              content = "[Audio]";
+              content = "Voice message";
+              // Skip audio downloads for now to save space
             } else if (msg.message.documentMessage) {
-              content = "[Document]";
+              content = msg.message.documentMessage.fileName || "Document";
+              // Skip document downloads for now
             } else if (msg.message.stickerMessage) {
-              content = "[Sticker]";
+              content = "Sticker";
+              // Skip sticker downloads
             }
 
             if (content) {
@@ -229,9 +336,11 @@ class WhatsAppService {
                 fromName: msg.pushName || from,
                 content,
                 timestamp: new Date((msg.messageTimestamp as number) * 1000),
-                messageId: msg.key.id || "",
+                messageId,
                 isGroup,
                 isFromMe,
+                mediaUrl,
+                mediaType,
               });
             }
           }

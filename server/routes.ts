@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import path from "path";
+import fs from "fs";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
@@ -384,6 +386,8 @@ export async function registerRoutes(
           externalId: msg.messageId,
           direction: msg.isFromMe ? "outbound" : "inbound",
           content: msg.content,
+          mediaUrl: msg.mediaUrl || null,
+          mediaType: msg.mediaType || null,
           status: msg.isFromMe ? "sent" : "delivered",
           timestamp: msg.timestamp,
         });
@@ -550,6 +554,48 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error sending WhatsApp message:", error);
       res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  // Serve media files
+  app.get("/api/media/:filename", (req, res) => {
+    try {
+      const { filename } = req.params;
+      
+      // Security: only allow alphanumeric, dots, dashes, and underscores
+      if (!/^[\w\-\.]+$/.test(filename)) {
+        return res.status(400).json({ error: "Invalid filename" });
+      }
+      
+      const mediaPath = path.join(process.cwd(), "media", "whatsapp", filename);
+      
+      if (!fs.existsSync(mediaPath)) {
+        return res.status(404).json({ error: "Media not found" });
+      }
+      
+      // Determine content type from extension
+      const ext = path.extname(filename).toLowerCase();
+      const contentTypes: Record<string, string> = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+        ".ogg": "audio/ogg",
+        ".mp3": "audio/mpeg",
+      };
+      
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      
+      const fileStream = fs.createReadStream(mediaPath);
+      fileStream.pipe(res);
+    } catch (error) {
+      console.error("Error serving media:", error);
+      res.status(500).json({ error: "Failed to serve media" });
     }
   });
 

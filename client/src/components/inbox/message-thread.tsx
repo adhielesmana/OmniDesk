@@ -229,11 +229,20 @@ export function MessageThread({
                     >
                       {message.mediaUrl && (
                         <div className="mb-2">
-                          {message.mediaType?.startsWith("image") ? (
+                          {message.mediaType === "image" ? (
                             <img
                               src={message.mediaUrl}
-                              alt="Media"
-                              className="max-w-full rounded-lg"
+                              alt="Photo"
+                              className="max-w-full max-h-80 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
+                              onClick={() => window.open(message.mediaUrl!, "_blank")}
+                              loading="lazy"
+                            />
+                          ) : message.mediaType === "video" ? (
+                            <video
+                              src={message.mediaUrl}
+                              controls
+                              className="max-w-full max-h-80 rounded-lg"
+                              preload="metadata"
                             />
                           ) : (
                             <div className="flex items-center gap-2 p-2 bg-background/10 rounded-lg">
