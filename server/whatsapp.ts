@@ -117,6 +117,9 @@ class WhatsAppService {
           this.reconnectAttempts = 0;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
+          
+          // Fetch recent chats after connection is established
+          setTimeout(() => this.fetchAllChatsWithMessages(), 2000);
         }
       });
 
@@ -172,7 +175,14 @@ class WhatsAppService {
       // Sync existing chats when they're loaded
       this.socket.ev.on("chats.upsert", (chats) => {
         const syncedChats: WhatsAppChat[] = chats
-          .filter((chat) => chat.id && !chat.id.endsWith("@g.us")) // Skip groups and invalid chats
+          .filter((chat) => {
+            // Skip groups, status broadcasts, and invalid chats
+            if (!chat.id) return false;
+            if (chat.id.endsWith("@g.us")) return false;
+            if (chat.id === "status@broadcast") return false;
+            if (chat.id.includes("broadcast")) return false;
+            return true;
+          })
           .map((chat) => ({
             jid: chat.id!,
             name: chat.name || chat.id!.replace("@s.whatsapp.net", ""),
@@ -189,6 +199,10 @@ class WhatsAppService {
         for (const msg of messageUpdate.messages) {
           if (msg.message) {
             const from = msg.key.remoteJid || "";
+            
+            // Skip status broadcasts and groups
+            if (from === "status@broadcast" || from.includes("broadcast")) continue;
+            
             const isGroup = from.endsWith("@g.us");
             const isFromMe = msg.key.fromMe || false;
             
@@ -242,6 +256,13 @@ class WhatsAppService {
       this.connectionState = "disconnected";
       this.eventHandlers?.onConnectionUpdate("disconnected");
     }
+  }
+
+  private async fetchAllChatsWithMessages(): Promise<void> {
+    // This is a placeholder - the actual message fetching happens via 
+    // messaging-history.set event which fires on fresh login
+    // For existing sessions, we log that a full sync requires re-authentication
+    console.log("Connected to existing session. For full history sync, logout and scan QR again.");
   }
 
   async disconnect(): Promise<void> {
