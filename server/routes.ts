@@ -442,6 +442,67 @@ export async function registerRoutes(
       }
       broadcast({ type: "chats_synced" });
     },
+    onHistorySync: async (messages) => {
+      console.log(`Processing ${messages.length} historical messages...`);
+      let savedCount = 0;
+      
+      for (const msg of messages) {
+        try {
+          // Skip broadcast/status messages
+          if (msg.from === "status" || msg.from.includes("broadcast")) continue;
+
+          let contact = await storage.getContactByPlatformId(msg.from, "whatsapp");
+          if (!contact) {
+            contact = await storage.createContact({
+              platformId: msg.from,
+              platform: "whatsapp",
+              name: msg.fromName,
+              phoneNumber: `+${msg.from}`,
+            });
+          }
+
+          let conversation = await storage.getConversationByContactId(contact.id);
+          if (!conversation) {
+            conversation = await storage.createConversation({
+              contactId: contact.id,
+              platform: "whatsapp",
+              lastMessageAt: msg.timestamp,
+              lastMessagePreview: msg.content.slice(0, 100),
+              unreadCount: 0,
+            });
+          }
+
+          // Check if message already exists
+          const existingMessages = await storage.getMessages(conversation.id);
+          const messageExists = existingMessages.some(m => m.externalId === msg.messageId);
+          if (messageExists) continue;
+
+          await storage.createMessage({
+            conversationId: conversation.id,
+            externalId: msg.messageId,
+            direction: msg.isFromMe ? "outbound" : "inbound",
+            content: msg.content,
+            status: msg.isFromMe ? "sent" : "delivered",
+            timestamp: msg.timestamp,
+          });
+
+          savedCount++;
+
+          // Update conversation with latest message info
+          if (msg.timestamp > conversation.lastMessageAt!) {
+            await storage.updateConversation(conversation.id, {
+              lastMessageAt: msg.timestamp,
+              lastMessagePreview: msg.content.slice(0, 100),
+            });
+          }
+        } catch (error) {
+          console.error("Error syncing historical message:", error);
+        }
+      }
+      
+      console.log(`Saved ${savedCount} new historical messages`);
+      broadcast({ type: "history_synced", count: savedCount });
+    },
   });
 
   app.get("/api/whatsapp/status", (req, res) => {

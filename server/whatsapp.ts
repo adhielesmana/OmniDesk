@@ -81,6 +81,7 @@ class WhatsAppService {
         printQRInTerminal: false,
         logger,
         browser: ["Unified Inbox", "Chrome", "1.0.0"],
+        syncFullHistory: true,
       });
 
       this.socket.ev.on("creds.update", saveCreds);
@@ -116,6 +117,55 @@ class WhatsAppService {
           this.reconnectAttempts = 0;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
+        }
+      });
+
+      // Handle historical message sync
+      this.socket.ev.on("messaging-history.set", ({ chats, contacts: waContacts, messages: historyMessages, isLatest }) => {
+        console.log(`History sync received: ${chats.length} chats, ${historyMessages.length} messages, isLatest: ${isLatest}`);
+        
+        const parsedMessages: WhatsAppMessage[] = [];
+        
+        for (const msg of historyMessages) {
+          if (msg.message) {
+            const from = msg.key.remoteJid || "";
+            const isGroup = from.endsWith("@g.us");
+            const isFromMe = msg.key.fromMe || false;
+            
+            let content = "";
+            if (msg.message.conversation) {
+              content = msg.message.conversation;
+            } else if (msg.message.extendedTextMessage?.text) {
+              content = msg.message.extendedTextMessage.text;
+            } else if (msg.message.imageMessage) {
+              content = "[Image]";
+            } else if (msg.message.videoMessage) {
+              content = "[Video]";
+            } else if (msg.message.audioMessage) {
+              content = "[Audio]";
+            } else if (msg.message.documentMessage) {
+              content = "[Document]";
+            } else if (msg.message.stickerMessage) {
+              content = "[Sticker]";
+            }
+
+            if (content && !isGroup) {
+              parsedMessages.push({
+                from: from.replace("@s.whatsapp.net", "").replace("@g.us", ""),
+                fromName: msg.pushName || from,
+                content,
+                timestamp: new Date((msg.messageTimestamp as number) * 1000),
+                messageId: msg.key.id || "",
+                isGroup,
+                isFromMe,
+              });
+            }
+          }
+        }
+
+        if (parsedMessages.length > 0) {
+          console.log(`Syncing ${parsedMessages.length} historical messages`);
+          this.eventHandlers?.onHistorySync?.(parsedMessages);
         }
       });
 
