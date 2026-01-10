@@ -404,6 +404,16 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
+  async messageExistsByExternalId(externalId: string): Promise<boolean> {
+    if (!externalId) return false;
+    const [existing] = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(eq(messages.externalId, externalId))
+      .limit(1);
+    return !!existing;
+  }
+
   // Platform Settings
   async getPlatformSettings(): Promise<PlatformSettings[]> {
     return db.select().from(platformSettings);

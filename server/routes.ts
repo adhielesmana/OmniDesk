@@ -528,9 +528,7 @@ export async function registerRoutes(
         }
 
         // Check if message already exists (avoid duplicates)
-        const existingMessages = await storage.getMessages(conversation.id);
-        const messageExists = existingMessages.some(m => m.externalId === msg.messageId);
-        if (messageExists) return;
+        if (await storage.messageExistsByExternalId(msg.messageId)) return;
 
         const message = await storage.createMessage({
           conversationId: conversation.id,
@@ -628,9 +626,7 @@ export async function registerRoutes(
           }
 
           // Check if message already exists
-          const existingMessages = await storage.getMessages(conversation.id);
-          const messageExists = existingMessages.some(m => m.externalId === msg.messageId);
-          if (messageExists) continue;
+          if (await storage.messageExistsByExternalId(msg.messageId)) continue;
 
           await storage.createMessage({
             conversationId: conversation.id,
