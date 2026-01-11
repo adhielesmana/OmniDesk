@@ -1,4 +1,4 @@
-import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield } from "lucide-react";
+import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Link, useLocation } from "wouter";
@@ -175,12 +175,20 @@ function UserMenu() {
   return (
     <SidebarMenu>
       {isAdmin && (
-        <SidebarMenuItem>
-          <SidebarMenuButton onClick={() => setLocation("/admin")} data-testid="button-admin">
-            <Shield className="h-5 w-5" />
-            <span>Admin Panel</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
+        <>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => setLocation("/blast")} data-testid="button-blast">
+              <Send className="h-5 w-5" />
+              <span>Blast Campaigns</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => setLocation("/admin")} data-testid="button-admin">
+              <Shield className="h-5 w-5" />
+              <span>Admin Panel</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </>
       )}
       <SidebarMenuItem>
         <SidebarMenuButton onClick={logout} data-testid="button-logout">

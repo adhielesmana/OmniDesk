@@ -8,6 +8,7 @@ import InboxPage from "@/pages/inbox";
 import ContactsPage from "@/pages/contacts";
 import LoginPage from "@/pages/login";
 import AdminPage from "@/pages/admin";
+import BlastPage from "@/pages/blast";
 import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
 
@@ -65,6 +66,9 @@ function Router() {
       </Route>
       <Route path="/admin">
         <ProtectedRoute component={AdminPage} adminOnly />
+      </Route>
+      <Route path="/blast">
+        <ProtectedRoute component={BlastPage} adminOnly />
       </Route>
       <Route component={NotFound} />
     </Switch>
