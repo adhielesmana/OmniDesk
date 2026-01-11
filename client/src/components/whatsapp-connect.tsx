@@ -27,7 +27,7 @@ export function WhatsAppConnect() {
 
   const { data: status, refetch } = useQuery<WhatsAppStatus>({
     queryKey: ["/api/whatsapp/status"],
-    refetchInterval: 3000,
+    refetchInterval: open ? 3000 : false, // Only poll when modal is open
   });
 
   const connectMutation = useMutation({
@@ -52,6 +52,15 @@ export function WhatsAppConnect() {
       refetch();
     },
   });
+
+  // Handle modal close - stop connection if not connected
+  const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen && status?.status !== "connected") {
+      // Stop connection when modal closes (if not connected)
+      disconnectMutation.mutate();
+    }
+    setOpen(isOpen);
+  };
 
   useEffect(() => {
     if (status?.qr) {
@@ -116,7 +125,7 @@ export function WhatsAppConnect() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button
           variant="outline"
@@ -189,6 +198,17 @@ export function WhatsAppConnect() {
                 <li>Tap Link a Device</li>
                 <li>Scan the QR code</li>
               </ol>
+              <p className="text-xs text-muted-foreground">
+                QR code expires in 5 minutes if not scanned
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => disconnectMutation.mutate()}
+                disabled={disconnectMutation.isPending}
+                data-testid="button-whatsapp-cancel-qr"
+              >
+                Cancel
+              </Button>
             </div>
           ) : connectionStatus === "connecting" ? (
             <div className="flex flex-col items-center gap-4">
@@ -224,17 +244,19 @@ export function WhatsAppConnect() {
                 <QrCode className="w-20 h-20 text-muted-foreground" />
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                Click connect to generate a QR code
+                Click to generate a QR code for scanning
               </p>
               <Button
                 onClick={() => connectMutation.mutate()}
                 disabled={connectMutation.isPending}
-                data-testid="button-whatsapp-start-connect"
+                data-testid="button-whatsapp-scan-qr"
               >
-                {connectMutation.isPending && (
+                {connectMutation.isPending ? (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <QrCode className="w-4 h-4 mr-2" />
                 )}
-                Connect WhatsApp
+                Scan QR Code
               </Button>
             </div>
           )}

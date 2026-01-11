@@ -64,6 +64,8 @@ class WhatsAppService {
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private stopReconnect = false; // Flag to stop auto-reconnection
   private reconnectTimeout: NodeJS.Timeout | null = null;
+  private qrTimeout: NodeJS.Timeout | null = null; // 5-minute timeout for QR scanning
+  private readonly QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
     // Ensure media folder exists
@@ -173,6 +175,27 @@ class WhatsAppService {
     }
   }
 
+  private startQrTimeout() {
+    // Clear any existing timeout
+    this.clearQrTimeout();
+    
+    console.log("Starting 5-minute QR timeout...");
+    this.qrTimeout = setTimeout(() => {
+      if (this.connectionState === "qr" || this.connectionState === "connecting") {
+        console.log("QR timeout reached (5 minutes). Stopping connection attempt.");
+        this.stopReconnect = true;
+        this.disconnect();
+      }
+    }, this.QR_TIMEOUT_MS);
+  }
+
+  private clearQrTimeout() {
+    if (this.qrTimeout) {
+      clearTimeout(this.qrTimeout);
+      this.qrTimeout = null;
+    }
+  }
+
   getConnectionState(): WhatsAppConnectionState {
     return this.connectionState;
   }
@@ -232,6 +255,9 @@ class WhatsAppService {
           
           const qrDataUrl = await QRCode.toDataURL(qr);
           this.eventHandlers?.onQR(qrDataUrl);
+          
+          // Start 5-minute timeout for QR scanning
+          this.startQrTimeout();
         }
 
         if (connection === "close") {
@@ -258,6 +284,9 @@ class WhatsAppService {
             console.log("WhatsApp disconnected. Auto-reconnect disabled.");
           }
         } else if (connection === "open") {
+          // Clear QR timeout - successfully connected
+          this.clearQrTimeout();
+          
           this.connectionState = "connected";
           this.reconnectAttempts = 0;
           this.reconnectDelay = 3000;
@@ -520,12 +549,13 @@ class WhatsAppService {
   }
 
   async disconnect(): Promise<void> {
-    // Stop auto-reconnection
+    // Stop auto-reconnection and clear all timeouts
     this.stopReconnect = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    this.clearQrTimeout();
     this.stopHealthCheck();
     
     if (this.socket) {
@@ -538,12 +568,13 @@ class WhatsAppService {
   }
 
   async logout(): Promise<void> {
-    // Stop auto-reconnection
+    // Stop auto-reconnection and clear all timeouts
     this.stopReconnect = true;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
     }
+    this.clearQrTimeout();
     this.stopHealthCheck();
     
     if (this.socket) {

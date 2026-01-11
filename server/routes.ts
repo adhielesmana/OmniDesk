@@ -1835,13 +1835,8 @@ export async function registerRoutes(
     console.error("Startup merge failed:", error);
   });
 
-  // Auto-reconnect WhatsApp if credentials exist on server startup
-  if (whatsappService.hasExistingAuth()) {
-    console.log("Found existing WhatsApp credentials, auto-connecting...");
-    whatsappService.connect().catch((error) => {
-      console.error("Auto-connect failed:", error);
-    });
-  }
+  // WhatsApp will only connect when user explicitly clicks "Scan QR" button
+  // No auto-connect on server startup
 
   app.get("/api/whatsapp/status", (req, res) => {
     res.json({
