@@ -188,7 +188,10 @@ echo -e "${BLUE}[6/7] Configuring Nginx...${NC}"
 NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
 NGINX_ENABLED="/etc/nginx/sites-enabled/$DOMAIN"
 
-tee "$NGINX_CONF" > /dev/null << EOF
+if [ -f "$NGINX_CONF" ] && grep -q "proxy_pass http://127.0.0.1:$APP_PORT" "$NGINX_CONF" 2>/dev/null; then
+    echo -e "  ${GREEN}✓${NC} Nginx already configured for $DOMAIN (skipped)"
+else
+    tee "$NGINX_CONF" > /dev/null << EOF
 server {
     listen 80;
     listen [::]:80;
@@ -212,44 +215,43 @@ server {
 }
 EOF
 
-if [ ! -L "$NGINX_ENABLED" ]; then
-    ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
-fi
+    if [ ! -L "$NGINX_ENABLED" ]; then
+        ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
+    fi
 
-rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-if nginx -t 2>/dev/null; then
-    systemctl reload nginx
-    echo -e "  ${GREEN}✓${NC} Nginx configured for $DOMAIN"
-else
-    echo -e "${RED}Nginx configuration test failed.${NC}"
-    exit 1
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        echo -e "  ${GREEN}✓${NC} Nginx configured for $DOMAIN"
+    else
+        echo -e "${RED}Nginx configuration test failed.${NC}"
+        exit 1
+    fi
 fi
 
 echo ""
 echo -e "${BLUE}[7/7] Setting up SSL...${NC}"
 
-if check_command certbot; then
-    if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
-        read -p "Set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
-        if [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
-            read -p "Enter email for SSL notifications: " SSL_EMAIL
-            while [ -z "$SSL_EMAIL" ]; do
-                read -p "Email is required: " SSL_EMAIL
-            done
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+    echo -e "  ${GREEN}✓${NC} SSL certificate already configured (skipped)"
+elif check_command certbot; then
+    read -p "Set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
+    if [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
+        read -p "Enter email for SSL notifications: " SSL_EMAIL
+        while [ -z "$SSL_EMAIL" ]; do
+            read -p "Email is required: " SSL_EMAIL
+        done
 
-            certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
-            
-            if [ $? -eq 0 ]; then
-                echo -e "  ${GREEN}✓${NC} SSL certificate installed"
-            else
-                echo -e "  ${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
-            fi
+        certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
+        
+        if [ $? -eq 0 ]; then
+            echo -e "  ${GREEN}✓${NC} SSL certificate installed"
         else
-            echo -e "  ${YELLOW}Skipped SSL setup${NC}"
+            echo -e "  ${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
         fi
     else
-        echo -e "  ${GREEN}✓${NC} SSL certificate already exists"
+        echo -e "  ${YELLOW}Skipped SSL setup${NC}"
     fi
 else
     echo -e "  ${YELLOW}Certbot not installed, skipping SSL${NC}"
