@@ -24,9 +24,17 @@ function normalizeWhatsAppJid(jid: string): string {
 // LIDs are internal WhatsApp identifiers with 15+ digits that don't map to phone numbers
 function isWhatsAppLid(id: string): boolean {
   const cleaned = id.replace(/[^0-9]/g, "");
-  // LIDs typically have 15+ digits and don't start with valid country codes
-  // Real phone numbers are typically 10-15 digits
-  return cleaned.length >= 15;
+  // LIDs typically have 14+ digits and don't start with valid country codes like 62, 1, 44, etc.
+  // Real phone numbers are typically 10-14 digits with recognizable country codes
+  if (cleaned.length >= 15) return true;
+  if (cleaned.length >= 14) {
+    // Check if it starts with common country codes - if not, likely a LID
+    const commonPrefixes = ['1', '7', '20', '27', '30', '31', '32', '33', '34', '36', '39', '40', '41', '43', '44', '45', '46', '47', '48', '49', '51', '52', '53', '54', '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66', '81', '82', '84', '86', '90', '91', '92', '93', '94', '95', '98'];
+    const hasValidCountryCode = commonPrefixes.some(prefix => cleaned.startsWith(prefix));
+    // If 14 digits but doesn't start with valid country code, it's likely a LID
+    if (!hasValidCountryCode) return true;
+  }
+  return false;
 }
 
 async function validateOpenAIKey(apiKey: string): Promise<boolean> {
