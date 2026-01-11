@@ -18,7 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2, Sparkles } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ImportContactsModalProps {
@@ -32,10 +33,15 @@ interface PreviewResponse {
   suggestedMapping: {
     nameColumn: string | null;
     phoneColumn: string | null;
-    emailColumn: string | null;
-    notesColumn: string | null;
+    emailColumn?: string | null;
+    notesColumn?: string | null;
   };
   totalRows: number;
+  aiDetection?: {
+    used: boolean;
+    confidence?: number;
+    error?: string;
+  } | null;
 }
 
 interface ImportResponse {
@@ -53,6 +59,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
   const [step, setStep] = useState<"upload" | "mapping" | "result">("upload");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [useAI, setUseAI] = useState(true);
   const [mapping, setMapping] = useState({
     nameColumn: "",
     phoneColumn: "",
@@ -63,9 +70,10 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
   const [importResult, setImportResult] = useState<ImportResponse | null>(null);
 
   const previewMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, useAI }: { file: File; useAI: boolean }) => {
       const formData = new FormData();
       formData.append("file", file);
+      formData.append("useAI", String(useAI));
       const res = await fetch("/api/contacts/import/preview", {
         method: "POST",
         body: formData,
@@ -86,6 +94,19 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
         defaultTag: "",
       });
       setStep("mapping");
+      
+      if (data.aiDetection?.used) {
+        toast({
+          title: "AI detected columns",
+          description: `Confidence: ${Math.round((data.aiDetection.confidence || 0) * 100)}%`,
+        });
+      } else if (data.aiDetection?.error) {
+        toast({
+          title: "AI detection failed",
+          description: data.aiDetection.error,
+          variant: "destructive",
+        });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -146,7 +167,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
         return;
       }
       setFile(selectedFile);
-      previewMutation.mutate(selectedFile);
+      previewMutation.mutate({ file: selectedFile, useAI });
     }
   };
 
@@ -155,6 +176,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
     setFile(null);
     setPreview(null);
     setImportResult(null);
+    setUseAI(true);
     setMapping({
       nameColumn: "",
       phoneColumn: "",
@@ -189,6 +211,23 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
 
         {step === "upload" && (
           <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">AI Column Detection</p>
+                  <p className="text-xs text-muted-foreground">
+                    Automatically identify name and phone columns
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={useAI}
+                onCheckedChange={setUseAI}
+                data-testid="switch-use-ai"
+              />
+            </div>
+
             <div
               className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover-elevate transition-colors"
               onClick={() => fileInputRef.current?.click()}
@@ -205,31 +244,46 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
               {previewMutation.isPending ? (
                 <div className="flex flex-col items-center gap-2">
                   <Loader2 className="h-10 w-10 text-muted-foreground animate-spin" />
-                  <p className="text-muted-foreground">Parsing CSV...</p>
+                  <p className="text-muted-foreground">
+                    {useAI ? "AI is analyzing your CSV..." : "Parsing CSV..."}
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2">
                   <Upload className="h-10 w-10 text-muted-foreground" />
                   <p className="font-medium">Click to upload CSV file</p>
                   <p className="text-sm text-muted-foreground">
-                    Supports standard phonebook exports (max 10MB)
+                    Supports any column order - AI will find name & phone
                   </p>
                 </div>
               )}
+            </div>
+
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Phone numbers starting with 0 will be converted to +62 (Indonesia)</p>
+              <p>Example: 081234567890 → +6281234567890</p>
             </div>
           </div>
         )}
 
         {step === "mapping" && preview && (
           <div className="space-y-4">
-            <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-              <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <p className="font-medium">{file?.name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {preview.totalRows} rows found
-                </p>
+            <div className="flex items-center justify-between p-3 bg-muted rounded-lg">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">{file?.name}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {preview.totalRows} rows found
+                  </p>
+                </div>
               </div>
+              {preview.aiDetection?.used && (
+                <div className="flex items-center gap-1.5 text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                  <Sparkles className="h-3 w-3" />
+                  <span>AI detected ({Math.round((preview.aiDetection.confidence || 0) * 100)}%)</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">

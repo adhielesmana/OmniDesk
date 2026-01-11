@@ -45,6 +45,123 @@ function isWhatsAppLid(id: string): boolean {
   return false;
 }
 
+// Normalize phone number: convert local Indonesian numbers (starting with 0) to +62 format
+function normalizePhoneNumber(phone: string): { digits: string; formatted: string } {
+  let digits = phone.replace(/[^0-9]/g, "");
+  
+  // If starts with 0, assume Indonesian number and convert to 62
+  if (digits.startsWith("0")) {
+    digits = "62" + digits.substring(1);
+  }
+  
+  return {
+    digits,
+    formatted: `+${digits}`,
+  };
+}
+
+// Get OpenAI API key from settings or environment
+async function getOpenAIKey(): Promise<string | null> {
+  const setting = await storage.getAppSetting("openai_api_key");
+  return setting?.value || process.env.OPENAI_API_KEY || null;
+}
+
+// Use OpenAI to detect CSV column mappings
+async function detectCSVColumnsWithAI(
+  headers: string[],
+  sampleRows: Record<string, string>[]
+): Promise<{ nameColumn: string | null; phoneColumn: string | null; confidence: number }> {
+  const apiKey = await getOpenAIKey();
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+
+  const sampleData = sampleRows.slice(0, 3).map(row => {
+    const rowData: Record<string, string> = {};
+    headers.forEach(h => {
+      rowData[h] = row[h] || "";
+    });
+    return rowData;
+  });
+
+  const prompt = `Analyze this CSV data and identify which columns contain:
+1. Person's name (full name, first name, contact name, etc.)
+2. Phone number (mobile, telephone, WhatsApp number, etc.)
+
+Headers: ${JSON.stringify(headers)}
+
+Sample data (first 3 rows):
+${JSON.stringify(sampleData, null, 2)}
+
+Respond in JSON format only:
+{
+  "nameColumn": "exact header name for name column or null if not found",
+  "phoneColumn": "exact header name for phone column or null if not found",
+  "confidence": 0.0 to 1.0 indicating how confident you are
+}
+
+Important:
+- The column names might be in any language (Indonesian, English, etc.)
+- Phone columns might contain numbers starting with 0, +62, 62, or other formats
+- Name columns might be labeled "nama", "name", "contact", "pelanggan", "customer", etc.
+- Only return the JSON, no other text.`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a data analysis assistant. Respond only with valid JSON." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.1,
+        max_tokens: 200,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content?.trim();
+    
+    if (!content) {
+      throw new Error("Empty response from OpenAI");
+    }
+
+    // Parse JSON response, handling potential markdown code blocks
+    let jsonContent = content;
+    if (content.startsWith("```")) {
+      jsonContent = content.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+    }
+
+    const result = JSON.parse(jsonContent);
+    
+    // Validate the detected columns exist in headers
+    return {
+      nameColumn: headers.includes(result.nameColumn) ? result.nameColumn : null,
+      phoneColumn: headers.includes(result.phoneColumn) ? result.phoneColumn : null,
+      confidence: typeof result.confidence === "number" ? result.confidence : 0.5,
+    };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.error("AI column detection error:", error);
+    throw error;
+  }
+}
+
 async function validateOpenAIKey(apiKey: string): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -1072,7 +1189,8 @@ export async function registerRoutes(
             continue;
           }
 
-          const phoneDigits = rawPhone.replace(/[^0-9]/g, "");
+          const { digits: phoneDigits, formatted: normalizedPhone } = normalizePhoneNumber(rawPhone);
+          
           if (phoneDigits.length < 8) {
             results.skipped++;
             results.errors.push({ row: i + 2, reason: "Invalid phone number (too short)" });
@@ -1083,8 +1201,6 @@ export async function registerRoutes(
             results.errors.push({ row: i + 2, reason: "Invalid phone number (too long)" });
             continue;
           }
-
-          const normalizedPhone = `+${phoneDigits}`;
 
           let existingContact = await storage.getContactByPhoneNumber(phoneDigits);
           
@@ -1145,6 +1261,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No file uploaded" });
       }
 
+      const useAI = req.body?.useAI === "true" || req.body?.useAI === true;
       const csvContent = req.file.buffer.toString("utf-8");
       
       const parseResult = Papa.parse(csvContent, {
@@ -1164,18 +1281,51 @@ export async function registerRoutes(
       const headers = parseResult.meta.fields || [];
       const previewRows = parseResult.data as Record<string, string>[];
 
-      const suggestedMapping = {
-        nameColumn: headers.find(h => /^(name|nama|contact|full\s*name)$/i.test(h)) || null,
-        phoneColumn: headers.find(h => /^(phone|hp|mobile|telepon|nomor|number|wa|whatsapp|tel)$/i.test(h)) || null,
-        emailColumn: headers.find(h => /^(email|e-mail|mail)$/i.test(h)) || null,
-        notesColumn: headers.find(h => /^(notes?|catatan|keterangan|description|desc)$/i.test(h)) || null,
+      let suggestedMapping: {
+        nameColumn: string | null;
+        phoneColumn: string | null;
+        emailColumn?: string | null;
+        notesColumn?: string | null;
       };
+      let aiDetection = null;
+
+      if (useAI) {
+        try {
+          const aiResult = await detectCSVColumnsWithAI(headers, previewRows);
+          suggestedMapping = {
+            nameColumn: aiResult.nameColumn,
+            phoneColumn: aiResult.phoneColumn,
+          };
+          aiDetection = {
+            used: true,
+            confidence: aiResult.confidence,
+          };
+        } catch (aiError) {
+          console.error("AI detection failed, falling back to regex:", aiError);
+          suggestedMapping = {
+            nameColumn: headers.find(h => /^(name|nama|contact|full\s*name)$/i.test(h)) || null,
+            phoneColumn: headers.find(h => /^(phone|hp|mobile|telepon|nomor|number|wa|whatsapp|tel)$/i.test(h)) || null,
+          };
+          aiDetection = {
+            used: false,
+            error: aiError instanceof Error ? aiError.message : "AI detection failed",
+          };
+        }
+      } else {
+        suggestedMapping = {
+          nameColumn: headers.find(h => /^(name|nama|contact|full\s*name)$/i.test(h)) || null,
+          phoneColumn: headers.find(h => /^(phone|hp|mobile|telepon|nomor|number|wa|whatsapp|tel)$/i.test(h)) || null,
+          emailColumn: headers.find(h => /^(email|e-mail|mail)$/i.test(h)) || null,
+          notesColumn: headers.find(h => /^(notes?|catatan|keterangan|description|desc)$/i.test(h)) || null,
+        };
+      }
 
       res.json({
         headers,
         previewRows,
         suggestedMapping,
         totalRows: parseResult.data.length,
+        aiDetection,
       });
     } catch (error) {
       console.error("Error previewing CSV:", error);
