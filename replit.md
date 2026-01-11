@@ -15,6 +15,7 @@ Preferred communication style: Simple, everyday language.
 - **Department Management**: Added departments for organizing conversations and users
 - **Superadmin Seeding**: Hardcoded superadmin (username: adhielesmana, password: admin123) created on startup, non-deletable
 - **Admin Panel**: New admin page for managing users and departments
+- **OpenAI API Key Management**: Added Settings modal tab for managing OpenAI API key with validation, save/delete functionality
 
 ## System Architecture
 
@@ -57,6 +58,7 @@ Preferred communication style: Simple, everyday language.
 - `messages` - Individual messages with direction, status, and media support
 - `platformSettings` - API credentials and configuration per platform
 - `quickReplies` - Saved quick reply templates
+- `appSettings` - Application-wide settings including OpenAI API key with validation status
 
 ### Authentication & Authorization
 - **Session Management**: PostgreSQL-backed session store with 24-hour expiry
