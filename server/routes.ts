@@ -1011,7 +1011,13 @@ export async function registerRoutes(
         if (msg.isGroup) return;
 
         const normalizedId = normalizeWhatsAppJid(msg.from);
-        let contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
+        
+        // First try to find existing contact by phone number (to merge conversations)
+        let contact = await storage.getContactByPhoneNumber(normalizedId);
+        if (!contact) {
+          // Fallback to platform ID lookup
+          contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
+        }
         if (!contact) {
           contact = await storage.createContact({
             platformId: normalizedId,
@@ -1074,7 +1080,12 @@ export async function registerRoutes(
         try {
           const phoneNumber = chat.jid.replace("@s.whatsapp.net", "");
           
-          let contact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          // First try to find existing contact by phone number (to merge conversations)
+          let contact = await storage.getContactByPhoneNumber(phoneNumber);
+          if (!contact) {
+            // Fallback to platform ID lookup
+            contact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          }
           if (!contact) {
             contact = await storage.createContact({
               platformId: phoneNumber,
@@ -1110,7 +1121,13 @@ export async function registerRoutes(
           if (msg.from === "status" || msg.from.includes("broadcast")) continue;
 
           const normalizedHistoryId = normalizeWhatsAppJid(msg.from);
-          let contact = await storage.getContactByPlatformId(normalizedHistoryId, "whatsapp");
+          
+          // First try to find existing contact by phone number (to merge conversations)
+          let contact = await storage.getContactByPhoneNumber(normalizedHistoryId);
+          if (!contact) {
+            // Fallback to platform ID lookup
+            contact = await storage.getContactByPlatformId(normalizedHistoryId, "whatsapp");
+          }
           if (!contact) {
             contact = await storage.createContact({
               platformId: normalizedHistoryId,
@@ -1177,8 +1194,11 @@ export async function registerRoutes(
             !waContact.name.match(/^\+?\d+$/);
           const displayName = hasProperName ? waContact.name : null;
           
-          // Find existing contact by platform ID (check both phone number and original jid)
-          let existingContact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          // Find existing contact by phone number first (to merge), then by platform ID
+          let existingContact = await storage.getContactByPhoneNumber(phoneNumber);
+          if (!existingContact) {
+            existingContact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
+          }
           if (!existingContact) {
             existingContact = await storage.getContactByPlatformId(waContact.jid, "whatsapp");
           }

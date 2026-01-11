@@ -92,6 +92,7 @@ export interface IStorage {
   // Contacts
   getContact(id: string): Promise<Contact | undefined>;
   getContactByPlatformId(platformId: string, platform: Platform): Promise<Contact | undefined>;
+  getContactByPhoneNumber(phoneNumber: string): Promise<Contact | undefined>;
   getAllContacts(options?: {
     search?: string;
     platform?: Platform;
@@ -289,6 +290,32 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(contacts)
       .where(and(eq(contacts.platformId, platformId), eq(contacts.platform, platform)));
+    return contact || undefined;
+  }
+
+  async getContactByPhoneNumber(phoneNumber: string): Promise<Contact | undefined> {
+    // Normalize phone number - strip everything except digits
+    const canonical = getCanonicalPhoneNumber(phoneNumber);
+    
+    // Search for contacts with matching phone number (with or without + prefix)
+    const variants = [`+${canonical}`, canonical];
+    
+    // Also search in platformId for WhatsApp contacts
+    const platformVariants = normalizeWhatsAppId(canonical);
+    
+    const [contact] = await db
+      .select()
+      .from(contacts)
+      .where(or(
+        inArray(contacts.phoneNumber, variants),
+        and(
+          inArray(contacts.platformId, platformVariants),
+          eq(contacts.platform, "whatsapp")
+        )
+      ))
+      .orderBy(desc(contacts.updatedAt))
+      .limit(1);
+    
     return contact || undefined;
   }
 
