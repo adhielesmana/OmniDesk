@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, Image as ImageIcon, FileText, User } from "lucide-react";
+import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PlatformIcon, getPlatformName } from "@/components/platform-icons";
 import { MessageComposer } from "./message-composer";
+import { MessageContent } from "./message-content";
 import type { ConversationWithMessages, Message, MessageStatus } from "@shared/schema";
 import { format, isToday, isYesterday, isSameDay } from "date-fns";
 
@@ -238,58 +239,14 @@ export function MessageThread({
                           : "bg-card border border-card-border rounded-bl-md"
                       }`}
                     >
-                      {message.mediaUrl ? (
-                        <div className="mb-2">
-                          {message.mediaType === "image" ? (
-                            <img
-                              src={message.mediaUrl}
-                              alt="Photo"
-                              className="max-w-full max-h-80 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                              onClick={() => window.open(message.mediaUrl!, "_blank")}
-                              loading="lazy"
-                              data-testid={`media-image-${message.id}`}
-                            />
-                          ) : message.mediaType === "video" ? (
-                            <video
-                              src={message.mediaUrl}
-                              controls
-                              className="max-w-full max-h-80 rounded-lg"
-                              preload="metadata"
-                              data-testid={`media-video-${message.id}`}
-                            />
-                          ) : message.mediaType === "audio" ? (
-                            <audio
-                              src={message.mediaUrl}
-                              controls
-                              className="w-full"
-                              preload="metadata"
-                              data-testid={`media-audio-${message.id}`}
-                            />
-                          ) : (
-                            <a 
-                              href={message.mediaUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-2 p-2 bg-background/10 rounded-lg hover-elevate"
-                              data-testid={`media-file-${message.id}`}
-                            >
-                              <FileText className="h-5 w-5" />
-                              <span className="text-sm">Download attachment</span>
-                            </a>
-                          )}
-                        </div>
-                      ) : (message.content === "[Image]" || message.content === "[Video]" || message.content === "[Audio]" || message.content === "[Document]") && (
-                        <div className="mb-2 flex items-center gap-2 p-3 bg-muted/50 rounded-lg text-muted-foreground">
-                          <ImageIcon className="h-5 w-5" />
-                          <span className="text-sm">Media not available (historical message)</span>
-                        </div>
-                      )}
-
-                      {message.content && !["[Image]", "[Video]", "[Audio]", "[Document]"].includes(message.content) && (
-                        <p className={`text-sm whitespace-pre-wrap ${isOutbound ? "" : "text-foreground"}`}>
-                          {message.content}
-                        </p>
-                      )}
+                      <MessageContent
+                        content={message.content || ""}
+                        mediaUrl={message.mediaUrl}
+                        mediaType={message.mediaType}
+                        metadata={message.metadata}
+                        messageId={message.id}
+                        isOutbound={isOutbound}
+                      />
 
                       <div
                         className={`flex items-center justify-end gap-1 mt-1 ${

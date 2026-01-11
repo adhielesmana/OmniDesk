@@ -1109,6 +1109,7 @@ export async function registerRoutes(
           content: msg.content,
           mediaUrl: msg.mediaUrl || null,
           mediaType: msg.mediaType || null,
+          metadata: msg.metadata || null,
           status: msg.isFromMe ? "sent" : "delivered",
           timestamp: msg.timestamp,
         });

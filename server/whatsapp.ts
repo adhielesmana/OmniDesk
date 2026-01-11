@@ -32,7 +32,8 @@ export interface WhatsAppMessage {
   isGroup: boolean;
   isFromMe: boolean;
   mediaUrl?: string;
-  mediaType?: "image" | "video" | "audio" | "document";
+  mediaType?: "image" | "video" | "audio" | "document" | "location";
+  metadata?: string;
 }
 
 export interface WhatsAppContact {
@@ -321,6 +322,10 @@ class WhatsAppService {
               content = "[Document]";
             } else if (msg.message.stickerMessage) {
               content = "[Sticker]";
+            } else if (msg.message.locationMessage) {
+              content = "[Location]";
+            } else if (msg.message.liveLocationMessage) {
+              content = "[Live Location]";
             }
 
             if (content && !isGroup) {
@@ -385,7 +390,7 @@ class WhatsAppService {
             
             let content = "";
             let mediaUrl: string | undefined;
-            let mediaType: "image" | "video" | "audio" | "document" | undefined;
+            let mediaType: "image" | "video" | "audio" | "document" | "location" | undefined;
 
             if (msg.message.conversation) {
               content = msg.message.conversation;
@@ -414,6 +419,53 @@ class WhatsAppService {
             } else if (msg.message.stickerMessage) {
               content = "Sticker";
               // Skip sticker downloads
+            } else if (msg.message.locationMessage) {
+              const loc = msg.message.locationMessage;
+              content = loc.name || loc.address || "Location";
+              mediaType = "location";
+              const locationMeta = {
+                latitude: loc.degreesLatitude,
+                longitude: loc.degreesLongitude,
+                name: loc.name || undefined,
+                address: loc.address || undefined,
+              };
+              if (content) {
+                this.eventHandlers?.onMessage({
+                  from: from.replace("@s.whatsapp.net", "").replace("@g.us", ""),
+                  fromName: msg.pushName || from,
+                  content,
+                  timestamp: new Date((msg.messageTimestamp as number) * 1000),
+                  messageId,
+                  isGroup,
+                  isFromMe,
+                  mediaType,
+                  metadata: JSON.stringify(locationMeta),
+                });
+              }
+              continue;
+            } else if (msg.message.liveLocationMessage) {
+              const loc = msg.message.liveLocationMessage;
+              content = "Live Location";
+              mediaType = "location";
+              const locationMeta = {
+                latitude: loc.degreesLatitude,
+                longitude: loc.degreesLongitude,
+                isLive: true,
+              };
+              if (content) {
+                this.eventHandlers?.onMessage({
+                  from: from.replace("@s.whatsapp.net", "").replace("@g.us", ""),
+                  fromName: msg.pushName || from,
+                  content,
+                  timestamp: new Date((msg.messageTimestamp as number) * 1000),
+                  messageId,
+                  isGroup,
+                  isFromMe,
+                  mediaType,
+                  metadata: JSON.stringify(locationMeta),
+                });
+              }
+              continue;
             }
 
             if (content) {
