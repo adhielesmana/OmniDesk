@@ -180,7 +180,23 @@ fi
 
 echo -e "  ${GREEN}✓${NC} Database tables created"
 echo -e "  ${GREEN}✓${NC} Migrations completed"
-echo -e "  ${GREEN}✓${NC} Admin user seeded automatically on first start"
+
+echo -e "  ${YELLOW}→${NC} Cleaning up legacy admin user if exists..."
+if docker compose version &> /dev/null; then
+    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
+else
+    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
+fi
+echo -e "  ${GREEN}✓${NC} Legacy admin cleanup complete"
+
+echo -e "  ${YELLOW}→${NC} Restarting app to seed superadmin..."
+if docker compose version &> /dev/null; then
+    docker compose restart inbox-app
+else
+    docker-compose restart inbox-app
+fi
+sleep 5
+echo -e "  ${GREEN}✓${NC} Superadmin seeded"
 
 echo ""
 echo -e "${BLUE}[6/7] Configuring Nginx...${NC}"
