@@ -278,13 +278,24 @@ export class DatabaseStorage implements IStorage {
 
   async getContactByPlatformId(platformId: string, platform: Platform): Promise<Contact | undefined> {
     // For WhatsApp, search using normalized variants to handle different JID formats
+    // Also search by whatsappLid field for LID-based lookups
     if (platform === "whatsapp") {
       const variants = normalizeWhatsAppId(platformId);
+      const canonical = getCanonicalPhoneNumber(platformId);
+      
+      // Check if this looks like a LID (16+ digits, no valid country code pattern)
+      const isLid = canonical.length >= 15;
+      
       const [contact] = await db
         .select()
         .from(contacts)
         .where(and(
-          inArray(contacts.platformId, variants),
+          or(
+            inArray(contacts.platformId, variants),
+            // Also check whatsappLid field for LID matches
+            eq(contacts.whatsappLid, canonical),
+            eq(contacts.whatsappLid, platformId)
+          ),
           eq(contacts.platform, platform)
         ));
       return contact || undefined;

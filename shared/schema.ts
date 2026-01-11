@@ -19,6 +19,7 @@ export const contacts = pgTable("contacts", {
   platform: platformEnum("platform").notNull(),
   name: text("name"),
   phoneNumber: text("phone_number"),
+  whatsappLid: text("whatsapp_lid"), // WhatsApp Linked ID (internal identifier, separate from phone)
   email: text("email"),
   profilePictureUrl: text("profile_picture_url"),
   isBlocked: boolean("is_blocked").default(false),
@@ -33,6 +34,7 @@ export const contacts = pgTable("contacts", {
   index("contacts_platform_id_idx").on(table.platformId, table.platform),
   index("contacts_name_idx").on(table.name),
   index("contacts_is_favorite_idx").on(table.isFavorite),
+  index("contacts_whatsapp_lid_idx").on(table.whatsappLid),
 ]);
 
 // Conversations table - represents a thread with a contact

@@ -20,6 +20,15 @@ function normalizeWhatsAppJid(jid: string): string {
     .replace("+", "");
 }
 
+// Check if an ID is a WhatsApp LID (Linked ID) rather than a real phone number
+// LIDs are internal WhatsApp identifiers with 15+ digits that don't map to phone numbers
+function isWhatsAppLid(id: string): boolean {
+  const cleaned = id.replace(/[^0-9]/g, "");
+  // LIDs typically have 15+ digits and don't start with valid country codes
+  // Real phone numbers are typically 10-15 digits
+  return cleaned.length >= 15;
+}
+
 async function validateOpenAIKey(apiKey: string): Promise<boolean> {
   try {
     const controller = new AbortController();
@@ -1048,20 +1057,35 @@ export async function registerRoutes(
         if (msg.isGroup) return;
 
         const normalizedId = normalizeWhatsAppJid(msg.from);
+        const isLid = isWhatsAppLid(normalizedId);
         
-        // First try to find existing contact by phone number (to merge conversations)
+        // First try to find existing contact by phone number or LID
         let contact = await storage.getContactByPhoneNumber(normalizedId);
         if (!contact) {
-          // Fallback to platform ID lookup
+          // Fallback to platform ID lookup (also checks whatsappLid field)
           contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
         }
         if (!contact) {
-          contact = await storage.createContact({
-            platformId: normalizedId,
-            platform: "whatsapp",
-            name: msg.fromName,
-            phoneNumber: `+${normalizedId}`,
-          });
+          // Create new contact - if it's a LID, don't store as phone number
+          if (isLid) {
+            contact = await storage.createContact({
+              platformId: normalizedId,
+              platform: "whatsapp",
+              name: msg.fromName,
+              whatsappLid: normalizedId, // Store LID separately
+              // Don't set phone number for LID-only contacts
+            });
+          } else {
+            contact = await storage.createContact({
+              platformId: normalizedId,
+              platform: "whatsapp",
+              name: msg.fromName,
+              phoneNumber: `+${normalizedId}`,
+            });
+          }
+        } else if (isLid && !contact.whatsappLid) {
+          // Update existing contact with LID if not already set
+          await storage.updateContact(contact.id, { whatsappLid: normalizedId });
         }
 
         let conversation = await storage.getConversationByContactId(contact.id);
@@ -1115,21 +1139,35 @@ export async function registerRoutes(
       console.log(`Syncing ${chats.length} WhatsApp chats...`);
       for (const chat of chats) {
         try {
-          const phoneNumber = chat.jid.replace("@s.whatsapp.net", "");
+          const phoneNumber = chat.jid.replace("@s.whatsapp.net", "").replace("@lid", "");
+          const isLid = isWhatsAppLid(phoneNumber);
           
-          // First try to find existing contact by phone number (to merge conversations)
+          // First try to find existing contact by phone number or LID
           let contact = await storage.getContactByPhoneNumber(phoneNumber);
           if (!contact) {
-            // Fallback to platform ID lookup
+            // Fallback to platform ID lookup (also checks whatsappLid field)
             contact = await storage.getContactByPlatformId(phoneNumber, "whatsapp");
           }
           if (!contact) {
-            contact = await storage.createContact({
-              platformId: phoneNumber,
-              platform: "whatsapp",
-              name: chat.name,
-              phoneNumber: `+${phoneNumber}`,
-            });
+            // Create new contact - if it's a LID, don't store as phone number
+            if (isLid) {
+              contact = await storage.createContact({
+                platformId: phoneNumber,
+                platform: "whatsapp",
+                name: chat.name,
+                whatsappLid: phoneNumber,
+              });
+            } else {
+              contact = await storage.createContact({
+                platformId: phoneNumber,
+                platform: "whatsapp",
+                name: chat.name,
+                phoneNumber: `+${phoneNumber}`,
+              });
+            }
+          } else if (isLid && !contact.whatsappLid) {
+            // Update existing contact with LID if not already set
+            await storage.updateContact(contact.id, { whatsappLid: phoneNumber });
           }
 
           let conversation = await storage.getConversationByContactId(contact.id);
@@ -1158,20 +1196,34 @@ export async function registerRoutes(
           if (msg.from === "status" || msg.from.includes("broadcast")) continue;
 
           const normalizedHistoryId = normalizeWhatsAppJid(msg.from);
+          const isLid = isWhatsAppLid(normalizedHistoryId);
           
-          // First try to find existing contact by phone number (to merge conversations)
+          // First try to find existing contact by phone number or LID
           let contact = await storage.getContactByPhoneNumber(normalizedHistoryId);
           if (!contact) {
-            // Fallback to platform ID lookup
+            // Fallback to platform ID lookup (also checks whatsappLid field)
             contact = await storage.getContactByPlatformId(normalizedHistoryId, "whatsapp");
           }
           if (!contact) {
-            contact = await storage.createContact({
-              platformId: normalizedHistoryId,
-              platform: "whatsapp",
-              name: msg.fromName,
-              phoneNumber: `+${normalizedHistoryId}`,
-            });
+            // Create new contact - if it's a LID, don't store as phone number
+            if (isLid) {
+              contact = await storage.createContact({
+                platformId: normalizedHistoryId,
+                platform: "whatsapp",
+                name: msg.fromName,
+                whatsappLid: normalizedHistoryId,
+              });
+            } else {
+              contact = await storage.createContact({
+                platformId: normalizedHistoryId,
+                platform: "whatsapp",
+                name: msg.fromName,
+                phoneNumber: `+${normalizedHistoryId}`,
+              });
+            }
+          } else if (isLid && !contact.whatsappLid) {
+            // Update existing contact with LID if not already set
+            await storage.updateContact(contact.id, { whatsappLid: normalizedHistoryId });
           }
 
           let conversation = await storage.getConversationByContactId(contact.id);

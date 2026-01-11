@@ -10,6 +10,8 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **WhatsApp LID Handling**: Added `whatsappLid` field to contacts schema to store WhatsApp Linked IDs (15+ digit internal identifiers) separately from phone numbers. LIDs are WhatsApp-internal identifiers that don't correspond to real phone numbers - only WhatsApp knows the mapping. Migrated 254 existing LID-only contacts from phone_number to whatsapp_lid field.
+- **Contact Lookup Enhancement**: Updated storage layer to search contacts by both phone_number and whatsapp_lid fields when processing incoming messages. Prevents duplicate contacts/conversations for LID-only contacts.
 - **Authentication System**: Added user authentication with session management using express-session and PostgreSQL session store
 - **User Roles**: Implemented superadmin, admin, and user roles with role-based access control
 - **Department Management**: Added departments for organizing conversations and users
