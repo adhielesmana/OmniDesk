@@ -4,6 +4,8 @@ import { WebSocketServer, WebSocket } from "ws";
 import path from "path";
 import fs from "fs";
 import { z } from "zod";
+import multer from "multer";
+import Papa from "papaparse";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
@@ -11,6 +13,8 @@ import { updateContactSchema, type Platform, type User, insertUserSchema, insert
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
 import { clearCampaignTiming } from "./blast-worker";
 import type { Contact } from "@shared/schema";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 function normalizeWhatsAppJid(jid: string): string {
   return jid
@@ -868,6 +872,174 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching tags:", error);
       res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  app.post("/api/contacts/import", requireAuth, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const { nameColumn, phoneColumn, emailColumn, notesColumn, defaultPlatform, defaultTag } = req.body;
+      
+      if (!phoneColumn) {
+        return res.status(400).json({ error: "Phone column is required" });
+      }
+      
+      const csvContent = req.file.buffer.toString("utf-8");
+      
+      const parseResult = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h: string) => h.trim(),
+      });
+
+      if (parseResult.errors.length > 0 && parseResult.data.length === 0) {
+        return res.status(400).json({ 
+          error: "Failed to parse CSV", 
+          details: parseResult.errors.slice(0, 5) 
+        });
+      }
+
+      const rows = parseResult.data as Record<string, string>[];
+      const headers = parseResult.meta.fields || [];
+      
+      if (rows.length === 0) {
+        return res.status(400).json({ error: "CSV file is empty" });
+      }
+
+      const results = {
+        created: 0,
+        updated: 0,
+        skipped: 0,
+        errors: [] as { row: number; reason: string }[],
+      };
+
+      const platform = (defaultPlatform || "whatsapp") as Platform;
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+          const name = nameColumn ? row[nameColumn]?.trim() : null;
+          const rawPhone = phoneColumn ? row[phoneColumn]?.trim() : null;
+          const email = emailColumn ? row[emailColumn]?.trim() : null;
+          const notes = notesColumn ? row[notesColumn]?.trim() : null;
+
+          if (!rawPhone) {
+            results.skipped++;
+            results.errors.push({ row: i + 2, reason: "Missing phone number" });
+            continue;
+          }
+
+          const phoneDigits = rawPhone.replace(/[^0-9]/g, "");
+          if (phoneDigits.length < 8) {
+            results.skipped++;
+            results.errors.push({ row: i + 2, reason: "Invalid phone number (too short)" });
+            continue;
+          }
+          if (phoneDigits.length > 15) {
+            results.skipped++;
+            results.errors.push({ row: i + 2, reason: "Invalid phone number (too long)" });
+            continue;
+          }
+
+          const normalizedPhone = `+${phoneDigits}`;
+
+          let existingContact = await storage.getContactByPhoneNumber(phoneDigits);
+          
+          if (existingContact) {
+            const updates: Partial<Contact> = {};
+            if (name && !existingContact.name) updates.name = name;
+            if (email && !existingContact.email) updates.email = email;
+            if (notes && !existingContact.notes) updates.notes = notes;
+            
+            if (defaultTag && existingContact.tags) {
+              const existingTags = existingContact.tags as string[];
+              if (!existingTags.includes(defaultTag)) {
+                updates.tags = [...existingTags, defaultTag];
+              }
+            } else if (defaultTag) {
+              updates.tags = [defaultTag];
+            }
+            
+            if (Object.keys(updates).length > 0) {
+              await storage.updateContact(existingContact.id, updates);
+              results.updated++;
+            } else {
+              results.skipped++;
+            }
+          } else {
+            await storage.createContact({
+              platformId: phoneDigits,
+              platform,
+              name: name || normalizedPhone,
+              phoneNumber: normalizedPhone,
+              email: email || null,
+              notes: notes || null,
+              tags: defaultTag ? [defaultTag] : null,
+            });
+            results.created++;
+          }
+        } catch (rowError) {
+          results.skipped++;
+          results.errors.push({ row: i + 2, reason: "Processing error" });
+        }
+      }
+
+      res.json({
+        success: true,
+        headers,
+        totalRows: rows.length,
+        ...results,
+      });
+    } catch (error) {
+      console.error("Error importing contacts:", error);
+      res.status(500).json({ error: "Failed to import contacts" });
+    }
+  });
+
+  app.post("/api/contacts/import/preview", requireAuth, upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const csvContent = req.file.buffer.toString("utf-8");
+      
+      const parseResult = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        preview: 5,
+        transformHeader: (h: string) => h.trim(),
+      });
+
+      if (parseResult.errors.length > 0 && parseResult.data.length === 0) {
+        return res.status(400).json({ 
+          error: "Failed to parse CSV", 
+          details: parseResult.errors.slice(0, 5) 
+        });
+      }
+
+      const headers = parseResult.meta.fields || [];
+      const previewRows = parseResult.data as Record<string, string>[];
+
+      const suggestedMapping = {
+        nameColumn: headers.find(h => /^(name|nama|contact|full\s*name)$/i.test(h)) || null,
+        phoneColumn: headers.find(h => /^(phone|hp|mobile|telepon|nomor|number|wa|whatsapp|tel)$/i.test(h)) || null,
+        emailColumn: headers.find(h => /^(email|e-mail|mail)$/i.test(h)) || null,
+        notesColumn: headers.find(h => /^(notes?|catatan|keterangan|description|desc)$/i.test(h)) || null,
+      };
+
+      res.json({
+        headers,
+        previewRows,
+        suggestedMapping,
+        totalRows: parseResult.data.length,
+      });
+    } catch (error) {
+      console.error("Error previewing CSV:", error);
+      res.status(500).json({ error: "Failed to preview CSV" });
     }
   });
 

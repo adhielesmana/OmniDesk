@@ -1,13 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { ContactsSidebar } from "@/components/contacts/contacts-sidebar";
 import { ContactList } from "@/components/contacts/contact-list";
 import { ContactDetail } from "@/components/contacts/contact-detail";
+import { ImportContactsModal } from "@/components/contacts/import-contacts-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Platform, Contact } from "@shared/schema";
 
@@ -23,6 +24,7 @@ export default function ContactsPage() {
   const [showBlocked, setShowBlocked] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [isMobileListOpen, setIsMobileListOpen] = useState(true);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const { data: contactsData, isLoading: isLoadingContacts } = useQuery<{
     contacts: Contact[];
@@ -203,8 +205,22 @@ export default function ContactsPage() {
               <h2 className="font-semibold text-lg">Contacts</h2>
               <p className="text-sm text-muted-foreground">{totalContacts} contacts</p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowImportModal(true)}
+              data-testid="button-import-contacts"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              Import
+            </Button>
             <ThemeToggle />
           </header>
+
+          <ImportContactsModal
+            open={showImportModal}
+            onOpenChange={setShowImportModal}
+          />
 
           <main className="flex flex-1 overflow-hidden">
             <div
