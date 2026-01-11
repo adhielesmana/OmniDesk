@@ -19,6 +19,19 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 export async function seedSuperadmin(): Promise<void> {
   try {
+    // Remove old "admin" user if it exists and is different from configured username
+    if (SUPERADMIN_USERNAME !== "admin") {
+      const oldAdmin = await db
+        .select()
+        .from(users)
+        .where(eq(users.username, "admin"));
+      
+      if (oldAdmin.length > 0) {
+        await db.delete(users).where(eq(users.username, "admin"));
+        console.log("Removed old 'admin' user");
+      }
+    }
+
     const existing = await db
       .select()
       .from(users)
