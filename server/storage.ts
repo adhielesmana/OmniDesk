@@ -326,7 +326,9 @@ export class DatabaseStorage implements IStorage {
         and(
           inArray(contacts.platformId, platformVariants),
           eq(contacts.platform, "whatsapp")
-        )
+        ),
+        // Also check whatsapp_lid field for matching LID
+        eq(contacts.whatsappLid, canonical)
       ))
       .orderBy(desc(contacts.updatedAt))
       .limit(1);

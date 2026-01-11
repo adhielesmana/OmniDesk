@@ -1091,9 +1091,17 @@ export async function registerRoutes(
               phoneNumber: `+${normalizedId}`,
             });
           }
-        } else if (isLid && !contact.whatsappLid) {
-          // Update existing contact with LID if not already set
-          await storage.updateContact(contact.id, { whatsappLid: normalizedId });
+        } else {
+          // Update existing contact with missing identifiers
+          const updates: Record<string, string> = {};
+          if (isLid && !contact.whatsappLid) {
+            updates.whatsappLid = normalizedId;
+          } else if (!isLid && !contact.phoneNumber) {
+            updates.phoneNumber = `+${normalizedId}`;
+          }
+          if (Object.keys(updates).length > 0) {
+            await storage.updateContact(contact.id, updates);
+          }
         }
 
         let conversation = await storage.getConversationByContactId(contact.id);
@@ -1174,9 +1182,17 @@ export async function registerRoutes(
                 phoneNumber: `+${phoneNumber}`,
               });
             }
-          } else if (isLid && !contact.whatsappLid) {
-            // Update existing contact with LID if not already set
-            await storage.updateContact(contact.id, { whatsappLid: phoneNumber });
+          } else {
+            // Update existing contact with missing identifiers
+            const updates: Record<string, string> = {};
+            if (isLid && !contact.whatsappLid) {
+              updates.whatsappLid = phoneNumber;
+            } else if (!isLid && !contact.phoneNumber) {
+              updates.phoneNumber = `+${phoneNumber}`;
+            }
+            if (Object.keys(updates).length > 0) {
+              await storage.updateContact(contact.id, updates);
+            }
           }
 
           let conversation = await storage.getConversationByContactId(contact.id);
@@ -1230,9 +1246,17 @@ export async function registerRoutes(
                 phoneNumber: `+${normalizedHistoryId}`,
               });
             }
-          } else if (isLid && !contact.whatsappLid) {
-            // Update existing contact with LID if not already set
-            await storage.updateContact(contact.id, { whatsappLid: normalizedHistoryId });
+          } else {
+            // Update existing contact with missing identifiers
+            const updates: Record<string, string> = {};
+            if (isLid && !contact.whatsappLid) {
+              updates.whatsappLid = normalizedHistoryId;
+            } else if (!isLid && !contact.phoneNumber) {
+              updates.phoneNumber = `+${normalizedHistoryId}`;
+            }
+            if (Object.keys(updates).length > 0) {
+              await storage.updateContact(contact.id, updates);
+            }
           }
 
           let conversation = await storage.getConversationByContactId(contact.id);
