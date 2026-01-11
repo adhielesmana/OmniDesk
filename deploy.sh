@@ -53,17 +53,17 @@ if ! check_command nginx; then
     read -p "Would you like to install Nginx? (y/N): " install_nginx
     if [[ "$install_nginx" =~ ^[Yy]$ ]]; then
         if check_command apt-get; then
-            sudo apt-get update && sudo apt-get install -y nginx
+            apt-get update && apt-get install -y nginx
         elif check_command yum; then
-            sudo yum install -y nginx
+            yum install -y nginx
         elif check_command dnf; then
-            sudo dnf install -y nginx
+            dnf install -y nginx
         else
             echo -e "${RED}Could not detect package manager. Please install Nginx manually.${NC}"
             exit 1
         fi
-        sudo systemctl enable nginx
-        sudo systemctl start nginx
+        systemctl enable nginx
+        systemctl start nginx
         echo -e "${GREEN}Nginx installed successfully.${NC}"
     else
         echo -e "${RED}Nginx is required. Exiting.${NC}"
@@ -76,11 +76,11 @@ if ! check_command certbot; then
     read -p "Would you like to install Certbot for SSL? (y/N): " install_certbot
     if [[ "$install_certbot" =~ ^[Yy]$ ]]; then
         if check_command apt-get; then
-            sudo apt-get update && sudo apt-get install -y certbot python3-certbot-nginx
+            apt-get update && apt-get install -y certbot python3-certbot-nginx
         elif check_command yum; then
-            sudo yum install -y certbot python3-certbot-nginx
+            yum install -y certbot python3-certbot-nginx
         elif check_command dnf; then
-            sudo dnf install -y certbot python3-certbot-nginx
+            dnf install -y certbot python3-certbot-nginx
         else
             echo -e "${RED}Could not detect package manager. Please install Certbot manually.${NC}"
             exit 1
@@ -150,7 +150,7 @@ echo -e "${GREEN}Configuring Nginx...${NC}"
 NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
 NGINX_ENABLED="/etc/nginx/sites-enabled/$DOMAIN"
 
-sudo tee "$NGINX_CONF" > /dev/null << EOF
+tee "$NGINX_CONF" > /dev/null << EOF
 server {
     listen 80;
     listen [::]:80;
@@ -175,13 +175,13 @@ server {
 EOF
 
 if [ ! -L "$NGINX_ENABLED" ]; then
-    sudo ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
+    ln -sf "$NGINX_CONF" "$NGINX_ENABLED"
 fi
 
-sudo rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-if sudo nginx -t; then
-    sudo systemctl reload nginx
+if nginx -t; then
+    systemctl reload nginx
     echo -e "${GREEN}Nginx configured successfully.${NC}"
 else
     echo -e "${RED}Nginx configuration test failed.${NC}"
@@ -199,12 +199,12 @@ if check_command certbot; then
             read -p "Email is required: " SSL_EMAIL
         done
 
-        sudo certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
+        certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
         
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}SSL certificate installed successfully!${NC}"
         else
-            echo -e "${YELLOW}SSL setup failed. Try later with: sudo certbot --nginx -d $DOMAIN${NC}"
+            echo -e "${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
         fi
     fi
 fi
