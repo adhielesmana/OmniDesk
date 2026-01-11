@@ -19,6 +19,23 @@ check_command() {
     return 0
 }
 
+find_available_port() {
+    local port=$1
+    local max_port=$((port + 100))
+    
+    while [ $port -lt $max_port ]; do
+        if ! ss -tuln 2>/dev/null | grep -q ":$port " && \
+           ! netstat -tuln 2>/dev/null | grep -q ":$port "; then
+            echo $port
+            return 0
+        fi
+        port=$((port + 1))
+    done
+    
+    echo ""
+    return 1
+}
+
 if ! check_command docker; then
     echo -e "${RED}Error: Docker is not installed.${NC}"
     echo "Please install Docker first: https://docs.docker.com/engine/install/"
@@ -88,23 +105,44 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
-APP_PORT=${APP_PORT:-5000}
+DEFAULT_PORT=${APP_PORT:-5000}
+
+echo ""
+echo -e "${GREEN}Checking port availability...${NC}"
+
+AVAILABLE_PORT=$(find_available_port $DEFAULT_PORT)
+
+if [ -z "$AVAILABLE_PORT" ]; then
+    echo -e "${RED}Error: Could not find available port between $DEFAULT_PORT and $((DEFAULT_PORT + 100))${NC}"
+    exit 1
+fi
+
+if [ "$AVAILABLE_PORT" != "$DEFAULT_PORT" ]; then
+    echo -e "${YELLOW}Port $DEFAULT_PORT is in use. Using port $AVAILABLE_PORT instead.${NC}"
+    
+    sed -i "s/APP_PORT=.*/APP_PORT=$AVAILABLE_PORT/" .env
+    export APP_PORT=$AVAILABLE_PORT
+else
+    echo -e "${GREEN}Port $AVAILABLE_PORT is available.${NC}"
+fi
+
+APP_PORT=$AVAILABLE_PORT
 
 echo ""
 echo -e "${GREEN}Building and starting Docker containers...${NC}"
 
 if docker compose version &> /dev/null; then
     docker compose down 2>/dev/null || true
-    docker compose up -d --build
+    APP_PORT=$APP_PORT docker compose up -d --build
 else
     docker-compose down 2>/dev/null || true
-    docker-compose up -d --build
+    APP_PORT=$APP_PORT docker-compose up -d --build
 fi
 
 echo -e "${GREEN}Waiting for database to be ready...${NC}"
 sleep 10
 
-echo -e "${GREEN}Docker containers started.${NC}"
+echo -e "${GREEN}Docker containers started on port $APP_PORT.${NC}"
 
 echo ""
 echo -e "${GREEN}Configuring Nginx...${NC}"
@@ -176,6 +214,7 @@ echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}   Deployment Complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
+echo -e "App running on port: ${GREEN}$APP_PORT${NC}"
 if check_command certbot && [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
     echo -e "Your app is available at: ${GREEN}https://$DOMAIN${NC}"
 else
