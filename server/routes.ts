@@ -388,6 +388,20 @@ export async function registerRoutes(
     }
   });
 
+  // Merge duplicate conversations by phone number
+  app.post("/api/admin/merge-duplicates", requireAdmin, async (req, res) => {
+    try {
+      console.log("Starting duplicate conversation merge...");
+      const result = await storage.mergeDuplicateConversations();
+      console.log(`Merge complete: ${result.mergedContacts} contacts, ${result.mergedConversations} conversations merged`);
+      broadcast({ type: "conversations_merged" });
+      res.json(result);
+    } catch (error) {
+      console.error("Error merging duplicates:", error);
+      res.status(500).json({ error: "Failed to merge duplicates" });
+    }
+  });
+
   // Get departments for current user
   app.get("/api/departments", requireAuth, async (req, res) => {
     try {
@@ -1240,6 +1254,15 @@ export async function registerRoutes(
         broadcast({ type: "contacts_synced", created: createdCount, updated: updatedCount });
       }
     },
+  });
+
+  // Merge duplicate conversations on startup
+  storage.mergeDuplicateConversations().then((result) => {
+    if (result.mergedContacts > 0 || result.mergedConversations > 0) {
+      console.log(`Startup cleanup: Merged ${result.mergedContacts} duplicate contacts, ${result.mergedConversations} duplicate conversations`);
+    }
+  }).catch((error) => {
+    console.error("Startup merge failed:", error);
   });
 
   // Auto-reconnect WhatsApp if credentials exist on server startup

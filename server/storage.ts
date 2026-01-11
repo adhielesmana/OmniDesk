@@ -161,6 +161,10 @@ export interface IStorage {
   updateBlastRecipient(id: string, data: Partial<BlastRecipient>): Promise<BlastRecipient | undefined>;
   getNextPendingRecipient(campaignId: string): Promise<BlastRecipient | undefined>;
   getDueRecipients(limit?: number): Promise<(BlastRecipient & { contact: Contact; campaign: BlastCampaign })[]>;
+
+  // Cleanup/Maintenance
+  mergeDuplicateConversations(): Promise<{ mergedContacts: number; mergedConversations: number }>;
+  deleteConversation(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -848,6 +852,100 @@ export class DatabaseStorage implements IStorage {
       contact: row.contacts,
       campaign: row.blast_campaigns,
     }));
+  }
+
+  async deleteConversation(id: string): Promise<void> {
+    // Delete all messages in the conversation first
+    await db.delete(messages).where(eq(messages.conversationId, id));
+    // Then delete the conversation
+    await db.delete(conversations).where(eq(conversations.id, id));
+  }
+
+  async mergeDuplicateConversations(): Promise<{ mergedContacts: number; mergedConversations: number }> {
+    let mergedContacts = 0;
+    let mergedConversations = 0;
+
+    // Get all contacts with phone numbers
+    const allContacts = await db.select().from(contacts).where(sql`${contacts.phoneNumber} IS NOT NULL`);
+    
+    // Group contacts by canonical phone number
+    const phoneGroups = new Map<string, typeof allContacts>();
+    
+    for (const contact of allContacts) {
+      if (!contact.phoneNumber) continue;
+      
+      // Normalize phone number to canonical form (just digits)
+      const canonical = getCanonicalPhoneNumber(contact.phoneNumber);
+      if (!canonical) continue;
+      
+      const existing = phoneGroups.get(canonical) || [];
+      existing.push(contact);
+      phoneGroups.set(canonical, existing);
+    }
+
+    // Process each group with duplicates
+    const phoneGroupEntries = Array.from(phoneGroups.entries());
+    for (const [, contactGroup] of phoneGroupEntries) {
+      if (contactGroup.length <= 1) continue;
+
+      // Sort by updatedAt desc, pick the most recently updated as primary
+      contactGroup.sort((a: Contact, b: Contact) => 
+        (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0)
+      );
+
+      const primaryContact = contactGroup[0];
+      const duplicateContacts = contactGroup.slice(1);
+
+      // Get primary conversation
+      let primaryConversation = await this.getConversationByContactId(primaryContact.id);
+
+      for (const dupContact of duplicateContacts) {
+        // Get all conversations for this duplicate contact
+        const dupConversations = await db
+          .select()
+          .from(conversations)
+          .where(eq(conversations.contactId, dupContact.id));
+
+        for (const dupConv of dupConversations) {
+          if (!primaryConversation) {
+            // No primary conversation yet, reassign this one to the primary contact
+            await db
+              .update(conversations)
+              .set({ contactId: primaryContact.id, updatedAt: new Date() })
+              .where(eq(conversations.id, dupConv.id));
+            primaryConversation = { ...dupConv, contactId: primaryContact.id };
+          } else {
+            // Move all messages from duplicate conversation to primary
+            await db
+              .update(messages)
+              .set({ conversationId: primaryConversation.id })
+              .where(eq(messages.conversationId, dupConv.id));
+            
+            // Update primary conversation with latest message info if needed
+            if (dupConv.lastMessageAt && (!primaryConversation.lastMessageAt || dupConv.lastMessageAt > primaryConversation.lastMessageAt)) {
+              await db
+                .update(conversations)
+                .set({ 
+                  lastMessageAt: dupConv.lastMessageAt, 
+                  lastMessagePreview: dupConv.lastMessagePreview,
+                  updatedAt: new Date() 
+                })
+                .where(eq(conversations.id, primaryConversation.id));
+            }
+            
+            // Delete the duplicate conversation
+            await db.delete(conversations).where(eq(conversations.id, dupConv.id));
+            mergedConversations++;
+          }
+        }
+
+        // Delete duplicate contact
+        await db.delete(contacts).where(eq(contacts.id, dupContact.id));
+        mergedContacts++;
+      }
+    }
+
+    return { mergedContacts, mergedConversations };
   }
 }
 
