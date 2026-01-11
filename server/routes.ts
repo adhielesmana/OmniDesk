@@ -1426,7 +1426,7 @@ export async function registerRoutes(
 
       // Check WhatsApp connection
       const waStatus = whatsappService.getConnectionState();
-      if (waStatus !== "open") {
+      if (waStatus !== "connected") {
         return res.status(400).json({ error: "WhatsApp is not connected" });
       }
 

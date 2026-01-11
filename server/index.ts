@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedSuperadmin, seedDefaultDepartment } from "./auth";
+import { startBlastWorker } from "./blast-worker";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 
@@ -95,6 +96,8 @@ app.use((req, res, next) => {
   await seedSuperadmin();
   await seedDefaultDepartment();
   await registerRoutes(httpServer, app);
+  
+  startBlastWorker();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
