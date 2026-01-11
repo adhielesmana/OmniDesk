@@ -6,6 +6,8 @@ import fs from "fs";
 import { z } from "zod";
 import multer from "multer";
 import Papa from "papaparse";
+import { exec, spawn } from "child_process";
+import { promisify } from "util";
 import { storage } from "./storage";
 import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
@@ -13,6 +15,8 @@ import { updateContactSchema, type Platform, type User, insertUserSchema, insert
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
 import { clearCampaignTiming } from "./blast-worker";
 import type { Contact } from "@shared/schema";
+
+const execAsync = promisify(exec);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -149,6 +153,39 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
+
+function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId || !req.session.user) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (req.session.user.role !== "superadmin") {
+    return res.status(403).json({ error: "Forbidden - Superadmin access required" });
+  }
+  next();
+}
+
+// Update service state
+interface UpdateStatus {
+  isChecking: boolean;
+  isUpdating: boolean;
+  hasUpdate: boolean;
+  localCommit: string | null;
+  remoteCommit: string | null;
+  lastChecked: Date | null;
+  updateLog: string[];
+  error: string | null;
+}
+
+const updateStatus: UpdateStatus = {
+  isChecking: false,
+  isUpdating: false,
+  hasUpdate: false,
+  localCommit: null,
+  remoteCommit: null,
+  lastChecked: null,
+  updateLog: [],
+  error: null,
+};
 
 export async function registerRoutes(
   httpServer: Server,
@@ -443,6 +480,109 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error merging contacts:", error);
       res.status(500).json({ error: "Failed to merge contacts" });
+    }
+  });
+
+  // ============= SYSTEM UPDATE ROUTES =============
+  app.get("/api/admin/update/status", requireSuperadmin, async (req, res) => {
+    res.json(updateStatus);
+  });
+
+  app.post("/api/admin/update/check", requireSuperadmin, async (req, res) => {
+    if (updateStatus.isChecking || updateStatus.isUpdating) {
+      return res.status(409).json({ error: "Update operation already in progress" });
+    }
+
+    try {
+      updateStatus.isChecking = true;
+      updateStatus.error = null;
+      updateStatus.updateLog = ["Fetching updates from remote..."];
+
+      await execAsync("git fetch origin", { cwd: process.cwd() });
+      updateStatus.updateLog.push("Remote fetched successfully");
+
+      const { stdout: localCommit } = await execAsync("git rev-parse HEAD", { cwd: process.cwd() });
+      const { stdout: remoteCommit } = await execAsync("git rev-parse origin/main", { cwd: process.cwd() });
+
+      updateStatus.localCommit = localCommit.trim();
+      updateStatus.remoteCommit = remoteCommit.trim();
+      updateStatus.hasUpdate = updateStatus.localCommit !== updateStatus.remoteCommit;
+      updateStatus.lastChecked = new Date();
+      updateStatus.isChecking = false;
+
+      if (updateStatus.hasUpdate) {
+        const { stdout: commitLog } = await execAsync(
+          `git log --oneline ${updateStatus.localCommit}..${updateStatus.remoteCommit}`,
+          { cwd: process.cwd() }
+        );
+        updateStatus.updateLog.push(`Found ${commitLog.split('\n').filter(Boolean).length} new commits`);
+      } else {
+        updateStatus.updateLog.push("Already up to date");
+      }
+
+      res.json(updateStatus);
+    } catch (error) {
+      updateStatus.isChecking = false;
+      updateStatus.error = error instanceof Error ? error.message : "Failed to check for updates";
+      updateStatus.updateLog.push(`Error: ${updateStatus.error}`);
+      res.status(500).json({ error: updateStatus.error });
+    }
+  });
+
+  app.post("/api/admin/update/run", requireSuperadmin, async (req, res) => {
+    if (updateStatus.isChecking || updateStatus.isUpdating) {
+      return res.status(409).json({ error: "Update operation already in progress" });
+    }
+
+    if (!updateStatus.hasUpdate) {
+      return res.status(400).json({ error: "No updates available" });
+    }
+
+    updateStatus.isUpdating = true;
+    updateStatus.error = null;
+    updateStatus.updateLog = ["Starting update process..."];
+
+    res.json({ message: "Update started", status: updateStatus });
+
+    try {
+      updateStatus.updateLog.push("Pulling latest changes...");
+      const { stdout: pullOutput } = await execAsync("git pull origin main", { cwd: process.cwd() });
+      updateStatus.updateLog.push(pullOutput.trim());
+
+      updateStatus.updateLog.push("Running deploy script...");
+      
+      const deployProcess = spawn("bash", ["./deploy.sh"], {
+        cwd: process.cwd(),
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      });
+
+      deployProcess.stdout?.on("data", (data) => {
+        const lines = data.toString().split("\n").filter(Boolean);
+        updateStatus.updateLog.push(...lines);
+      });
+
+      deployProcess.stderr?.on("data", (data) => {
+        const lines = data.toString().split("\n").filter(Boolean);
+        updateStatus.updateLog.push(...lines);
+      });
+
+      deployProcess.on("close", (code) => {
+        updateStatus.isUpdating = false;
+        if (code === 0) {
+          updateStatus.hasUpdate = false;
+          updateStatus.updateLog.push("Deploy completed successfully!");
+        } else {
+          updateStatus.error = `Deploy failed with exit code ${code}`;
+          updateStatus.updateLog.push(updateStatus.error);
+        }
+      });
+
+      deployProcess.unref();
+    } catch (error) {
+      updateStatus.isUpdating = false;
+      updateStatus.error = error instanceof Error ? error.message : "Update failed";
+      updateStatus.updateLog.push(`Error: ${updateStatus.error}`);
     }
   });
 

@@ -13,7 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Department, UserRole } from "@shared/schema";
 
 interface UserWithDepartments {
@@ -63,6 +64,10 @@ export default function AdminPage() {
               <Building2 className="h-4 w-4 mr-2" />
               Departments
             </TabsTrigger>
+            <TabsTrigger value="updates" data-testid="tab-updates">
+              <Download className="h-4 w-4 mr-2" />
+              Updates
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -82,6 +87,10 @@ export default function AdminPage() {
               queryClient={queryClient}
               toast={toast}
             />
+          </TabsContent>
+
+          <TabsContent value="updates" className="space-y-4">
+            <UpdatesTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -641,6 +650,160 @@ function DepartmentsTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface UpdateStatus {
+  isChecking: boolean;
+  isUpdating: boolean;
+  hasUpdate: boolean;
+  localCommit: string | null;
+  remoteCommit: string | null;
+  lastChecked: string | null;
+  updateLog: string[];
+  error: string | null;
+}
+
+function UpdatesTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const { data: status, isLoading, refetch } = useQuery<UpdateStatus>({
+    queryKey: ["/api/admin/update/status"],
+    refetchInterval: (query) => {
+      const data = query.state.data as UpdateStatus | undefined;
+      return data?.isUpdating || data?.isChecking ? 2000 : false;
+    },
+  });
+
+  const checkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/update/check");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetch();
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to check for updates", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/update/run");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Update started! The application will restart automatically." });
+      refetch();
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to start update", variant: "destructive" });
+    },
+  });
+
+  const isProcessing = status?.isChecking || status?.isUpdating || checkMutation.isPending || updateMutation.isPending;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            System Updates
+          </CardTitle>
+          <CardDescription>
+            Check for and install updates from GitHub
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={() => checkMutation.mutate()}
+              disabled={isProcessing}
+              data-testid="button-check-updates"
+            >
+              {status?.isChecking || checkMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Check for Updates
+            </Button>
+
+            {status?.hasUpdate && (
+              <Button
+                onClick={() => {
+                  if (confirm("This will pull the latest code and restart the application. Continue?")) {
+                    updateMutation.mutate();
+                  }
+                }}
+                disabled={isProcessing}
+                variant="default"
+                data-testid="button-run-update"
+              >
+                {status?.isUpdating || updateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Install Update
+              </Button>
+            )}
+          </div>
+
+          {status?.lastChecked && (
+            <p className="text-sm text-muted-foreground">
+              Last checked: {new Date(status.lastChecked).toLocaleString()}
+            </p>
+          )}
+
+          <div className="flex items-center gap-2">
+            {status?.hasUpdate ? (
+              <Badge className="bg-primary/10 text-primary">
+                <AlertCircle className="h-3 w-3 mr-1" />
+                Update Available
+              </Badge>
+            ) : status?.lastChecked ? (
+              <Badge variant="outline" className="text-green-600 border-green-600">
+                <CheckCircle2 className="h-3 w-3 mr-1" />
+                Up to Date
+              </Badge>
+            ) : null}
+          </div>
+
+          {status?.localCommit && (
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Current: {status.localCommit.substring(0, 7)}</p>
+              {status.remoteCommit && status.hasUpdate && (
+                <p>Latest: {status.remoteCommit.substring(0, 7)}</p>
+              )}
+            </div>
+          )}
+
+          {status?.error && (
+            <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+              {status.error}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {status?.updateLog && status.updateLog.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Update Log</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-48 w-full rounded border bg-muted/50 p-3">
+              <div className="space-y-1 font-mono text-xs">
+                {status.updateLog.map((line, i) => (
+                  <div key={i} className="whitespace-pre-wrap">{line}</div>
+                ))}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
