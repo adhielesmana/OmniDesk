@@ -6,8 +6,8 @@ import type { User, UserRole } from "@shared/schema";
 
 const SALT_ROUNDS = 12;
 
-const SUPERADMIN_USERNAME = "adhielesmana";
-const SUPERADMIN_PASSWORD = "admin123";
+const SUPERADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
+const SUPERADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, SALT_ROUNDS);

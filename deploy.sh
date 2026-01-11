@@ -133,14 +133,25 @@ echo -e "${GREEN}Building and starting Docker containers...${NC}"
 
 if docker compose version &> /dev/null; then
     docker compose down 2>/dev/null || true
-    APP_PORT=$APP_PORT docker compose up -d --build
+    docker compose up -d --build
 else
     docker-compose down 2>/dev/null || true
-    APP_PORT=$APP_PORT docker-compose up -d --build
+    docker-compose up -d --build
 fi
 
 echo -e "${GREEN}Waiting for database to be ready...${NC}"
-sleep 10
+sleep 15
+
+echo ""
+echo -e "${GREEN}Running database migrations...${NC}"
+
+if docker compose version &> /dev/null; then
+    docker compose exec -T inbox-app npm run db:push
+else
+    docker-compose exec -T inbox-app npm run db:push
+fi
+
+echo -e "${GREEN}Database migrations completed.${NC}"
 
 echo -e "${GREEN}Docker containers started on port $APP_PORT.${NC}"
 
@@ -221,15 +232,16 @@ else
     echo -e "Your app is available at: ${GREEN}http://$DOMAIN${NC}"
 fi
 echo ""
-echo -e "${YELLOW}Default superadmin login:${NC}"
-echo "  Username: adhielesmana"
-echo "  Password: admin123"
+echo -e "${YELLOW}Admin login credentials:${NC}"
+echo "  Username: ${ADMIN_USERNAME:-admin}"
+echo "  Password: ${ADMIN_PASSWORD:-admin123}"
 echo ""
-echo -e "${RED}IMPORTANT: Change the superadmin password after first login!${NC}"
+echo -e "${RED}IMPORTANT: Change the admin password after first login!${NC}"
 echo ""
 echo "Useful commands:"
 echo "  View logs:     docker compose logs -f"
 echo "  Restart:       docker compose restart"
 echo "  Stop:          docker compose down"
 echo "  Rebuild:       docker compose up -d --build"
+echo "  Run migrations: docker compose exec inbox-app npm run db:push"
 echo ""

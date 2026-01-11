@@ -28,7 +28,8 @@ DB_NAME="unified_inbox"
 DB_USER="inbox_user"
 DB_PASS=$(openssl rand -hex 16)
 SESSION_SECRET=$(openssl rand -hex 32)
-ADMIN_PASS=$(openssl rand -base64 12)
+ADMIN_USER="admin"
+ADMIN_PASS=$(openssl rand -base64 12 | tr -d '/+=')
 APP_PORT=5000
 
 echo ""
@@ -48,6 +49,10 @@ DATABASE_URL=postgresql://$DB_USER:$DB_PASS@postgres:5432/$DB_NAME
 # Session Security (auto-generated)
 SESSION_SECRET=$SESSION_SECRET
 
+# Admin Credentials (auto-generated)
+ADMIN_USERNAME=$ADMIN_USER
+ADMIN_PASSWORD=$ADMIN_PASS
+
 # OpenAI Integration (optional)
 OPENAI_API_KEY=$OPENAI_KEY
 EOF
@@ -60,9 +65,12 @@ echo "   Configuration Complete!"
 echo "============================================"
 echo ""
 echo "Generated credentials (saved to .env):"
-echo "  Database: $DB_NAME"
-echo "  DB User:  $DB_USER"
-echo "  DB Pass:  $DB_PASS"
+echo "  Database:       $DB_NAME"
+echo "  DB User:        $DB_USER"
+echo "  DB Pass:        $DB_PASS"
+echo ""
+echo "  Admin Username: $ADMIN_USER"
+echo "  Admin Password: $ADMIN_PASS"
 echo ""
 echo "IMPORTANT: Save these credentials somewhere safe!"
 echo ""
