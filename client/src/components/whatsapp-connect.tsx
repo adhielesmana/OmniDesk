@@ -192,6 +192,25 @@ export function WhatsAppConnect() {
               <p className="text-sm text-muted-foreground">
                 Connecting to WhatsApp...
               </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => disconnectMutation.mutate()}
+                  disabled={disconnectMutation.isPending}
+                  data-testid="button-whatsapp-stop"
+                >
+                  Stop
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => logoutMutation.mutate()}
+                  disabled={logoutMutation.isPending}
+                  data-testid="button-whatsapp-logout-connecting"
+                >
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Logout & Clear
+                </Button>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4">

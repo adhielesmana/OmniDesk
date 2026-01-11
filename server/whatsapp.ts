@@ -62,6 +62,8 @@ class WhatsAppService {
   private reconnectDelay = 3000; // Start with 3 seconds
   private maxReconnectDelay = 60000; // Max 60 seconds between retries
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private stopReconnect = false; // Flag to stop auto-reconnection
+  private reconnectTimeout: NodeJS.Timeout | null = null;
 
   constructor() {
     // Ensure media folder exists
@@ -197,6 +199,8 @@ class WhatsAppService {
       return;
     }
 
+    // Reset stop flag when manually connecting
+    this.stopReconnect = false;
     this.connectionState = "connecting";
     this.eventHandlers?.onConnectionUpdate("connecting");
 
@@ -242,13 +246,16 @@ class WhatsAppService {
             console.log("WhatsApp logged out, clearing auth data");
             this.reconnectAttempts = 0;
             this.reconnectDelay = 3000;
+            this.stopReconnect = true;
             await this.clearAuthData();
-          } else if (shouldReconnect) {
+          } else if (shouldReconnect && !this.stopReconnect) {
             this.reconnectAttempts++;
             // Exponential backoff: 3s, 6s, 12s, 24s, 48s, max 60s
             const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectDelay);
             console.log(`WhatsApp disconnected. Reconnecting in ${Math.round(delay / 1000)}s... (attempt ${this.reconnectAttempts})`);
-            setTimeout(() => this.connect(), delay);
+            this.reconnectTimeout = setTimeout(() => this.connect(), delay);
+          } else if (this.stopReconnect) {
+            console.log("WhatsApp disconnected. Auto-reconnect disabled.");
           }
         } else if (connection === "open") {
           this.connectionState = "connected";
@@ -513,15 +520,32 @@ class WhatsAppService {
   }
 
   async disconnect(): Promise<void> {
+    // Stop auto-reconnection
+    this.stopReconnect = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.stopHealthCheck();
+    
     if (this.socket) {
       this.socket.end(undefined);
       this.socket = null;
     }
     this.connectionState = "disconnected";
     this.eventHandlers?.onConnectionUpdate("disconnected");
+    console.log("WhatsApp disconnected manually. Auto-reconnect disabled.");
   }
 
   async logout(): Promise<void> {
+    // Stop auto-reconnection
+    this.stopReconnect = true;
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+    this.stopHealthCheck();
+    
     if (this.socket) {
       await this.socket.logout();
       this.socket = null;
@@ -529,6 +553,7 @@ class WhatsAppService {
     await this.clearAuthData();
     this.connectionState = "disconnected";
     this.eventHandlers?.onConnectionUpdate("disconnected");
+    console.log("WhatsApp logged out. Credentials cleared.");
   }
 
   private async clearAuthData(): Promise<void> {
