@@ -91,8 +91,14 @@ export function WhatsAppConnect() {
             Connected
           </Badge>
         );
-      case "connecting":
       case "qr":
+        return (
+          <Badge variant="secondary">
+            <QrCode className="w-3 h-3 mr-1" />
+            Scan QR
+          </Badge>
+        );
+      case "connecting":
         return (
           <Badge variant="secondary">
             <Loader2 className="w-3 h-3 mr-1 animate-spin" />
