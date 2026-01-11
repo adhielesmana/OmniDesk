@@ -18,6 +18,20 @@ function normalizeWhatsAppJid(jid: string): string {
     .replace("+", "");
 }
 
+async function validateOpenAIKey(apiKey: string): Promise<boolean> {
+  try {
+    const response = await fetch("https://api.openai.com/v1/models", {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+      },
+    });
+    return response.ok;
+  } catch (error) {
+    console.error("OpenAI validation error:", error);
+    return false;
+  }
+}
+
 declare module "express-session" {
   interface SessionData {
     userId: string;
@@ -512,6 +526,96 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error testing connection:", error);
       res.status(500).json({ success: false, error: "Connection test failed" });
+    }
+  });
+
+  // ============= OPENAI SETTINGS ROUTES =============
+  
+  // Get OpenAI API key status
+  app.get("/api/settings/openai", requireAdmin, async (req, res) => {
+    try {
+      const setting = await storage.getAppSetting("openai_api_key");
+      const envKeyExists = !!process.env.OPENAI_API_KEY;
+      
+      res.json({
+        hasKey: !!setting?.value || envKeyExists,
+        isCustomKey: !!setting?.value,
+        isValid: setting?.isValid ?? null,
+        lastValidatedAt: setting?.lastValidatedAt ?? null,
+      });
+    } catch (error) {
+      console.error("Error getting OpenAI settings:", error);
+      res.status(500).json({ error: "Failed to get OpenAI settings" });
+    }
+  });
+
+  // Save OpenAI API key
+  app.post("/api/settings/openai", requireAdmin, async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      
+      if (!apiKey || typeof apiKey !== "string") {
+        return res.status(400).json({ error: "API key is required" });
+      }
+
+      // Validate the key by making a test call to OpenAI
+      const isValid = await validateOpenAIKey(apiKey);
+      
+      await storage.setAppSetting("openai_api_key", apiKey, isValid);
+
+      res.json({
+        hasKey: true,
+        isCustomKey: true,
+        isValid,
+        lastValidatedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error saving OpenAI key:", error);
+      res.status(500).json({ error: "Failed to save OpenAI key" });
+    }
+  });
+
+  // Delete OpenAI API key (revert to env variable)
+  app.delete("/api/settings/openai", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAppSetting("openai_api_key");
+      const envKeyExists = !!process.env.OPENAI_API_KEY;
+      
+      res.json({
+        hasKey: envKeyExists,
+        isCustomKey: false,
+        isValid: null,
+        lastValidatedAt: null,
+      });
+    } catch (error) {
+      console.error("Error deleting OpenAI key:", error);
+      res.status(500).json({ error: "Failed to delete OpenAI key" });
+    }
+  });
+
+  // Validate current OpenAI API key
+  app.post("/api/settings/openai/validate", requireAdmin, async (req, res) => {
+    try {
+      const setting = await storage.getAppSetting("openai_api_key");
+      const keyToValidate = setting?.value || process.env.OPENAI_API_KEY;
+
+      if (!keyToValidate) {
+        return res.json({ isValid: false, error: "No API key configured" });
+      }
+
+      const isValid = await validateOpenAIKey(keyToValidate);
+      
+      if (setting?.value) {
+        await storage.setAppSetting("openai_api_key", setting.value, isValid);
+      }
+
+      res.json({
+        isValid,
+        lastValidatedAt: new Date(),
+      });
+    } catch (error) {
+      console.error("Error validating OpenAI key:", error);
+      res.status(500).json({ error: "Failed to validate OpenAI key" });
     }
   });
 

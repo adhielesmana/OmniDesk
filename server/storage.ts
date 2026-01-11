@@ -13,6 +13,8 @@ import {
   type InsertQuickReply,
   type Department,
   type InsertDepartment,
+  type AppSetting,
+  type InsertAppSetting,
   type ConversationWithContact,
   type ConversationWithMessages,
   type Platform,
@@ -24,6 +26,7 @@ import {
   quickReplies,
   departments,
   userDepartments,
+  appSettings,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
@@ -126,6 +129,11 @@ export interface IStorage {
   getQuickReplies(): Promise<QuickReply[]>;
   createQuickReply(quickReply: InsertQuickReply): Promise<QuickReply>;
   deleteQuickReply(id: string): Promise<void>;
+
+  // App Settings
+  getAppSetting(key: string): Promise<AppSetting | undefined>;
+  setAppSetting(key: string, value: string | null, isValid?: boolean): Promise<AppSetting>;
+  deleteAppSetting(key: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -617,6 +625,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuickReply(id: string): Promise<void> {
     await db.delete(quickReplies).where(eq(quickReplies.id, id));
+  }
+
+  // App Settings
+  async getAppSetting(key: string): Promise<AppSetting | undefined> {
+    const [setting] = await db.select().from(appSettings).where(eq(appSettings.key, key));
+    return setting || undefined;
+  }
+
+  async setAppSetting(key: string, value: string | null, isValid?: boolean): Promise<AppSetting> {
+    const existing = await this.getAppSetting(key);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(appSettings)
+        .set({ 
+          value, 
+          isValid: isValid ?? null,
+          lastValidatedAt: isValid !== undefined ? new Date() : existing.lastValidatedAt,
+          updatedAt: new Date() 
+        })
+        .where(eq(appSettings.key, key))
+        .returning();
+      return updated;
+    }
+
+    const [newSetting] = await db.insert(appSettings).values({
+      key,
+      value,
+      isValid: isValid ?? null,
+      lastValidatedAt: isValid !== undefined ? new Date() : null,
+    }).returning();
+    return newSetting;
+  }
+
+  async deleteAppSetting(key: string): Promise<void> {
+    await db.delete(appSettings).where(eq(appSettings.key, key));
   }
 }
 
