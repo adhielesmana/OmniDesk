@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -63,6 +64,7 @@ function getRecipientStatusColor(status: BlastRecipient["status"]): string {
 export default function BlastPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
 
@@ -159,7 +161,7 @@ export default function BlastPage() {
           <h1 className="text-xl font-semibold">Blast Campaigns</h1>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => window.location.href = "/"} data-testid="button-back-inbox">
+          <Button variant="outline" onClick={() => setLocation("/")} data-testid="button-back-inbox">
             Back to Inbox
           </Button>
           <Button onClick={() => setShowCreateDialog(true)} data-testid="button-create-campaign">

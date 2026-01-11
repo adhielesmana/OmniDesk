@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +30,7 @@ interface UserWithDepartments {
 export default function AdminPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
   const { data: users = [], isLoading: usersLoading } = useQuery<UserWithDepartments[]>({
     queryKey: ["/api/admin/users"],
@@ -45,7 +47,7 @@ export default function AdminPage() {
           <Shield className="h-6 w-6 text-primary" />
           <h1 className="text-xl font-semibold">Admin Panel</h1>
         </div>
-        <Button variant="outline" onClick={() => window.location.href = "/"}>
+        <Button variant="outline" onClick={() => setLocation("/")}>
           Back to Inbox
         </Button>
       </header>

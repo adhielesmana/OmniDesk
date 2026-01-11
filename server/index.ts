@@ -11,6 +11,11 @@ import { Pool } from "pg";
 const app = express();
 const httpServer = createServer(app);
 
+// Trust proxy for proper cookie handling behind nginx/reverse proxy
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 const PgStore = pgSession(session);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -34,6 +39,7 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === "production",
       httpOnly: true,
+      sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000,
     },
   })
