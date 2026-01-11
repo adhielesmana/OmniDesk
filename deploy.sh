@@ -105,6 +105,17 @@ if [ -z "$DOMAIN" ]; then
     exit 1
 fi
 
+echo ""
+echo -e "${GREEN}Stopping existing containers...${NC}"
+
+if docker compose version &> /dev/null; then
+    docker compose down 2>/dev/null || true
+else
+    docker-compose down 2>/dev/null || true
+fi
+
+sleep 3
+
 DEFAULT_PORT=${APP_PORT:-5000}
 
 echo ""
@@ -132,10 +143,8 @@ echo ""
 echo -e "${GREEN}Building and starting Docker containers...${NC}"
 
 if docker compose version &> /dev/null; then
-    docker compose down 2>/dev/null || true
     docker compose up -d --build
 else
-    docker-compose down 2>/dev/null || true
     docker-compose up -d --build
 fi
 
@@ -200,23 +209,27 @@ else
 fi
 
 if check_command certbot; then
-    echo ""
-    read -p "Set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
-    if [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
-        echo -e "${GREEN}Setting up SSL certificate...${NC}"
-        
-        read -p "Enter email for SSL notifications: " SSL_EMAIL
-        while [ -z "$SSL_EMAIL" ]; do
-            read -p "Email is required: " SSL_EMAIL
-        done
+    if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
+        echo ""
+        read -p "Set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
+        if [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
+            echo -e "${GREEN}Setting up SSL certificate...${NC}"
+            
+            read -p "Enter email for SSL notifications: " SSL_EMAIL
+            while [ -z "$SSL_EMAIL" ]; do
+                read -p "Email is required: " SSL_EMAIL
+            done
 
-        certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
-        
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}SSL certificate installed successfully!${NC}"
-        else
-            echo -e "${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
+            certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
+            
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}SSL certificate installed successfully!${NC}"
+            else
+                echo -e "${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
+            fi
         fi
+    else
+        echo -e "${GREEN}SSL certificate already exists for $DOMAIN${NC}"
     fi
 fi
 
@@ -226,7 +239,7 @@ echo -e "${GREEN}   Deployment Complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo -e "App running on port: ${GREEN}$APP_PORT${NC}"
-if check_command certbot && [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
+if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo -e "Your app is available at: ${GREEN}https://$DOMAIN${NC}"
 else
     echo -e "Your app is available at: ${GREEN}http://$DOMAIN${NC}"
@@ -235,8 +248,6 @@ echo ""
 echo -e "${YELLOW}Admin login credentials:${NC}"
 echo "  Username: ${ADMIN_USERNAME:-admin}"
 echo "  Password: ${ADMIN_PASSWORD:-admin123}"
-echo ""
-echo -e "${RED}IMPORTANT: Change the admin password after first login!${NC}"
 echo ""
 echo "Useful commands:"
 echo "  View logs:     docker compose logs -f"
