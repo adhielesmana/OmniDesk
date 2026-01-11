@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { X, Check, ExternalLink, RefreshCw, AlertCircle } from "lucide-react";
-import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
+import { useState, useEffect } from "react";
+import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2 } from "lucide-react";
+import { SiWhatsapp, SiFacebook, SiInstagram, SiOpenai } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import type { Platform, PlatformSettings } from "@shared/schema";
+
+type SettingsTab = Platform | "openai";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,6 +26,13 @@ interface SettingsModalProps {
   platformSettings: PlatformSettings[];
   onSaveSettings: (platform: Platform, settings: Partial<PlatformSettings>) => void;
   onTestConnection: (platform: Platform) => Promise<boolean>;
+}
+
+interface OpenAIStatus {
+  hasKey: boolean;
+  isCustomKey: boolean;
+  isValid: boolean | null;
+  lastValidatedAt: string | null;
 }
 
 export function SettingsModal({
@@ -32,8 +43,10 @@ export function SettingsModal({
   onTestConnection,
 }: SettingsModalProps) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<Platform>("whatsapp");
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<SettingsTab>("whatsapp");
   const [isTesting, setIsTesting] = useState(false);
+  const [openaiKey, setOpenaiKey] = useState("");
 
   const [whatsappSettings, setWhatsappSettings] = useState({
     accessToken: "",
@@ -50,6 +63,81 @@ export function SettingsModal({
   const [facebookSettings, setFacebookSettings] = useState({
     accessToken: "",
     pageId: "",
+  });
+
+  const { data: openaiStatus, isLoading: openaiLoading } = useQuery<OpenAIStatus>({
+    queryKey: ["/api/settings/openai"],
+    enabled: isOpen,
+  });
+
+  const saveOpenAIMutation = useMutation({
+    mutationFn: async (apiKey: string) => {
+      const res = await apiRequest("POST", "/api/settings/openai", { apiKey });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/openai"] });
+      setOpenaiKey("");
+      toast({
+        title: data.isValid ? "API Key Saved" : "API Key Saved (Invalid)",
+        description: data.isValid 
+          ? "OpenAI API key has been saved and validated successfully."
+          : "The API key was saved but could not be validated. Please check if it's correct.",
+        variant: data.isValid ? "default" : "destructive",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save OpenAI API key.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteOpenAIMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/settings/openai");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/openai"] });
+      toast({
+        title: "API Key Removed",
+        description: "Custom OpenAI API key has been removed.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to remove OpenAI API key.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const validateOpenAIMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/settings/openai/validate");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/openai"] });
+      toast({
+        title: data.isValid ? "Key Valid" : "Key Invalid",
+        description: data.isValid 
+          ? "OpenAI API key is valid and working."
+          : "The API key could not be validated. Please check if it's correct.",
+        variant: data.isValid ? "default" : "destructive",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to validate OpenAI API key.",
+        variant: "destructive",
+      });
+    },
   });
 
   const handleTestConnection = async (platform: Platform) => {
@@ -126,8 +214,8 @@ export function SettingsModal({
           <DialogTitle className="text-xl">Platform Settings</DialogTitle>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as Platform)}>
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)}>
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="whatsapp" className="gap-2" data-testid="tab-whatsapp">
               <SiWhatsapp className="h-4 w-4 text-[#25D366]" />
               WhatsApp
@@ -139,6 +227,10 @@ export function SettingsModal({
             <TabsTrigger value="facebook" className="gap-2" data-testid="tab-facebook">
               <SiFacebook className="h-4 w-4 text-[#1877F2]" />
               Facebook
+            </TabsTrigger>
+            <TabsTrigger value="openai" className="gap-2" data-testid="tab-openai">
+              <SiOpenai className="h-4 w-4" />
+              OpenAI
             </TabsTrigger>
           </TabsList>
 
@@ -428,6 +520,136 @@ export function SettingsModal({
                     className="text-sm text-primary hover:underline inline-flex items-center gap-1"
                   >
                     View Messenger API Documentation
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="openai" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Sparkles className="h-5 w-5 text-primary" />
+                      OpenAI Integration
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Configure your OpenAI API key to enable AI-powered features
+                    </CardDescription>
+                  </div>
+                  {openaiLoading ? (
+                    <Badge variant="secondary">Loading...</Badge>
+                  ) : (
+                    <Badge variant={openaiStatus?.hasKey && openaiStatus?.isValid ? "default" : openaiStatus?.hasKey ? "destructive" : "secondary"}>
+                      {openaiStatus?.hasKey && openaiStatus?.isValid ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1" />
+                          Valid
+                        </>
+                      ) : openaiStatus?.hasKey && openaiStatus?.isValid === false ? (
+                        <>
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Invalid
+                        </>
+                      ) : openaiStatus?.hasKey ? (
+                        "Not Validated"
+                      ) : (
+                        "Not Configured"
+                      )}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {openaiStatus?.hasKey && (
+                  <div className="p-3 bg-muted/50 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Current Key Status</span>
+                      <div className="flex items-center gap-2">
+                        {openaiStatus.isCustomKey ? (
+                          <Badge variant="outline">Custom Key</Badge>
+                        ) : (
+                          <Badge variant="outline">Environment Key</Badge>
+                        )}
+                      </div>
+                    </div>
+                    {openaiStatus.lastValidatedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last validated: {new Date(openaiStatus.lastValidatedAt).toLocaleString()}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => validateOpenAIMutation.mutate()}
+                        disabled={validateOpenAIMutation.isPending}
+                        data-testid="button-validate-openai"
+                      >
+                        {validateOpenAIMutation.isPending ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Validate Key
+                      </Button>
+                      {openaiStatus.isCustomKey && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteOpenAIMutation.mutate()}
+                          disabled={deleteOpenAIMutation.isPending}
+                          data-testid="button-delete-openai"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Remove Custom Key
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="openai-key">
+                    {openaiStatus?.hasKey ? "Replace API Key" : "OpenAI API Key"}
+                  </Label>
+                  <Input
+                    id="openai-key"
+                    type="password"
+                    placeholder="sk-..."
+                    value={openaiKey}
+                    onChange={(e) => setOpenaiKey(e.target.value)}
+                    data-testid="input-openai-key"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter your OpenAI API key to enable AI features. The key will be validated automatically.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <Button
+                    onClick={() => saveOpenAIMutation.mutate(openaiKey)}
+                    disabled={!openaiKey || saveOpenAIMutation.isPending}
+                    data-testid="button-save-openai"
+                  >
+                    {saveOpenAIMutation.isPending ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
+                    Save API Key
+                  </Button>
+                </div>
+
+                <div className="pt-4 border-t border-border">
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Get an OpenAI API Key
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </div>

@@ -20,14 +20,24 @@ function normalizeWhatsAppJid(jid: string): string {
 
 async function validateOpenAIKey(apiKey: string): Promise<boolean> {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    
     const response = await fetch("https://api.openai.com/v1/models", {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
       },
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
     return response.ok;
   } catch (error) {
-    console.error("OpenAI validation error:", error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error("OpenAI validation timed out");
+    } else {
+      console.error("OpenAI validation error:", error);
+    }
     return false;
   }
 }
