@@ -865,10 +865,13 @@ export class DatabaseStorage implements IStorage {
     let mergedContacts = 0;
     let mergedConversations = 0;
 
-    // Get all contacts with phone numbers
-    const allContacts = await db.select().from(contacts).where(sql`${contacts.phoneNumber} IS NOT NULL`);
+    // Get all WhatsApp contacts
+    const allContacts = await db.select().from(contacts).where(eq(contacts.platform, "whatsapp"));
     
-    // Group contacts by canonical phone number
+    // Track which contacts have been merged (to skip processing them again)
+    const mergedContactIds = new Set<string>();
+    
+    // PHASE 1: Merge by phone number (for contacts with actual phone numbers)
     const phoneGroups = new Map<string, typeof allContacts>();
     
     for (const contact of allContacts) {
@@ -883,66 +886,207 @@ export class DatabaseStorage implements IStorage {
       phoneGroups.set(canonical, existing);
     }
 
-    // Process each group with duplicates
+    // Process phone number duplicates
     const phoneGroupEntries = Array.from(phoneGroups.entries());
     for (const [, contactGroup] of phoneGroupEntries) {
       if (contactGroup.length <= 1) continue;
 
-      // Sort by updatedAt desc, pick the most recently updated as primary
-      contactGroup.sort((a: Contact, b: Contact) => 
-        (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0)
-      );
+      // Sort by: prefer real phone numbers over LIDs, then by updatedAt desc
+      contactGroup.sort((a: Contact, b: Contact) => {
+        // Prefer contacts with shorter phone numbers (real numbers vs LIDs which are often longer)
+        const aIsLikeLID = (a.phoneNumber?.length || 0) > 15;
+        const bIsLikeLID = (b.phoneNumber?.length || 0) > 15;
+        if (aIsLikeLID !== bIsLikeLID) return aIsLikeLID ? 1 : -1;
+        return (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0);
+      });
 
       const primaryContact = contactGroup[0];
       const duplicateContacts = contactGroup.slice(1);
 
-      // Get primary conversation
-      let primaryConversation = await this.getConversationByContactId(primaryContact.id);
+      const mergeResult = await this.mergeContactsIntoPrimary(primaryContact, duplicateContacts);
+      mergedContacts += mergeResult.mergedContacts;
+      mergedConversations += mergeResult.mergedConversations;
+      
+      duplicateContacts.forEach(c => mergedContactIds.add(c.id));
+    }
 
-      for (const dupContact of duplicateContacts) {
-        // Get all conversations for this duplicate contact
-        const dupConversations = await db
-          .select()
-          .from(conversations)
-          .where(eq(conversations.contactId, dupContact.id));
+    // PHASE 2: Merge by exact name for WhatsApp contacts (to catch LID duplicates)
+    // This handles cases where the same person has both phone JID and LID entries
+    const nameGroups = new Map<string, typeof allContacts>();
+    
+    for (const contact of allContacts) {
+      // Skip if already merged or no name
+      if (mergedContactIds.has(contact.id)) continue;
+      if (!contact.name || contact.name.trim() === "") continue;
+      
+      // Normalize name for comparison (lowercase, trim)
+      const normalizedName = contact.name.toLowerCase().trim();
+      
+      const existing = nameGroups.get(normalizedName) || [];
+      existing.push(contact);
+      nameGroups.set(normalizedName, existing);
+    }
 
-        for (const dupConv of dupConversations) {
-          if (!primaryConversation) {
-            // No primary conversation yet, reassign this one to the primary contact
+    // Process name duplicates
+    const nameGroupEntries = Array.from(nameGroups.entries());
+    for (const [, contactGroup] of nameGroupEntries) {
+      if (contactGroup.length <= 1) continue;
+
+      // Only merge if we're confident these are duplicates:
+      // - Same name, same platform
+      // - At least one has a real-looking phone number (not a LID)
+      const hasRealPhone = contactGroup.some(c => {
+        const phone = c.phoneNumber || "";
+        return phone.length >= 10 && phone.length <= 15;
+      });
+      
+      if (!hasRealPhone) continue;
+
+      // Sort to prefer real phone numbers over LIDs
+      contactGroup.sort((a: Contact, b: Contact) => {
+        const aPhone = a.phoneNumber || "";
+        const bPhone = b.phoneNumber || "";
+        const aIsRealPhone = aPhone.length >= 10 && aPhone.length <= 15;
+        const bIsRealPhone = bPhone.length >= 10 && bPhone.length <= 15;
+        if (aIsRealPhone !== bIsRealPhone) return aIsRealPhone ? -1 : 1;
+        return (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0);
+      });
+
+      const primaryContact = contactGroup[0];
+      const duplicateContacts = contactGroup.slice(1);
+
+      console.log(`Merging ${duplicateContacts.length} duplicates for "${primaryContact.name}" into primary (${primaryContact.phoneNumber})`);
+
+      const mergeResult = await this.mergeContactsIntoPrimary(primaryContact, duplicateContacts);
+      mergedContacts += mergeResult.mergedContacts;
+      mergedConversations += mergeResult.mergedConversations;
+      
+      duplicateContacts.forEach(c => mergedContactIds.add(c.id));
+    }
+
+    // PHASE 3: Merge by partial name match for LID contacts
+    // This catches cases like "Dany Christian" vs "Dany Christian Mba Vina"
+    const remainingContacts = allContacts.filter(c => !mergedContactIds.has(c.id) && c.name);
+    
+    for (let i = 0; i < remainingContacts.length; i++) {
+      const contact1 = remainingContacts[i];
+      if (mergedContactIds.has(contact1.id)) continue;
+      
+      const name1 = (contact1.name || "").toLowerCase().trim();
+      if (name1.length < 5) continue; // Skip very short names
+      
+      for (let j = i + 1; j < remainingContacts.length; j++) {
+        const contact2 = remainingContacts[j];
+        if (mergedContactIds.has(contact2.id)) continue;
+        
+        const name2 = (contact2.name || "").toLowerCase().trim();
+        if (name2.length < 5) continue;
+        
+        // Check if one name starts with the other (partial match)
+        const isPartialMatch = name1.startsWith(name2) || name2.startsWith(name1);
+        if (!isPartialMatch) continue;
+        
+        // Ensure one has a LID-like number (very long) and one has a real phone
+        const phone1 = contact1.phoneNumber || "";
+        const phone2 = contact2.phoneNumber || "";
+        const phone1IsLID = phone1.length > 15;
+        const phone2IsLID = phone2.length > 15;
+        const phone1IsReal = phone1.length >= 10 && phone1.length <= 15;
+        const phone2IsReal = phone2.length >= 10 && phone2.length <= 15;
+        
+        // Only merge if one is LID and one is real phone
+        if (!((phone1IsLID && phone2IsReal) || (phone1IsReal && phone2IsLID))) continue;
+        
+        // Primary is the one with real phone number
+        const primary = phone1IsReal ? contact1 : contact2;
+        const duplicate = phone1IsReal ? contact2 : contact1;
+        
+        console.log(`Merging partial match "${duplicate.name}" (${duplicate.phoneNumber}) into "${primary.name}" (${primary.phoneNumber})`);
+        
+        const mergeResult = await this.mergeContactsIntoPrimary(primary, [duplicate]);
+        mergedContacts += mergeResult.mergedContacts;
+        mergedConversations += mergeResult.mergedConversations;
+        
+        mergedContactIds.add(duplicate.id);
+      }
+    }
+
+    return { mergedContacts, mergedConversations };
+  }
+
+  async mergeSpecificContacts(primaryContactId: string, duplicateContactId: string): Promise<{ success: boolean; message: string }> {
+    const primary = await this.getContact(primaryContactId);
+    const duplicate = await this.getContact(duplicateContactId);
+    
+    if (!primary || !duplicate) {
+      return { success: false, message: "One or both contacts not found" };
+    }
+    
+    if (primary.id === duplicate.id) {
+      return { success: false, message: "Cannot merge a contact with itself" };
+    }
+    
+    const result = await this.mergeContactsIntoPrimary(primary, [duplicate]);
+    
+    return { 
+      success: true, 
+      message: `Merged "${duplicate.name}" into "${primary.name}". Moved ${result.mergedConversations} conversations.` 
+    };
+  }
+
+  private async mergeContactsIntoPrimary(
+    primaryContact: Contact, 
+    duplicateContacts: Contact[]
+  ): Promise<{ mergedContacts: number; mergedConversations: number }> {
+    let mergedContacts = 0;
+    let mergedConversations = 0;
+
+    // Get primary conversation
+    let primaryConversation = await this.getConversationByContactId(primaryContact.id);
+
+    for (const dupContact of duplicateContacts) {
+      // Get all conversations for this duplicate contact
+      const dupConversations = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.contactId, dupContact.id));
+
+      for (const dupConv of dupConversations) {
+        if (!primaryConversation) {
+          // No primary conversation yet, reassign this one to the primary contact
+          await db
+            .update(conversations)
+            .set({ contactId: primaryContact.id, updatedAt: new Date() })
+            .where(eq(conversations.id, dupConv.id));
+          primaryConversation = { ...dupConv, contactId: primaryContact.id };
+        } else {
+          // Move all messages from duplicate conversation to primary
+          await db
+            .update(messages)
+            .set({ conversationId: primaryConversation.id })
+            .where(eq(messages.conversationId, dupConv.id));
+          
+          // Update primary conversation with latest message info if needed
+          if (dupConv.lastMessageAt && (!primaryConversation.lastMessageAt || dupConv.lastMessageAt > primaryConversation.lastMessageAt)) {
             await db
               .update(conversations)
-              .set({ contactId: primaryContact.id, updatedAt: new Date() })
-              .where(eq(conversations.id, dupConv.id));
-            primaryConversation = { ...dupConv, contactId: primaryContact.id };
-          } else {
-            // Move all messages from duplicate conversation to primary
-            await db
-              .update(messages)
-              .set({ conversationId: primaryConversation.id })
-              .where(eq(messages.conversationId, dupConv.id));
-            
-            // Update primary conversation with latest message info if needed
-            if (dupConv.lastMessageAt && (!primaryConversation.lastMessageAt || dupConv.lastMessageAt > primaryConversation.lastMessageAt)) {
-              await db
-                .update(conversations)
-                .set({ 
-                  lastMessageAt: dupConv.lastMessageAt, 
-                  lastMessagePreview: dupConv.lastMessagePreview,
-                  updatedAt: new Date() 
-                })
-                .where(eq(conversations.id, primaryConversation.id));
-            }
-            
-            // Delete the duplicate conversation
-            await db.delete(conversations).where(eq(conversations.id, dupConv.id));
-            mergedConversations++;
+              .set({ 
+                lastMessageAt: dupConv.lastMessageAt, 
+                lastMessagePreview: dupConv.lastMessagePreview,
+                updatedAt: new Date() 
+              })
+              .where(eq(conversations.id, primaryConversation.id));
           }
+          
+          // Delete the duplicate conversation
+          await db.delete(conversations).where(eq(conversations.id, dupConv.id));
+          mergedConversations++;
         }
-
-        // Delete duplicate contact
-        await db.delete(contacts).where(eq(contacts.id, dupContact.id));
-        mergedContacts++;
       }
+
+      // Delete duplicate contact
+      await db.delete(contacts).where(eq(contacts.id, dupContact.id));
+      mergedContacts++;
     }
 
     return { mergedContacts, mergedConversations };

@@ -402,6 +402,29 @@ export async function registerRoutes(
     }
   });
 
+  // Manual merge of two specific contacts
+  app.post("/api/admin/merge-contacts", requireAdmin, async (req, res) => {
+    try {
+      const { primaryContactId, duplicateContactId } = req.body;
+      
+      if (!primaryContactId || !duplicateContactId) {
+        return res.status(400).json({ error: "Both primaryContactId and duplicateContactId are required" });
+      }
+      
+      const result = await storage.mergeSpecificContacts(primaryContactId, duplicateContactId);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
+      
+      broadcast({ type: "conversations_merged" });
+      res.json(result);
+    } catch (error) {
+      console.error("Error merging contacts:", error);
+      res.status(500).json({ error: "Failed to merge contacts" });
+    }
+  });
+
   // Get departments for current user
   app.get("/api/departments", requireAuth, async (req, res) => {
     try {
