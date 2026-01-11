@@ -298,3 +298,118 @@ export const insertAppSettingSchema = createInsertSchema(appSettings).omit({
 
 export type AppSetting = typeof appSettings.$inferSelect;
 export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
+
+// Blast campaign status enum
+export const blastCampaignStatusEnum = pgEnum("blast_campaign_status", ["draft", "scheduled", "running", "paused", "completed", "cancelled"]);
+
+// Blast message status enum  
+export const blastMessageStatusEnum = pgEnum("blast_message_status", ["pending", "generating", "queued", "sending", "sent", "failed"]);
+
+// Blast campaigns table - stores campaign metadata and AI prompt
+export const blastCampaigns = pgTable("blast_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  prompt: text("prompt").notNull(),
+  status: blastCampaignStatusEnum("status").notNull().default("draft"),
+  totalRecipients: integer("total_recipients").default(0),
+  sentCount: integer("sent_count").default(0),
+  failedCount: integer("failed_count").default(0),
+  minIntervalSeconds: integer("min_interval_seconds").default(120),
+  maxIntervalSeconds: integer("max_interval_seconds").default(180),
+  createdBy: varchar("created_by").references(() => users.id),
+  scheduledAt: timestamp("scheduled_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("blast_campaigns_status_idx").on(table.status),
+  index("blast_campaigns_created_by_idx").on(table.createdBy),
+]);
+
+// Blast recipients table - links campaigns to contacts with per-recipient status
+export const blastRecipients = pgTable("blast_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").notNull().references(() => blastCampaigns.id, { onDelete: "cascade" }),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id),
+  conversationId: varchar("conversation_id").references(() => conversations.id),
+  status: blastMessageStatusEnum("status").notNull().default("pending"),
+  generatedMessage: text("generated_message"),
+  errorMessage: text("error_message"),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  retryCount: integer("retry_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("blast_recipients_campaign_idx").on(table.campaignId),
+  index("blast_recipients_contact_idx").on(table.contactId),
+  index("blast_recipients_status_idx").on(table.status),
+  index("blast_recipients_scheduled_idx").on(table.scheduledAt),
+]);
+
+// Blast campaign relations
+export const blastCampaignsRelations = relations(blastCampaigns, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [blastCampaigns.createdBy],
+    references: [users.id],
+  }),
+  recipients: many(blastRecipients),
+}));
+
+// Blast recipient relations
+export const blastRecipientsRelations = relations(blastRecipients, ({ one }) => ({
+  campaign: one(blastCampaigns, {
+    fields: [blastRecipients.campaignId],
+    references: [blastCampaigns.id],
+  }),
+  contact: one(contacts, {
+    fields: [blastRecipients.contactId],
+    references: [contacts.id],
+  }),
+  conversation: one(conversations, {
+    fields: [blastRecipients.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
+// Insert schemas for blast tables
+export const insertBlastCampaignSchema = createInsertSchema(blastCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  sentCount: true,
+  failedCount: true,
+  startedAt: true,
+  completedAt: true,
+});
+
+export const insertBlastRecipientSchema = createInsertSchema(blastRecipients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  generatedMessage: true,
+  errorMessage: true,
+  sentAt: true,
+  retryCount: true,
+});
+
+// Types for blast tables
+export type BlastCampaign = typeof blastCampaigns.$inferSelect;
+export type InsertBlastCampaign = z.infer<typeof insertBlastCampaignSchema>;
+export type BlastCampaignStatus = "draft" | "scheduled" | "running" | "paused" | "completed" | "cancelled";
+
+export type BlastRecipient = typeof blastRecipients.$inferSelect;
+export type InsertBlastRecipient = z.infer<typeof insertBlastRecipientSchema>;
+export type BlastMessageStatus = "pending" | "generating" | "queued" | "sending" | "sent" | "failed";
+
+export type BlastCampaignWithRecipients = BlastCampaign & {
+  recipients: (BlastRecipient & { contact: Contact })[];
+};
+
+export type BlastCampaignWithStats = BlastCampaign & {
+  pendingCount: number;
+  generatingCount: number;
+  queuedCount: number;
+  sendingCount: number;
+};

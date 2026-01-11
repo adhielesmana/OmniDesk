@@ -15,6 +15,12 @@ import {
   type InsertDepartment,
   type AppSetting,
   type InsertAppSetting,
+  type BlastCampaign,
+  type InsertBlastCampaign,
+  type BlastRecipient,
+  type InsertBlastRecipient,
+  type BlastCampaignStatus,
+  type BlastMessageStatus,
   type ConversationWithContact,
   type ConversationWithMessages,
   type Platform,
@@ -27,6 +33,8 @@ import {
   departments,
   userDepartments,
   appSettings,
+  blastCampaigns,
+  blastRecipients,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
@@ -134,6 +142,24 @@ export interface IStorage {
   getAppSetting(key: string): Promise<AppSetting | undefined>;
   setAppSetting(key: string, value: string | null, isValid?: boolean): Promise<AppSetting>;
   deleteAppSetting(key: string): Promise<void>;
+
+  // Blast Campaigns
+  getBlastCampaigns(): Promise<BlastCampaign[]>;
+  getBlastCampaign(id: string): Promise<BlastCampaign | undefined>;
+  createBlastCampaign(campaign: InsertBlastCampaign): Promise<BlastCampaign>;
+  updateBlastCampaign(id: string, campaign: Partial<InsertBlastCampaign>): Promise<BlastCampaign | undefined>;
+  updateBlastCampaignStatus(id: string, status: BlastCampaignStatus): Promise<BlastCampaign | undefined>;
+  deleteBlastCampaign(id: string): Promise<void>;
+  incrementBlastCampaignSentCount(id: string): Promise<void>;
+  incrementBlastCampaignFailedCount(id: string): Promise<void>;
+
+  // Blast Recipients
+  getBlastRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]>;
+  getBlastRecipient(id: string): Promise<BlastRecipient | undefined>;
+  createBlastRecipients(recipients: InsertBlastRecipient[]): Promise<BlastRecipient[]>;
+  updateBlastRecipient(id: string, data: Partial<BlastRecipient>): Promise<BlastRecipient | undefined>;
+  getNextPendingRecipient(campaignId: string): Promise<BlastRecipient | undefined>;
+  getDueRecipients(limit?: number): Promise<(BlastRecipient & { contact: Contact; campaign: BlastCampaign })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -661,6 +687,140 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAppSetting(key: string): Promise<void> {
     await db.delete(appSettings).where(eq(appSettings.key, key));
+  }
+
+  // Blast Campaigns
+  async getBlastCampaigns(): Promise<BlastCampaign[]> {
+    return db.select().from(blastCampaigns).orderBy(desc(blastCampaigns.createdAt));
+  }
+
+  async getBlastCampaign(id: string): Promise<BlastCampaign | undefined> {
+    const [campaign] = await db.select().from(blastCampaigns).where(eq(blastCampaigns.id, id));
+    return campaign || undefined;
+  }
+
+  async createBlastCampaign(campaign: InsertBlastCampaign): Promise<BlastCampaign> {
+    const [newCampaign] = await db.insert(blastCampaigns).values(campaign).returning();
+    return newCampaign;
+  }
+
+  async updateBlastCampaign(id: string, campaign: Partial<InsertBlastCampaign>): Promise<BlastCampaign | undefined> {
+    const [updated] = await db
+      .update(blastCampaigns)
+      .set({ ...campaign, updatedAt: new Date() })
+      .where(eq(blastCampaigns.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async updateBlastCampaignStatus(id: string, status: BlastCampaignStatus): Promise<BlastCampaign | undefined> {
+    const updateData: Record<string, unknown> = { status, updatedAt: new Date() };
+    
+    if (status === "running") {
+      updateData.startedAt = new Date();
+    } else if (status === "completed" || status === "cancelled") {
+      updateData.completedAt = new Date();
+    }
+
+    const [updated] = await db
+      .update(blastCampaigns)
+      .set(updateData)
+      .where(eq(blastCampaigns.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteBlastCampaign(id: string): Promise<void> {
+    await db.delete(blastCampaigns).where(eq(blastCampaigns.id, id));
+  }
+
+  async incrementBlastCampaignSentCount(id: string): Promise<void> {
+    await db
+      .update(blastCampaigns)
+      .set({ 
+        sentCount: sql`${blastCampaigns.sentCount} + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(blastCampaigns.id, id));
+  }
+
+  async incrementBlastCampaignFailedCount(id: string): Promise<void> {
+    await db
+      .update(blastCampaigns)
+      .set({ 
+        failedCount: sql`${blastCampaigns.failedCount} + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(blastCampaigns.id, id));
+  }
+
+  // Blast Recipients
+  async getBlastRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]> {
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .where(eq(blastRecipients.campaignId, campaignId))
+      .orderBy(asc(blastRecipients.createdAt));
+
+    return result.map((row) => ({
+      ...row.blast_recipients,
+      contact: row.contacts,
+    }));
+  }
+
+  async getBlastRecipient(id: string): Promise<BlastRecipient | undefined> {
+    const [recipient] = await db.select().from(blastRecipients).where(eq(blastRecipients.id, id));
+    return recipient || undefined;
+  }
+
+  async createBlastRecipients(recipients: InsertBlastRecipient[]): Promise<BlastRecipient[]> {
+    if (recipients.length === 0) return [];
+    return db.insert(blastRecipients).values(recipients).returning();
+  }
+
+  async updateBlastRecipient(id: string, data: Partial<BlastRecipient>): Promise<BlastRecipient | undefined> {
+    const [updated] = await db
+      .update(blastRecipients)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(blastRecipients.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getNextPendingRecipient(campaignId: string): Promise<BlastRecipient | undefined> {
+    const [recipient] = await db
+      .select()
+      .from(blastRecipients)
+      .where(and(
+        eq(blastRecipients.campaignId, campaignId),
+        eq(blastRecipients.status, "pending")
+      ))
+      .orderBy(asc(blastRecipients.createdAt))
+      .limit(1);
+    return recipient || undefined;
+  }
+
+  async getDueRecipients(limit: number = 10): Promise<(BlastRecipient & { contact: Contact; campaign: BlastCampaign })[]> {
+    const now = new Date();
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .innerJoin(blastCampaigns, eq(blastRecipients.campaignId, blastCampaigns.id))
+      .where(and(
+        eq(blastRecipients.status, "queued"),
+        sql`${blastRecipients.scheduledAt} <= ${now}`,
+        eq(blastCampaigns.status, "running")
+      ))
+      .orderBy(asc(blastRecipients.scheduledAt))
+      .limit(limit);
+
+    return result.map((row) => ({
+      ...row.blast_recipients,
+      contact: row.contacts,
+      campaign: row.blast_campaigns,
+    }));
   }
 }
 
