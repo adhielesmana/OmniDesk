@@ -842,7 +842,7 @@ export async function registerRoutes(
   });
 
   // Contact management endpoints
-  app.get("/api/contacts", async (req, res) => {
+  app.get("/api/contacts", requireAuth, async (req, res) => {
     try {
       const { search, platform, isFavorite, isBlocked, tag, sortBy, sortOrder, limit, offset } = req.query;
       
@@ -865,7 +865,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/contacts/tags", async (req, res) => {
+  app.get("/api/contacts/tags", requireAuth, async (req, res) => {
     try {
       const tags = await storage.getAllTags();
       res.json(tags);
@@ -1043,7 +1043,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/contacts/:id", async (req, res) => {
+  app.get("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       const contact = await storage.getContact(req.params.id);
       if (!contact) {
@@ -1056,7 +1056,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/contacts/:id", async (req, res) => {
+  app.patch("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       const parseResult = updateContactSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -1077,7 +1077,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/contacts/:id/conversations", async (req, res) => {
+  app.get("/api/contacts/:id/conversations", requireAuth, async (req, res) => {
     try {
       const conversations = await storage.getConversationsByContactId(req.params.id);
       res.json(conversations);
@@ -1087,7 +1087,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/contacts/:id", async (req, res) => {
+  app.delete("/api/contacts/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteContact(req.params.id);
       res.sendStatus(204);
@@ -1097,7 +1097,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/contacts/:id/favorite", async (req, res) => {
+  app.post("/api/contacts/:id/favorite", requireAuth, async (req, res) => {
     try {
       const updated = await storage.toggleFavorite(req.params.id);
       if (!updated) {
@@ -1110,7 +1110,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/contacts/:id/block", async (req, res) => {
+  app.post("/api/contacts/:id/block", requireAuth, async (req, res) => {
     try {
       const updated = await storage.toggleBlocked(req.params.id);
       if (!updated) {
@@ -1125,7 +1125,7 @@ export async function registerRoutes(
 
   const tagSchema = z.object({ tag: z.string().min(1, "Tag cannot be empty") });
 
-  app.post("/api/contacts/:id/tags", async (req, res) => {
+  app.post("/api/contacts/:id/tags", requireAuth, async (req, res) => {
     try {
       const parseResult = tagSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -1146,7 +1146,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/contacts/:id/tags/:tag", async (req, res) => {
+  app.delete("/api/contacts/:id/tags/:tag", requireAuth, async (req, res) => {
     try {
       const updated = await storage.removeTagFromContact(req.params.id, req.params.tag);
       if (!updated) {
@@ -1160,7 +1160,7 @@ export async function registerRoutes(
   });
 
   // Fetch and update profile picture for a contact
-  app.post("/api/contacts/:id/profile-picture", async (req, res) => {
+  app.post("/api/contacts/:id/profile-picture", requireAuth, async (req, res) => {
     try {
       const contact = await storage.getContact(req.params.id);
       if (!contact) {
