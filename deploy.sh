@@ -275,7 +275,7 @@ else
 fi
 echo ""
 echo -e "${YELLOW}Admin login credentials:${NC}"
-echo "  Username: ${ADMIN_USERNAME:-admin}"
+echo "  Username: ${ADMIN_USERNAME:-adhielesmana}"
 echo "  Password: ${ADMIN_PASSWORD:-admin123}"
 echo ""
 echo "Useful commands:"
