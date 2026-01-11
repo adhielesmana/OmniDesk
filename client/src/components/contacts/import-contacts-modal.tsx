@@ -122,10 +122,15 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
       if (!file) throw new Error("No file selected");
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("nameColumn", mapping.nameColumn);
-      formData.append("phoneColumn", mapping.phoneColumn);
-      formData.append("emailColumn", mapping.emailColumn);
-      formData.append("notesColumn", mapping.notesColumn);
+      // Convert "_none_" placeholder back to empty string
+      const nameCol = mapping.nameColumn === "_none_" ? "" : mapping.nameColumn;
+      const phoneCol = mapping.phoneColumn === "_none_" ? "" : mapping.phoneColumn;
+      const emailCol = mapping.emailColumn === "_none_" ? "" : mapping.emailColumn;
+      const notesCol = mapping.notesColumn === "_none_" ? "" : mapping.notesColumn;
+      formData.append("nameColumn", nameCol);
+      formData.append("phoneColumn", phoneCol);
+      formData.append("emailColumn", emailCol);
+      formData.append("notesColumn", notesCol);
       formData.append("defaultPlatform", "whatsapp");
       if (mapping.defaultTag) {
         formData.append("defaultTag", mapping.defaultTag);
@@ -188,7 +193,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
   };
 
   const handleImport = () => {
-    if (!mapping.phoneColumn) {
+    if (!mapping.phoneColumn || mapping.phoneColumn === "_none_") {
       toast({
         title: "Phone column required",
         description: "Please select which column contains phone numbers",
@@ -299,7 +304,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">-- None --</SelectItem>
+                      <SelectItem value="_none_">-- None --</SelectItem>
                       {preview.headers.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}
@@ -338,7 +343,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">-- None --</SelectItem>
+                      <SelectItem value="_none_">-- None --</SelectItem>
                       {preview.headers.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}
@@ -358,7 +363,7 @@ export function ImportContactsModal({ open, onOpenChange }: ImportContactsModalP
                       <SelectValue placeholder="Select column" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">-- None --</SelectItem>
+                      <SelectItem value="_none_">-- None --</SelectItem>
                       {preview.headers.map((h) => (
                         <SelectItem key={h} value={h}>
                           {h}
