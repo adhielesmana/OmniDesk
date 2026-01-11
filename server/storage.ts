@@ -28,28 +28,30 @@ import {
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
 
-// Helper to normalize WhatsApp JIDs to consistent phone number format
-function normalizeWhatsAppId(id: string): string[] {
-  // Remove WhatsApp suffixes
-  const stripped = id
+// Helper to extract canonical phone number from WhatsApp JID
+function getCanonicalPhoneNumber(id: string): string {
+  // Remove all WhatsApp suffixes
+  let stripped = id
     .replace("@s.whatsapp.net", "")
     .replace("@lid", "")
-    .replace("@c.us", "");
+    .replace("@c.us", "")
+    .replace("+", "");
+  
+  // Return just the digits
+  return stripped;
+}
+
+// Helper to normalize WhatsApp JIDs to consistent phone number format
+function normalizeWhatsAppId(id: string): string[] {
+  const canonical = getCanonicalPhoneNumber(id);
   
   // Generate all possible variants for lookup
   const variants = new Set<string>();
-  variants.add(stripped);
-  variants.add(`${stripped}@s.whatsapp.net`);
-  
-  // If it starts with +, also add without +
-  if (stripped.startsWith("+")) {
-    const noPlus = stripped.substring(1);
-    variants.add(noPlus);
-    variants.add(`${noPlus}@s.whatsapp.net`);
-  } else {
-    // Add with + prefix
-    variants.add(`+${stripped}`);
-  }
+  variants.add(canonical);
+  variants.add(`${canonical}@s.whatsapp.net`);
+  variants.add(`${canonical}@lid`);
+  variants.add(`${canonical}@c.us`);
+  variants.add(`+${canonical}`);
   
   return Array.from(variants);
 }

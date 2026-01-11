@@ -10,6 +10,14 @@ import { whatsappService } from "./whatsapp";
 import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
 
+function normalizeWhatsAppJid(jid: string): string {
+  return jid
+    .replace("@s.whatsapp.net", "")
+    .replace("@lid", "")
+    .replace("@c.us", "")
+    .replace("+", "");
+}
+
 declare module "express-session" {
   interface SessionData {
     userId: string;
@@ -830,13 +838,14 @@ export async function registerRoutes(
         // Skip group messages for now
         if (msg.isGroup) return;
 
-        let contact = await storage.getContactByPlatformId(msg.from, "whatsapp");
+        const normalizedId = normalizeWhatsAppJid(msg.from);
+        let contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
         if (!contact) {
           contact = await storage.createContact({
-            platformId: msg.from,
+            platformId: normalizedId,
             platform: "whatsapp",
             name: msg.fromName,
-            phoneNumber: `+${msg.from}`,
+            phoneNumber: `+${normalizedId}`,
           });
         }
 
@@ -928,13 +937,14 @@ export async function registerRoutes(
           // Skip broadcast/status messages
           if (msg.from === "status" || msg.from.includes("broadcast")) continue;
 
-          let contact = await storage.getContactByPlatformId(msg.from, "whatsapp");
+          const normalizedHistoryId = normalizeWhatsAppJid(msg.from);
+          let contact = await storage.getContactByPlatformId(normalizedHistoryId, "whatsapp");
           if (!contact) {
             contact = await storage.createContact({
-              platformId: msg.from,
+              platformId: normalizedHistoryId,
               platform: "whatsapp",
               name: msg.fromName,
-              phoneNumber: `+${msg.from}`,
+              phoneNumber: `+${normalizedHistoryId}`,
             });
           }
 
