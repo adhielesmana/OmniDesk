@@ -91,7 +91,7 @@ fi
 APP_PORT=${APP_PORT:-5000}
 
 echo ""
-echo -e "${GREEN}Building and starting Docker container...${NC}"
+echo -e "${GREEN}Building and starting Docker containers...${NC}"
 
 if docker compose version &> /dev/null; then
     docker compose down 2>/dev/null || true
@@ -101,7 +101,10 @@ else
     docker-compose up -d --build
 fi
 
-echo -e "${GREEN}Docker container started.${NC}"
+echo -e "${GREEN}Waiting for database to be ready...${NC}"
+sleep 10
+
+echo -e "${GREEN}Docker containers started.${NC}"
 
 echo ""
 echo -e "${GREEN}Configuring Nginx...${NC}"
@@ -149,13 +152,13 @@ fi
 
 if check_command certbot; then
     echo ""
-    read -p "Would you like to set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
+    read -p "Set up SSL certificate for $DOMAIN? (Y/n): " setup_ssl
     if [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
         echo -e "${GREEN}Setting up SSL certificate...${NC}"
         
-        read -p "Enter email for SSL certificate notifications: " SSL_EMAIL
+        read -p "Enter email for SSL notifications: " SSL_EMAIL
         while [ -z "$SSL_EMAIL" ]; do
-            read -p "Email is required for SSL: " SSL_EMAIL
+            read -p "Email is required: " SSL_EMAIL
         done
 
         sudo certbot --nginx -d "$DOMAIN" --email "$SSL_EMAIL" --agree-tos --non-interactive --redirect
@@ -163,8 +166,7 @@ if check_command certbot; then
         if [ $? -eq 0 ]; then
             echo -e "${GREEN}SSL certificate installed successfully!${NC}"
         else
-            echo -e "${YELLOW}SSL setup failed. You can try again later with:${NC}"
-            echo "sudo certbot --nginx -d $DOMAIN"
+            echo -e "${YELLOW}SSL setup failed. Try later with: sudo certbot --nginx -d $DOMAIN${NC}"
         fi
     fi
 fi
@@ -175,14 +177,16 @@ echo -e "${GREEN}   Deployment Complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 if check_command certbot && [[ ! "$setup_ssl" =~ ^[Nn]$ ]]; then
-    echo -e "Your app is now available at: ${GREEN}https://$DOMAIN${NC}"
+    echo -e "Your app is available at: ${GREEN}https://$DOMAIN${NC}"
 else
-    echo -e "Your app is now available at: ${GREEN}http://$DOMAIN${NC}"
+    echo -e "Your app is available at: ${GREEN}http://$DOMAIN${NC}"
 fi
 echo ""
-echo "Default login:"
+echo -e "${YELLOW}Default superadmin login:${NC}"
 echo "  Username: adhielesmana"
 echo "  Password: admin123"
+echo ""
+echo -e "${RED}IMPORTANT: Change the superadmin password after first login!${NC}"
 echo ""
 echo "Useful commands:"
 echo "  View logs:     docker compose logs -f"
