@@ -28,7 +28,7 @@ DB_NAME="unified_inbox"
 DB_USER="inbox_user"
 DB_PASS=$(openssl rand -hex 16)
 SESSION_SECRET=$(openssl rand -hex 32)
-ADMIN_USER="admin"
+ADMIN_USER="adhielesmana"
 ADMIN_PASS=$(openssl rand -base64 12 | tr -d '/+=')
 APP_PORT=5000
 
