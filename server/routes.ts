@@ -9,6 +9,7 @@ import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
 import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
+import type { Contact } from "@shared/schema";
 
 function normalizeWhatsAppJid(jid: string): string {
   return jid
@@ -39,6 +40,62 @@ async function validateOpenAIKey(apiKey: string): Promise<boolean> {
       console.error("OpenAI validation error:", error);
     }
     return false;
+  }
+}
+
+async function generatePersonalizedMessage(apiKey: string, prompt: string, contact: Contact): Promise<string> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const systemPrompt = `You are a helpful assistant that generates personalized WhatsApp messages. 
+Generate a unique, natural-sounding message based on the user's prompt.
+Make the message feel personal and human, avoiding robotic or templated language.
+Keep the message concise and appropriate for WhatsApp.
+Do not include any greeting like "Hi" or the contact's name at the start - just the message content.
+Vary your writing style, sentence structure, and vocabulary to make each message unique.`;
+
+    const userPrompt = `Generate a personalized message for this contact:
+Name: ${contact.name || "Unknown"}
+Phone: ${contact.phoneNumber || "Unknown"}
+
+User's prompt/instructions: ${prompt}
+
+Generate a unique message that follows these instructions while sounding natural and human.`;
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 500,
+        temperature: 0.9,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "OpenAI API error");
+    }
+
+    const data = await response.json();
+    return data.choices[0]?.message?.content?.trim() || "";
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error("Message generation timed out");
+    }
+    throw error;
   }
 }
 
@@ -1217,6 +1274,239 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error sending WhatsApp message:", error);
       res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  // ============= BLAST CAMPAIGN ROUTES =============
+  
+  // Get all blast campaigns
+  app.get("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaigns = await storage.getBlastCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      console.error("Error getting blast campaigns:", error);
+      res.status(500).json({ error: "Failed to get blast campaigns" });
+    }
+  });
+
+  // Get single blast campaign with recipients
+  app.get("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      const recipients = await storage.getBlastRecipients(req.params.id);
+      res.json({ ...campaign, recipients });
+    } catch (error) {
+      console.error("Error getting blast campaign:", error);
+      res.status(500).json({ error: "Failed to get blast campaign" });
+    }
+  });
+
+  // Create blast campaign
+  app.post("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds } = req.body;
+      
+      if (!name || !prompt) {
+        return res.status(400).json({ error: "Name and prompt are required" });
+      }
+
+      // Create campaign
+      const campaign = await storage.createBlastCampaign({
+        name,
+        prompt,
+        status: "draft",
+        totalRecipients: contactIds?.length || 0,
+        minIntervalSeconds: minIntervalSeconds || 120,
+        maxIntervalSeconds: maxIntervalSeconds || 180,
+        createdBy: req.session.userId,
+      });
+
+      // Create recipients if contact IDs provided
+      if (contactIds && contactIds.length > 0) {
+        const recipientData = contactIds.map((contactId: string) => ({
+          campaignId: campaign.id,
+          contactId,
+          status: "pending" as const,
+        }));
+        await storage.createBlastRecipients(recipientData);
+      }
+
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error creating blast campaign:", error);
+      res.status(500).json({ error: "Failed to create blast campaign" });
+    }
+  });
+
+  // Update blast campaign
+  app.patch("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { name, prompt, minIntervalSeconds, maxIntervalSeconds } = req.body;
+      const campaign = await storage.updateBlastCampaign(req.params.id, {
+        name,
+        prompt,
+        minIntervalSeconds,
+        maxIntervalSeconds,
+      });
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error updating blast campaign:", error);
+      res.status(500).json({ error: "Failed to update blast campaign" });
+    }
+  });
+
+  // Delete blast campaign
+  app.delete("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteBlastCampaign(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting blast campaign:", error);
+      res.status(500).json({ error: "Failed to delete blast campaign" });
+    }
+  });
+
+  // Add recipients to campaign
+  app.post("/api/blast-campaigns/:id/recipients", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { contactIds } = req.body;
+      if (!contactIds || !Array.isArray(contactIds)) {
+        return res.status(400).json({ error: "Contact IDs array required" });
+      }
+
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      if (campaign.status !== "draft") {
+        return res.status(400).json({ error: "Can only add recipients to draft campaigns" });
+      }
+
+      const recipientData = contactIds.map((contactId: string) => ({
+        campaignId: req.params.id,
+        contactId,
+        status: "pending" as const,
+      }));
+
+      await storage.createBlastRecipients(recipientData);
+      await storage.updateBlastCampaign(req.params.id, {
+        totalRecipients: (campaign.totalRecipients || 0) + contactIds.length,
+      });
+
+      res.json({ success: true, added: contactIds.length });
+    } catch (error) {
+      console.error("Error adding recipients:", error);
+      res.status(500).json({ error: "Failed to add recipients" });
+    }
+  });
+
+  // Start/launch campaign
+  app.post("/api/blast-campaigns/:id/start", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      if (campaign.status !== "draft" && campaign.status !== "paused") {
+        return res.status(400).json({ error: "Campaign cannot be started from current status" });
+      }
+
+      if (!campaign.totalRecipients || campaign.totalRecipients === 0) {
+        return res.status(400).json({ error: "Campaign has no recipients" });
+      }
+
+      // Check WhatsApp connection
+      const waStatus = whatsappService.getConnectionState();
+      if (waStatus !== "open") {
+        return res.status(400).json({ error: "WhatsApp is not connected" });
+      }
+
+      // Update campaign status to running
+      const updated = await storage.updateBlastCampaignStatus(req.params.id, "running");
+      res.json(updated);
+    } catch (error) {
+      console.error("Error starting campaign:", error);
+      res.status(500).json({ error: "Failed to start campaign" });
+    }
+  });
+
+  // Pause campaign
+  app.post("/api/blast-campaigns/:id/pause", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      if (campaign.status !== "running") {
+        return res.status(400).json({ error: "Only running campaigns can be paused" });
+      }
+
+      const updated = await storage.updateBlastCampaignStatus(req.params.id, "paused");
+      res.json(updated);
+    } catch (error) {
+      console.error("Error pausing campaign:", error);
+      res.status(500).json({ error: "Failed to pause campaign" });
+    }
+  });
+
+  // Cancel campaign
+  app.post("/api/blast-campaigns/:id/cancel", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      if (campaign.status === "completed" || campaign.status === "cancelled") {
+        return res.status(400).json({ error: "Campaign is already finished" });
+      }
+
+      const updated = await storage.updateBlastCampaignStatus(req.params.id, "cancelled");
+      res.json(updated);
+    } catch (error) {
+      console.error("Error cancelling campaign:", error);
+      res.status(500).json({ error: "Failed to cancel campaign" });
+    }
+  });
+
+  // Preview AI-generated message for a recipient
+  app.post("/api/blast-campaigns/:id/preview", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { contactId } = req.body;
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const contact = await storage.getContact(contactId);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      // Get OpenAI API key
+      const apiKeySetting = await storage.getAppSetting("openai_api_key");
+      const apiKey = apiKeySetting?.value || process.env.OPENAI_API_KEY;
+      
+      if (!apiKey) {
+        return res.status(400).json({ error: "OpenAI API key not configured" });
+      }
+
+      // Generate personalized message
+      const message = await generatePersonalizedMessage(apiKey, campaign.prompt, contact);
+      res.json({ message });
+    } catch (error) {
+      console.error("Error generating preview:", error);
+      res.status(500).json({ error: "Failed to generate preview" });
     }
   });
 
