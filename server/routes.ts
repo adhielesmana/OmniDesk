@@ -9,6 +9,7 @@ import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
 import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
+import { clearCampaignTiming } from "./blast-worker";
 import type { Contact } from "@shared/schema";
 
 function normalizeWhatsAppJid(jid: string): string {
@@ -1451,6 +1452,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Only running campaigns can be paused" });
       }
 
+      // Clear timing so it starts fresh when resumed
+      clearCampaignTiming(req.params.id);
       const updated = await storage.updateBlastCampaignStatus(req.params.id, "paused");
       res.json(updated);
     } catch (error) {
@@ -1471,6 +1474,8 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Campaign is already finished" });
       }
 
+      // Clear timing when cancelling
+      clearCampaignTiming(req.params.id);
       const updated = await storage.updateBlastCampaignStatus(req.params.id, "cancelled");
       res.json(updated);
     } catch (error) {

@@ -5,6 +5,9 @@ import type { BlastRecipient, BlastCampaign, Contact } from "@shared/schema";
 let isProcessing = false;
 let workerInterval: NodeJS.Timeout | null = null;
 
+// Track next allowed send time for each campaign to enforce randomized intervals
+const campaignNextSendTime: Map<string, number> = new Map();
+
 async function getOpenAIKey(): Promise<string | null> {
   const setting = await storage.getAppSetting("openai_api_key");
   return setting?.value || process.env.OPENAI_API_KEY || null;
@@ -198,21 +201,35 @@ async function processBlastWorker(): Promise<void> {
   try {
     const campaigns = await storage.getBlastCampaigns();
     const runningCampaigns = campaigns.filter(c => c.status === "running");
+    const now = Date.now();
 
     for (const campaign of runningCampaigns) {
+      // Check if enough time has passed since last message for this campaign
+      const nextAllowedTime = campaignNextSendTime.get(campaign.id) || 0;
+      
+      if (now < nextAllowedTime) {
+        // Not yet time to send for this campaign, just generate messages
+        await processNextRecipient(campaign);
+        continue;
+      }
+
+      // Generate next message if needed
       await processNextRecipient(campaign);
 
+      // Find a queued message ready to send
       const dueRecipients = await storage.getDueRecipients(1);
       const campaignRecipient = dueRecipients.find(r => r.campaignId === campaign.id);
       
       if (campaignRecipient) {
         await sendQueuedMessage(campaignRecipient);
 
+        // Set next allowed send time with randomized interval
         const minInterval = campaign.minIntervalSeconds || 120;
         const maxInterval = campaign.maxIntervalSeconds || 180;
         const waitTime = getRandomInterval(minInterval, maxInterval) * 1000;
         
-        console.log(`Waiting ${waitTime / 1000}s before next message...`);
+        campaignNextSendTime.set(campaign.id, now + waitTime);
+        console.log(`Next message for campaign "${campaign.name}" in ${waitTime / 1000}s`);
       }
 
       await checkCampaignCompletion(campaign.id);
@@ -245,4 +262,9 @@ export function stopBlastWorker(): void {
     workerInterval = null;
     console.log("Blast worker stopped");
   }
+}
+
+// Clear campaign timing when paused or cancelled so it starts fresh when resumed
+export function clearCampaignTiming(campaignId: string): void {
+  campaignNextSendTime.delete(campaignId);
 }
