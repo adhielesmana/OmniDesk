@@ -70,6 +70,49 @@ export default function BlastPage() {
 
   const { data: campaigns = [], isLoading: campaignsLoading } = useQuery<BlastCampaign[]>({
     queryKey: ["/api/blast-campaigns"],
+    refetchInterval: 5000,
+  });
+
+  const quickPauseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/blast-campaigns/${id}/pause`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      toast({ title: "Campaign paused" });
+    },
+    onError: () => {
+      toast({ title: "Failed to pause campaign", variant: "destructive" });
+    },
+  });
+
+  const quickCancelMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/blast-campaigns/${id}/cancel`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      toast({ title: "Campaign cancelled" });
+    },
+    onError: () => {
+      toast({ title: "Failed to cancel campaign", variant: "destructive" });
+    },
+  });
+
+  const quickResumeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/blast-campaigns/${id}/start`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      toast({ title: "Campaign resumed" });
+    },
+    onError: () => {
+      toast({ title: "Failed to resume campaign", variant: "destructive" });
+    },
   });
 
   const { data: campaignDetail, isLoading: detailLoading } = useQuery<BlastCampaignWithRecipients>({
@@ -230,6 +273,65 @@ export default function BlastPage() {
                       value={((campaign.sentCount || 0) + (campaign.failedCount || 0)) / campaign.totalRecipients * 100} 
                       className="mt-3 h-1"
                     />
+                  )}
+                  {(campaign.status === "running" || campaign.status === "paused") && (
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t" onClick={(e) => e.stopPropagation()}>
+                      {campaign.status === "running" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            quickPauseMutation.mutate(campaign.id);
+                          }}
+                          disabled={quickPauseMutation.isPending}
+                          data-testid={`button-quick-pause-${campaign.id}`}
+                        >
+                          {quickPauseMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Pause className="h-3 w-3" />
+                          )}
+                          <span className="ml-1">Pause</span>
+                        </Button>
+                      )}
+                      {campaign.status === "paused" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            quickResumeMutation.mutate(campaign.id);
+                          }}
+                          disabled={quickResumeMutation.isPending}
+                          data-testid={`button-quick-resume-${campaign.id}`}
+                        >
+                          {quickResumeMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Play className="h-3 w-3" />
+                          )}
+                          <span className="ml-1">Resume</span>
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          quickCancelMutation.mutate(campaign.id);
+                        }}
+                        disabled={quickCancelMutation.isPending}
+                        data-testid={`button-quick-stop-${campaign.id}`}
+                      >
+                        {quickCancelMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <XCircle className="h-3 w-3" />
+                        )}
+                        <span className="ml-1">Stop</span>
+                      </Button>
+                    </div>
                   )}
                 </CardContent>
               </Card>
