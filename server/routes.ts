@@ -373,6 +373,21 @@ export async function registerRoutes(
     });
   });
 
+  // Debug endpoint for diagnosing session issues in production
+  app.get("/api/debug/session", (req, res) => {
+    res.json({
+      hasSession: !!req.session,
+      hasUserId: !!req.session?.userId,
+      sessionId: req.sessionID ? req.sessionID.substring(0, 8) + "..." : null,
+      cookieSecure: req.session?.cookie?.secure,
+      cookieSameSite: req.session?.cookie?.sameSite,
+      isProduction: process.env.NODE_ENV === "production",
+      protocol: req.protocol,
+      host: req.get("host"),
+      xForwardedProto: req.get("x-forwarded-proto"),
+    });
+  });
+
   app.get("/api/auth/me", async (req, res) => {
     if (!req.session.userId) {
       return res.status(401).json({ error: "Not authenticated" });

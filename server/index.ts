@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -14,6 +15,23 @@ const httpServer = createServer(app);
 // Trust proxy for proper cookie handling behind nginx/reverse proxy
 // This is essential for secure cookies to work behind a reverse proxy
 app.set("trust proxy", 1);
+
+// CORS configuration for production
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(",") || [];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    // Allow same-origin requests and configured origins
+    if (allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Allow all origins for now
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+}));
 
 const PgStore = pgSession(session);
 const pool = new Pool({
