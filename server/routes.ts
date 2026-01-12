@@ -1840,12 +1840,18 @@ export async function registerRoutes(
           contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
         }
         if (!contact) {
+          // For outbound messages (isFromMe), msg.fromName is OUR name, not the recipient's
+          // Use phone number as default name for outbound messages to unknown contacts
+          const contactName = msg.isFromMe 
+            ? (isLid ? normalizedId : `+${normalizedId}`)
+            : msg.fromName;
+          
           // Create new contact - if it's a LID, don't store as phone number
           if (isLid) {
             contact = await storage.createContact({
               platformId: normalizedId,
               platform: "whatsapp",
-              name: msg.fromName,
+              name: contactName,
               whatsappLid: normalizedId, // Store LID separately
               // Don't set phone number for LID-only contacts
             });
@@ -1853,12 +1859,13 @@ export async function registerRoutes(
             contact = await storage.createContact({
               platformId: normalizedId,
               platform: "whatsapp",
-              name: msg.fromName,
+              name: contactName,
               phoneNumber: `+${normalizedId}`,
             });
           }
         } else {
           // Update existing contact with missing identifiers
+          // Only update identifiers, NOT the name (especially for outbound messages)
           const updates: Record<string, string> = {};
           if (isLid && !contact.whatsappLid) {
             updates.whatsappLid = normalizedId;
