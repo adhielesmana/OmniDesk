@@ -1264,6 +1264,16 @@ export async function registerRoutes(
       const useAI = req.body?.useAI === "true" || req.body?.useAI === true;
       const csvContent = req.file.buffer.toString("utf-8");
       
+      // First parse: get total row count
+      const fullParseResult = Papa.parse(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (h: string) => h.trim(),
+      });
+      
+      const totalRows = fullParseResult.data.length;
+      
+      // Second parse: get preview rows only (for faster response)
       const parseResult = Papa.parse(csvContent, {
         header: true,
         skipEmptyLines: true,
@@ -1324,7 +1334,7 @@ export async function registerRoutes(
         headers,
         previewRows,
         suggestedMapping,
-        totalRows: parseResult.data.length,
+        totalRows,
         aiDetection,
       });
     } catch (error) {
