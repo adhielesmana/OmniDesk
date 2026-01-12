@@ -855,7 +855,7 @@ export class DatabaseStorage implements IStorage {
     if (recipients.length === 0) return [];
     
     // Batch insert to avoid timeout with large recipient lists (10000+)
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 100;
     const results: BlastRecipient[] = [];
     
     for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
