@@ -38,6 +38,11 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+// Log pool errors for debugging
+pool.on("error", (err) => {
+  console.error("PostgreSQL pool error:", err);
+});
+
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
   throw new Error("SESSION_SECRET environment variable is required");
@@ -45,13 +50,18 @@ if (!sessionSecret) {
 
 const isProduction = process.env.NODE_ENV === "production";
 
+const sessionStore = new PgStore({
+  pool,
+  tableName: "session",
+  createTableIfMissing: true,
+  errorLog: (err) => {
+    console.error("Session store error:", err);
+  },
+});
+
 app.use(
   session({
-    store: new PgStore({
-      pool,
-      tableName: "session",
-      createTableIfMissing: true,
-    }),
+    store: sessionStore,
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,

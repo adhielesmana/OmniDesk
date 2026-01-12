@@ -352,11 +352,18 @@ export async function registerRoutes(
         displayName: user.displayName,
       };
 
-      res.json({
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        displayName: user.displayName,
+      // Explicitly save session before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).json({ error: "Session save failed" });
+        }
+        res.json({
+          id: user.id,
+          username: user.username,
+          role: user.role,
+          displayName: user.displayName,
+        });
       });
     } catch (error) {
       console.error("Login error:", error);
