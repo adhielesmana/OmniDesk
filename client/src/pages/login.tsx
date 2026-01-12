@@ -79,7 +79,7 @@ export default function LoginPage() {
             )}
           </div>
           <CardTitle className="text-2xl font-bold">
-            {branding?.organizationName || "Unified Inbox"}
+            {branding?.organizationName || "OmniDesk"}
           </CardTitle>
           <CardDescription>
             Sign in to access your messaging dashboard

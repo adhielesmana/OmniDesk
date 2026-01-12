@@ -3,7 +3,7 @@
 set -e
 
 echo "============================================"
-echo "   Unified Inbox - Quick Setup"
+echo "   OmniDesk - Quick Setup"
 echo "============================================"
 echo ""
 

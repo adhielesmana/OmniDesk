@@ -240,7 +240,7 @@ class WhatsAppService {
         auth: state,
         printQRInTerminal: false,
         logger,
-        browser: ["Unified Inbox", "Chrome", "1.0.0"],
+        browser: ["OmniDesk", "Chrome", "1.0.0"],
         syncFullHistory: true,
       });
 

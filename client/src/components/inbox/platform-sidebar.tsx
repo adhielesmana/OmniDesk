@@ -50,7 +50,7 @@ export function PlatformSidebar({
       <div className="p-4 border-b border-sidebar-border">
         <h1 className="text-lg font-semibold text-sidebar-foreground flex items-center gap-2">
           <MessageCircle className="h-5 w-5 text-primary" />
-          Unified Inbox
+          OmniDesk
         </h1>
       </div>
 

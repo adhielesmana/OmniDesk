@@ -1,4 +1,4 @@
-# Unified Inbox Management App - Design Guidelines
+# OmniDesk - Design Guidelines
 
 ## Design Approach
 

@@ -108,7 +108,7 @@ export function AppSidebar({
             <MessageCircle className="h-5 w-5 text-primary" />
           )}
           <span className="truncate">
-            {branding?.organizationName || "Unified Inbox"}
+            {branding?.organizationName || "OmniDesk"}
           </span>
         </h1>
       </SidebarHeader>

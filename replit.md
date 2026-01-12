@@ -1,4 +1,4 @@
-# Unified Inbox Management App
+# OmniDesk - Unified Messaging Platform
 
 ## Overview
 
