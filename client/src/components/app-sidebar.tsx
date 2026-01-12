@@ -1,6 +1,7 @@
-import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send } from "lucide-react";
+import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send, Circle } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -25,6 +26,13 @@ interface BrandingData {
   organizationName: string | null;
 }
 
+interface PlatformSettingsData {
+  id: string;
+  platform: "whatsapp" | "instagram" | "facebook";
+  isConnected: boolean;
+  accessToken: string | null;
+}
+
 interface AppSidebarProps {
   selectedPlatform: Platform | "all";
   onSelectPlatform: (platform: Platform | "all") => void;
@@ -43,6 +51,20 @@ export function AppSidebar({
   const { data: branding } = useQuery<BrandingData>({
     queryKey: ["/api/admin/branding"],
   });
+
+  const { data: platformSettings = [] } = useQuery<PlatformSettingsData[]>({
+    queryKey: ["/api/platform-settings"],
+    refetchInterval: 30000,
+  });
+
+  const getPlatformStatus = (platformId: string): "connected" | "configured" | "disconnected" => {
+    if (platformId === "all") return "connected";
+    const settings = platformSettings.find(p => p.platform === platformId);
+    if (!settings) return "disconnected";
+    if (settings.isConnected) return "connected";
+    if (settings.accessToken) return "configured";
+    return "disconnected";
+  };
 
   const platforms: { id: Platform | "all"; name: string; icon: React.ReactNode; color: string }[] = [
     {
@@ -125,6 +147,7 @@ export function AppSidebar({
               {platforms.map((platform) => {
                 const isSelected = selectedPlatform === platform.id;
                 const unreadCount = unreadCounts[platform.id] || 0;
+                const status = getPlatformStatus(platform.id);
 
                 return (
                   <SidebarMenuItem key={platform.id}>
@@ -133,7 +156,28 @@ export function AppSidebar({
                       isActive={isSelected}
                       data-testid={`button-platform-${platform.id}`}
                     >
-                      <span className={platform.color}>{platform.icon}</span>
+                      <span className={`relative ${platform.color}`}>
+                        {platform.icon}
+                        {platform.id !== "all" && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border border-sidebar ${
+                                  status === "connected" ? "bg-green-500" : 
+                                  status === "configured" ? "bg-yellow-500" : 
+                                  "bg-gray-400"
+                                }`}
+                                data-testid={`status-${platform.id}`}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent side="right" className="text-xs">
+                              {status === "connected" ? "Connected" : 
+                               status === "configured" ? "Configured (not tested)" : 
+                               "Not connected"}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </span>
                       <span className="flex-1">{platform.name}</span>
                       {unreadCount > 0 && (
                         <Badge variant="default" className="min-w-[24px] justify-center">

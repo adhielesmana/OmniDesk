@@ -287,6 +287,43 @@ export class MetaApiService {
     }
   }
 
+  // Fetch user profile info from Meta Graph API
+  async getUserProfile(userId: string): Promise<{ name?: string; profilePicture?: string } | null> {
+    try {
+      let fields = "name";
+      
+      // For Messenger/Instagram, we can try to get profile picture
+      if (this.platform === "facebook") {
+        fields = "name,profile_pic";
+      } else if (this.platform === "instagram") {
+        fields = "name,username,profile_picture_url";
+      }
+
+      const url = `${GRAPH_API_BASE}/${userId}?fields=${fields}`;
+      
+      const response = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        console.error("Failed to fetch user profile:", await response.text());
+        return null;
+      }
+
+      const data = await response.json();
+      
+      return {
+        name: data.name || data.username,
+        profilePicture: data.profile_pic || data.profile_picture_url,
+      };
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      return null;
+    }
+  }
+
   static parseWhatsAppWebhook(body: any): WebhookMessage | null {
     try {
       const entry = body.entry?.[0];

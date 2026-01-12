@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
@@ -74,6 +74,10 @@ export default function AdminPage() {
               <ImageIcon className="h-4 w-4 mr-2" />
               Branding
             </TabsTrigger>
+            <TabsTrigger value="platforms" data-testid="tab-platforms">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Platforms
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -101,6 +105,10 @@ export default function AdminPage() {
 
           <TabsContent value="branding" className="space-y-4">
             <BrandingTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="platforms" className="space-y-4">
+            <PlatformsTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1139,6 +1147,410 @@ function BrandingTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : null}
               Save Logo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface PlatformSettings {
+  id: string;
+  platform: "whatsapp" | "instagram" | "facebook";
+  isConnected: boolean;
+  accessToken: string | null;
+  pageId: string | null;
+  businessId: string | null;
+  webhookVerifyToken: string | null;
+  lastSyncAt: string | null;
+}
+
+function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+
+  const { data: platforms = [], isLoading } = useQuery<PlatformSettings[]>({
+    queryKey: ["/api/platform-settings"],
+  });
+
+  const [selectedPlatform, setSelectedPlatform] = useState<"facebook" | "instagram" | null>(null);
+  const [formData, setFormData] = useState({
+    accessToken: "",
+    pageId: "",
+    businessId: "",
+    webhookVerifyToken: "",
+  });
+
+  const facebookSettings = platforms.find(p => p.platform === "facebook");
+  const instagramSettings = platforms.find(p => p.platform === "instagram");
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ platform, ...data }: { platform: string; accessToken: string; pageId: string; businessId: string; webhookVerifyToken: string }) => {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-settings"] });
+      setSelectedPlatform(null);
+      resetForm();
+      toast({ title: "Platform settings saved successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to save platform settings", variant: "destructive" });
+    },
+  });
+
+  const testMutation = useMutation({
+    mutationFn: async (platform: string) => {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}/test`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-settings"] });
+      if (data.success) {
+        toast({ title: "Connection successful!", description: `Connected to ${JSON.stringify(data.details?.name || data.details?.username || "platform")}` });
+      } else {
+        toast({ title: "Connection failed", description: data.error, variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Connection test failed", variant: "destructive" });
+    },
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (platform: string) => {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}/disconnect`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-settings"] });
+      toast({ title: "Platform disconnected" });
+    },
+    onError: () => {
+      toast({ title: "Failed to disconnect", variant: "destructive" });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      accessToken: "",
+      pageId: "",
+      businessId: "",
+      webhookVerifyToken: "",
+    });
+  };
+
+  const openConfigDialog = (platform: "facebook" | "instagram") => {
+    const settings = platform === "facebook" ? facebookSettings : instagramSettings;
+    setFormData({
+      accessToken: settings?.accessToken || "",
+      pageId: settings?.pageId || "",
+      businessId: settings?.businessId || "",
+      webhookVerifyToken: settings?.webhookVerifyToken || "",
+    });
+    setSelectedPlatform(platform);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Messaging Platforms
+          </CardTitle>
+          <CardDescription>
+            Connect your Facebook Messenger and Instagram to receive and send messages from this inbox.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground mb-4 p-4 bg-muted/50 rounded-md">
+            <p className="font-medium mb-2">Webhook URL for Meta:</p>
+            <code className="bg-background px-2 py-1 rounded text-xs break-all">
+              {typeof window !== 'undefined' ? `${window.location.origin}/api/webhook/facebook` : '/api/webhook/facebook'}
+            </code>
+            <p className="text-xs mt-2">Use the same URL for both Facebook and Instagram webhooks. Replace "facebook" with "instagram" for Instagram-specific webhooks.</p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm">f</div>
+                    Facebook Messenger
+                  </CardTitle>
+                  {facebookSettings?.isConnected ? (
+                    <Badge className="bg-green-600">Connected</Badge>
+                  ) : facebookSettings?.accessToken ? (
+                    <Badge variant="outline">Configured</Badge>
+                  ) : (
+                    <Badge variant="secondary">Not Connected</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {facebookSettings?.accessToken ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Page ID: {facebookSettings.pageId || "Not set"}
+                    </p>
+                    {facebookSettings.lastSyncAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last synced: {new Date(facebookSettings.lastSyncAt).toLocaleString()}
+                      </p>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => testMutation.mutate("facebook")}
+                        disabled={testMutation.isPending}
+                        data-testid="button-test-facebook"
+                      >
+                        {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                        Test
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openConfigDialog("facebook")}
+                        data-testid="button-configure-facebook"
+                      >
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Configure
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to disconnect Facebook?")) {
+                            disconnectMutation.mutate("facebook");
+                          }
+                        }}
+                        disabled={disconnectMutation.isPending}
+                        data-testid="button-disconnect-facebook"
+                      >
+                        <Unlink className="h-4 w-4 mr-1" />
+                        Disconnect
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Connect your Facebook Page to receive Messenger messages.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => openConfigDialog("facebook")}
+                      data-testid="button-connect-facebook"
+                    >
+                      <Link2 className="h-4 w-4 mr-1" />
+                      Connect Facebook
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">IG</div>
+                    Instagram
+                  </CardTitle>
+                  {instagramSettings?.isConnected ? (
+                    <Badge className="bg-green-600">Connected</Badge>
+                  ) : instagramSettings?.accessToken ? (
+                    <Badge variant="outline">Configured</Badge>
+                  ) : (
+                    <Badge variant="secondary">Not Connected</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {instagramSettings?.accessToken ? (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Business ID: {instagramSettings.businessId || "Not set"}
+                    </p>
+                    {instagramSettings.lastSyncAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Last synced: {new Date(instagramSettings.lastSyncAt).toLocaleString()}
+                      </p>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => testMutation.mutate("instagram")}
+                        disabled={testMutation.isPending}
+                        data-testid="button-test-instagram"
+                      >
+                        {testMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                        Test
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openConfigDialog("instagram")}
+                        data-testid="button-configure-instagram"
+                      >
+                        <Pencil className="h-4 w-4 mr-1" />
+                        Configure
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          if (confirm("Are you sure you want to disconnect Instagram?")) {
+                            disconnectMutation.mutate("instagram");
+                          }
+                        }}
+                        disabled={disconnectMutation.isPending}
+                        data-testid="button-disconnect-instagram"
+                      >
+                        <Unlink className="h-4 w-4 mr-1" />
+                        Disconnect
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-muted-foreground">
+                      Connect your Instagram Business account to receive DMs.
+                    </p>
+                    <Button
+                      size="sm"
+                      onClick={() => openConfigDialog("instagram")}
+                      data-testid="button-connect-instagram"
+                    >
+                      <Link2 className="h-4 w-4 mr-1" />
+                      Connect Instagram
+                    </Button>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">How to Get Your Credentials</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <p className="font-medium mb-2">1. Get a Page Access Token (Never-Expiring):</p>
+            <ol className="list-decimal list-inside space-y-1 text-muted-foreground ml-2">
+              <li>Go to <a href="https://developers.facebook.com/tools/explorer" target="_blank" rel="noopener noreferrer" className="text-primary underline">Graph API Explorer</a></li>
+              <li>Select your Facebook App and click "Get User Access Token"</li>
+              <li>Select permissions: <code className="bg-muted px-1 rounded">pages_show_list</code>, <code className="bg-muted px-1 rounded">pages_messaging</code>, <code className="bg-muted px-1 rounded">instagram_basic</code>, <code className="bg-muted px-1 rounded">instagram_manage_messages</code></li>
+              <li>Go to <a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank" rel="noopener noreferrer" className="text-primary underline">Access Token Debugger</a> and click "Extend Access Token"</li>
+              <li>Use the extended token to call: <code className="bg-muted px-1 rounded text-xs">GET /me/accounts</code> to get your never-expiring Page token</li>
+            </ol>
+          </div>
+          <div>
+            <p className="font-medium mb-2">2. Find Your Page ID:</p>
+            <p className="text-muted-foreground ml-2">Your Page ID is returned in the <code className="bg-muted px-1 rounded">/me/accounts</code> response, or find it in your Facebook Page's About section.</p>
+          </div>
+          <div>
+            <p className="font-medium mb-2">3. Find Your Instagram Business Account ID:</p>
+            <p className="text-muted-foreground ml-2">Call <code className="bg-muted px-1 rounded text-xs">GET /{'{page_id}'}?fields=instagram_business_account</code> using your Page Access Token.</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={selectedPlatform !== null} onOpenChange={(open) => !open && setSelectedPlatform(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Configure {selectedPlatform === "facebook" ? "Facebook Messenger" : "Instagram"}
+            </DialogTitle>
+            <DialogDescription>
+              Enter your Meta API credentials to connect this platform.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="accessToken">Page Access Token *</Label>
+              <Input
+                id="accessToken"
+                type="password"
+                placeholder="Your page access token"
+                value={formData.accessToken}
+                onChange={(e) => setFormData({ ...formData, accessToken: e.target.value })}
+                data-testid="input-access-token"
+              />
+            </div>
+            {selectedPlatform === "facebook" && (
+              <div className="space-y-2">
+                <Label htmlFor="pageId">Page ID *</Label>
+                <Input
+                  id="pageId"
+                  placeholder="Your Facebook Page ID"
+                  value={formData.pageId}
+                  onChange={(e) => setFormData({ ...formData, pageId: e.target.value })}
+                  data-testid="input-page-id"
+                />
+              </div>
+            )}
+            {selectedPlatform === "instagram" && (
+              <div className="space-y-2">
+                <Label htmlFor="businessId">Instagram Business Account ID *</Label>
+                <Input
+                  id="businessId"
+                  placeholder="Your Instagram Business Account ID"
+                  value={formData.businessId}
+                  onChange={(e) => setFormData({ ...formData, businessId: e.target.value })}
+                  data-testid="input-business-id"
+                />
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="webhookVerifyToken">Webhook Verify Token</Label>
+              <Input
+                id="webhookVerifyToken"
+                placeholder="A secret token for webhook verification"
+                value={formData.webhookVerifyToken}
+                onChange={(e) => setFormData({ ...formData, webhookVerifyToken: e.target.value })}
+                data-testid="input-verify-token"
+              />
+              <p className="text-xs text-muted-foreground">
+                Create a random string and use it when configuring webhooks in Meta Developer Portal.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedPlatform(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (selectedPlatform) {
+                  saveMutation.mutate({
+                    platform: selectedPlatform,
+                    ...formData,
+                  });
+                }
+              }}
+              disabled={saveMutation.isPending || !formData.accessToken || (selectedPlatform === "facebook" && !formData.pageId) || (selectedPlatform === "instagram" && !formData.businessId)}
+              data-testid="button-save-platform"
+            >
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Save
             </Button>
           </DialogFooter>
         </DialogContent>

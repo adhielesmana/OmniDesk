@@ -1000,8 +1000,8 @@ export async function registerRoutes(
     }
   });
 
-  // Get platform settings
-  app.get("/api/platform-settings", async (req, res) => {
+  // Get platform settings (requires auth)
+  app.get("/api/platform-settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getPlatformSettings();
       // Don't expose access tokens
@@ -1016,18 +1016,35 @@ export async function registerRoutes(
     }
   });
 
-  // Save platform settings
-  app.post("/api/platform-settings/:platform", async (req, res) => {
+  // Save platform settings (requires admin)
+  app.post("/api/platform-settings/:platform", requireAdmin, async (req, res) => {
     try {
       const platform = req.params.platform as Platform;
       if (!["whatsapp", "instagram", "facebook"].includes(platform)) {
         return res.status(400).json({ error: "Invalid platform" });
       }
 
+      const { accessToken, pageId, businessId, webhookVerifyToken } = req.body;
+
+      if (!accessToken) {
+        return res.status(400).json({ error: "Access token is required" });
+      }
+
+      if (platform === "facebook" && !pageId) {
+        return res.status(400).json({ error: "Page ID is required for Facebook" });
+      }
+
+      if (platform === "instagram" && !businessId) {
+        return res.status(400).json({ error: "Business ID is required for Instagram" });
+      }
+
       const settings = await storage.upsertPlatformSettings({
         platform,
-        ...req.body,
-        isConnected: true,
+        accessToken,
+        pageId: pageId || null,
+        businessId: businessId || null,
+        webhookVerifyToken: webhookVerifyToken || null,
+        isConnected: false,
       });
 
       res.json({
@@ -1040,28 +1057,63 @@ export async function registerRoutes(
     }
   });
 
-  // Test platform connection
-  app.get("/api/platform-settings/:platform/test", async (req, res) => {
+  // Test platform connection (requires admin)
+  app.post("/api/platform-settings/:platform/test", requireAdmin, async (req, res) => {
     try {
       const platform = req.params.platform as Platform;
-      const settings = await storage.getPlatformSetting(platform);
+      if (!["instagram", "facebook"].includes(platform)) {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
 
-      if (!settings?.accessToken) {
-        return res.json({ success: false, error: "No credentials configured" });
+      const settings = await storage.getPlatformSetting(platform);
+      if (!settings || !settings.accessToken) {
+        return res.status(400).json({ error: "Platform not configured" });
       }
 
       const metaApi = new MetaApiService(platform, {
         accessToken: settings.accessToken,
-        phoneNumberId: settings.phoneNumberId || undefined,
         pageId: settings.pageId || undefined,
         businessId: settings.businessId || undefined,
       });
 
       const result = await metaApi.testConnection();
+
+      if (result.success) {
+        await storage.upsertPlatformSettings({
+          ...settings,
+          isConnected: true,
+          lastSyncAt: new Date(),
+        });
+      }
+
       res.json(result);
     } catch (error) {
       console.error("Error testing connection:", error);
       res.status(500).json({ success: false, error: "Connection test failed" });
+    }
+  });
+
+  // Disconnect platform (requires admin)
+  app.post("/api/platform-settings/:platform/disconnect", requireAdmin, async (req, res) => {
+    try {
+      const platform = req.params.platform as Platform;
+      if (!["instagram", "facebook"].includes(platform)) {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
+
+      const settings = await storage.getPlatformSetting(platform);
+      if (settings) {
+        await storage.upsertPlatformSettings({
+          ...settings,
+          accessToken: null,
+          isConnected: false,
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error disconnecting platform:", error);
+      res.status(500).json({ error: "Failed to disconnect platform" });
     }
   });
 
@@ -1156,17 +1208,28 @@ export async function registerRoutes(
   });
 
   // Webhook verification (GET request from Meta)
-  app.get("/api/webhook/:platform", (req, res) => {
+  app.get("/api/webhook/:platform", async (req, res) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
 
-    const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+    const platform = req.params.platform as Platform;
+    
+    // Get verify token from database or environment
+    let verifyToken = process.env.WEBHOOK_VERIFY_TOKEN;
+    
+    if (["instagram", "facebook"].includes(platform)) {
+      const settings = await storage.getPlatformSetting(platform);
+      if (settings?.webhookVerifyToken) {
+        verifyToken = settings.webhookVerifyToken;
+      }
+    }
 
     if (mode === "subscribe" && token === verifyToken) {
-      console.log(`${req.params.platform} webhook verified`);
+      console.log(`${platform} webhook verified`);
       res.status(200).send(challenge);
     } else {
+      console.log(`${platform} webhook verification failed. Expected: ${verifyToken}, Got: ${token}`);
       res.sendStatus(403);
     }
   });
@@ -1197,10 +1260,31 @@ export async function registerRoutes(
         );
 
         if (!contact) {
+          let name = webhookMessage.senderName;
+          let profilePictureUrl: string | undefined;
+          
+          // Try to fetch profile info from Meta for Facebook/Instagram
+          if (["facebook", "instagram"].includes(webhookMessage.platform)) {
+            const settings = await storage.getPlatformSetting(webhookMessage.platform);
+            if (settings?.accessToken) {
+              const metaApi = new MetaApiService(webhookMessage.platform, {
+                accessToken: settings.accessToken,
+                pageId: settings.pageId || undefined,
+                businessId: settings.businessId || undefined,
+              });
+              const profile = await metaApi.getUserProfile(webhookMessage.senderId);
+              if (profile) {
+                name = profile.name || name;
+                profilePictureUrl = profile.profilePicture;
+              }
+            }
+          }
+          
           contact = await storage.createContact({
             platformId: webhookMessage.senderId,
             platform: webhookMessage.platform,
-            name: webhookMessage.senderName,
+            name,
+            profilePictureUrl,
           });
         }
 
