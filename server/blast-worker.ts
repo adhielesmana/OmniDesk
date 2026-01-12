@@ -73,6 +73,68 @@ function getRandomInterval(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+// Calculate similarity between two strings (Jaccard similarity on words)
+function calculateSimilarity(str1: string, str2: string): number {
+  const words1 = str1.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  const words2 = str2.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  
+  if (words1.length === 0 || words2.length === 0) return 0;
+  
+  const set1 = new Set(words1);
+  const set2 = new Set(words2);
+  
+  let intersectionCount = 0;
+  words1.forEach(w => { if (set2.has(w)) intersectionCount++; });
+  
+  const unionSet = new Set(words1.concat(words2));
+  
+  return intersectionCount / unionSet.size;
+}
+
+// Check if message is too similar to any previously sent message in the campaign
+async function isDuplicateMessage(campaignId: string, newMessage: string, threshold: number = 0.7): Promise<boolean> {
+  const recipients = await storage.getBlastRecipients(campaignId);
+  const sentMessages = recipients
+    .filter(r => r.status === "sent" && r.generatedMessage)
+    .map(r => r.generatedMessage as string);
+  
+  for (const sentMessage of sentMessages) {
+    const similarity = calculateSimilarity(newMessage, sentMessage);
+    if (similarity >= threshold) {
+      console.log(`Duplicate detected! Similarity: ${(similarity * 100).toFixed(1)}% - regenerating...`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Generate a unique message with duplicate checking and retries
+async function generateUniqueMessage(
+  apiKey: string, 
+  prompt: string, 
+  contact: Contact, 
+  campaignId: string,
+  maxRetries: number = 3
+): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const message = await generatePersonalizedMessage(apiKey, prompt, contact);
+    
+    // Check for duplicates
+    const isDuplicate = await isDuplicateMessage(campaignId, message);
+    
+    if (!isDuplicate) {
+      return message;
+    }
+    
+    console.log(`Attempt ${attempt + 1}/${maxRetries}: Message was too similar, regenerating...`);
+  }
+  
+  // If all retries failed, generate one more with modified prompt to force uniqueness
+  const modifiedPrompt = `${prompt}\n\n[IMPORTANT: Generate a completely different and unique message. Be creative and vary your style significantly.]`;
+  return generatePersonalizedMessage(apiKey, modifiedPrompt, contact);
+}
+
 async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
   const recipient = await storage.getNextPendingRecipient(campaign.id);
   if (!recipient) {
@@ -102,7 +164,8 @@ async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
   try {
     await storage.updateBlastRecipient(recipient.id, { status: "generating" });
 
-    const message = await generatePersonalizedMessage(apiKey, campaign.prompt, contact);
+    // Use duplicate-checked message generation
+    const message = await generateUniqueMessage(apiKey, campaign.prompt, contact, campaign.id);
     
     await storage.updateBlastRecipient(recipient.id, {
       status: "queued",
