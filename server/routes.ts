@@ -1833,6 +1833,14 @@ export async function registerRoutes(
         const normalizedId = normalizeWhatsAppJid(msg.from);
         const isLid = isWhatsAppLid(normalizedId);
         
+        // Skip messages where the remoteJid is our own WhatsApp number
+        // This prevents creating a contact/conversation for ourselves
+        const myJid = whatsappService.getMyJid();
+        if (myJid && normalizedId === myJid) {
+          console.log("Skipping message to/from own WhatsApp number");
+          return;
+        }
+        
         // First try to find existing contact by phone number or LID
         let contact = await storage.getContactByPhoneNumber(normalizedId);
         if (!contact) {
@@ -1937,10 +1945,18 @@ export async function registerRoutes(
     },
     onChatsSync: async (chats) => {
       console.log(`Syncing ${chats.length} WhatsApp chats...`);
+      const myJid = whatsappService.getMyJid();
+      
       for (const chat of chats) {
         try {
           const phoneNumber = chat.jid.replace("@s.whatsapp.net", "").replace("@lid", "");
           const isLid = isWhatsAppLid(phoneNumber);
+          
+          // Skip our own WhatsApp number
+          if (myJid && phoneNumber === myJid) {
+            console.log("Skipping sync of own WhatsApp number");
+            continue;
+          }
           
           // First try to find existing contact by phone number or LID
           let contact = await storage.getContactByPhoneNumber(phoneNumber);
@@ -1997,6 +2013,7 @@ export async function registerRoutes(
     onHistorySync: async (messages) => {
       console.log(`Processing ${messages.length} historical messages...`);
       let savedCount = 0;
+      const myJid = whatsappService.getMyJid();
       
       for (const msg of messages) {
         try {
@@ -2005,6 +2022,9 @@ export async function registerRoutes(
 
           const normalizedHistoryId = normalizeWhatsAppJid(msg.from);
           const isLid = isWhatsAppLid(normalizedHistoryId);
+          
+          // Skip our own WhatsApp number
+          if (myJid && normalizedHistoryId === myJid) continue;
           
           // First try to find existing contact by phone number or LID
           let contact = await storage.getContactByPhoneNumber(normalizedHistoryId);

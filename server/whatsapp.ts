@@ -204,6 +204,15 @@ class WhatsAppService {
     return this.connectionState === "connected" && this.socket !== null;
   }
 
+  getMyJid(): string | null {
+    if (!this.socket?.user?.id) return null;
+    // Return normalized JID (remove device suffix like :0@s.whatsapp.net)
+    const jid = this.socket.user.id;
+    // Extract just the number part (before : or @)
+    const match = jid.match(/^(\d+)/);
+    return match ? match[1] : null;
+  }
+
   hasExistingAuth(): boolean {
     try {
       const credsPath = path.join(this.authFolder, "creds.json");
