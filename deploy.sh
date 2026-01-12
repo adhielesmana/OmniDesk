@@ -277,9 +277,24 @@ elif check_command certbot; then
             # Fix X-Forwarded-Proto to always use https after SSL is set up
             if grep -q 'proxy_set_header X-Forwarded-Proto \$scheme' "$NGINX_CONF"; then
                 sed -i 's/proxy_set_header X-Forwarded-Proto \$scheme/proxy_set_header X-Forwarded-Proto https/g' "$NGINX_CONF"
-                nginx -t && systemctl reload nginx
                 echo -e "  ${GREEN}✓${NC} Nginx X-Forwarded-Proto fixed for HTTPS"
             fi
+            
+            # Ensure WebSocket headers are in the SSL server block (certbot might not preserve them)
+            if ! grep -q 'proxy_set_header Upgrade' "$NGINX_CONF" | grep -A20 'listen 443' | grep -q 'Upgrade'; then
+                # Add WebSocket and timeout settings to SSL location block if missing
+                sed -i '/listen 443 ssl/,/location \/ {/{ 
+                    /location \/ {/a\
+        proxy_http_version 1.1;\
+        proxy_set_header Upgrade $http_upgrade;\
+        proxy_set_header Connection "upgrade";\
+        proxy_read_timeout 86400;\
+        proxy_send_timeout 86400;
+                }' "$NGINX_CONF" 2>/dev/null || true
+            fi
+            
+            nginx -t && systemctl reload nginx
+            echo -e "  ${GREEN}✓${NC} WebSocket headers verified for SSL"
         else
             echo -e "  ${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
         fi
