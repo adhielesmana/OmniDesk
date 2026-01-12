@@ -368,7 +368,12 @@ function CreateCampaignDialog({
   const [maxInterval, setMaxInterval] = useState("1800");
 
   const { data: contactsData } = useQuery<{ contacts: Contact[]; total: number }>({
-    queryKey: ["/api/contacts"],
+    queryKey: ["/api/contacts", { limit: 50000 }],
+    queryFn: async () => {
+      const res = await fetch("/api/contacts?limit=50000", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch contacts");
+      return res.json();
+    },
     enabled: open,
   });
 
