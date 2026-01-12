@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean, integer, pgEnum, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, pgEnum, index, json } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -99,6 +99,16 @@ export const quickReplies = pgTable("quick_replies", {
   platform: platformEnum("platform"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// Session table - used by express-session with connect-pg-simple
+// This table is managed by connect-pg-simple, not by our app directly
+export const session = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+}, (table) => [
+  index("IDX_session_expire").on(table.expire),
+]);
 
 // Relations
 export const contactsRelations = relations(contacts, ({ many }) => ({
