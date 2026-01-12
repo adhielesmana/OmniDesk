@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,12 +9,21 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { MessageSquare, Loader2 } from "lucide-react";
 
+interface BrandingData {
+  logoUrl: string | null;
+  organizationName: string | null;
+}
+
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+
+  const { data: branding } = useQuery<BrandingData>({
+    queryKey: ["/api/admin/branding"],
+  });
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { username: string; password: string }) => {
@@ -56,11 +65,22 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
-            <div className="p-3 rounded-full bg-primary/10">
-              <MessageSquare className="h-8 w-8 text-primary" />
-            </div>
+            {branding?.logoUrl ? (
+              <img
+                src={branding.logoUrl}
+                alt="Logo"
+                className="h-16 w-16 rounded-lg object-cover"
+                data-testid="img-login-logo"
+              />
+            ) : (
+              <div className="p-3 rounded-full bg-primary/10">
+                <MessageSquare className="h-8 w-8 text-primary" />
+              </div>
+            )}
           </div>
-          <CardTitle className="text-2xl font-bold">Unified Inbox</CardTitle>
+          <CardTitle className="text-2xl font-bold">
+            {branding?.organizationName || "Unified Inbox"}
+          </CardTitle>
           <CardDescription>
             Sign in to access your messaging dashboard
           </CardDescription>

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import Cropper from "react-easy-crop";
+import type { Area } from "react-easy-crop";
 import type { Department, UserRole } from "@shared/schema";
 
 interface UserWithDepartments {
@@ -68,6 +70,10 @@ export default function AdminPage() {
               <Download className="h-4 w-4 mr-2" />
               Updates
             </TabsTrigger>
+            <TabsTrigger value="branding" data-testid="tab-branding">
+              <ImageIcon className="h-4 w-4 mr-2" />
+              Branding
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -91,6 +97,10 @@ export default function AdminPage() {
 
           <TabsContent value="updates" className="space-y-4">
             <UpdatesTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="branding" className="space-y-4">
+            <BrandingTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -804,6 +814,335 @@ function UpdatesTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) 
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+interface BrandingData {
+  logoUrl: string | null;
+  organizationName: string | null;
+}
+
+function createImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", (error) => reject(error));
+    image.src = url;
+  });
+}
+
+async function getCroppedImg(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  
+  if (!ctx) {
+    throw new Error("Could not get canvas context");
+  }
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+      } else {
+        reject(new Error("Canvas to Blob conversion failed"));
+      }
+    }, "image/png");
+  });
+}
+
+function BrandingTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const { data: branding, isLoading, refetch } = useQuery<BrandingData>({
+    queryKey: ["/api/admin/branding"],
+  });
+
+  const [organizationName, setOrganizationName] = useState("");
+  const [hasInitialized, setHasInitialized] = useState(false);
+  const [showCropDialog, setShowCropDialog] = useState(false);
+
+  useEffect(() => {
+    if (branding && !hasInitialized) {
+      setOrganizationName(branding.organizationName || "");
+      setHasInitialized(true);
+    }
+  }, [branding, hasInitialized]);
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const onCropComplete = useCallback((_croppedArea: Area, croppedPixels: Area) => {
+    setCroppedAreaPixels(croppedPixels);
+  }, []);
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: Blob) => {
+      const formData = new FormData();
+      formData.append("logo", file, "logo.png");
+      const res = await fetch("/api/admin/branding/logo", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/branding"] });
+      setShowCropDialog(false);
+      setImageSrc(null);
+      toast({ title: "Logo uploaded successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to upload logo", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/admin/branding/logo");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/branding"] });
+      toast({ title: "Logo removed successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove logo", variant: "destructive" });
+    },
+  });
+
+  const updateNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("PATCH", "/api/admin/branding", { organizationName: name });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/branding"] });
+      toast({ title: "Organization name updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update organization name", variant: "destructive" });
+    },
+  });
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImageSrc(reader.result as string);
+        setShowCropDialog(true);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+      };
+      reader.readAsDataURL(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCropSave = async () => {
+    if (imageSrc && croppedAreaPixels) {
+      try {
+        const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
+        uploadMutation.mutate(croppedBlob);
+      } catch (error) {
+        toast({ title: "Failed to crop image", variant: "destructive" });
+      }
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ImageIcon className="h-5 w-5" />
+            Organization Logo
+          </CardTitle>
+          <CardDescription>
+            Upload a square logo for your organization. It will appear in the app header and login page.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-6">
+            <div className="h-24 w-24 rounded-md border-2 border-dashed flex items-center justify-center bg-muted/50 overflow-hidden">
+              {branding?.logoUrl ? (
+                <img
+                  src={branding.logoUrl}
+                  alt="Organization logo"
+                  className="h-full w-full object-cover"
+                  data-testid="img-current-logo"
+                />
+              ) : (
+                <ImageIcon className="h-10 w-10 text-muted-foreground" />
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={handleFileSelect}
+                className="hidden"
+                data-testid="input-logo-file"
+              />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="button-upload-logo"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {branding?.logoUrl ? "Change Logo" : "Upload Logo"}
+              </Button>
+              {branding?.logoUrl && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (confirm("Are you sure you want to remove the logo?")) {
+                      deleteMutation.mutate();
+                    }
+                  }}
+                  disabled={deleteMutation.isPending}
+                  data-testid="button-delete-logo"
+                >
+                  {deleteMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  Remove Logo
+                </Button>
+              )}
+            </div>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Supported formats: JPEG, PNG, GIF, WebP. Max size: 10MB. The image will be cropped to a square.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization Name</CardTitle>
+          <CardDescription>
+            Set a custom name to display in the app header
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter organization name"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+              data-testid="input-organization-name"
+            />
+            <Button
+              onClick={() => updateNameMutation.mutate(organizationName)}
+              disabled={updateNameMutation.isPending}
+              data-testid="button-save-name"
+            >
+              {updateNameMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={showCropDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowCropDialog(false);
+          setImageSrc(null);
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Crop Logo</DialogTitle>
+            <DialogDescription>
+              Adjust the crop area to create a square logo
+            </DialogDescription>
+          </DialogHeader>
+          <div className="relative h-80 w-full bg-muted rounded-md overflow-hidden">
+            {imageSrc && (
+              <Cropper
+                image={imageSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={onCropComplete}
+              />
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <Label className="text-sm">Zoom</Label>
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="flex-1"
+              data-testid="slider-zoom"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowCropDialog(false);
+                setImageSrc(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCropSave}
+              disabled={uploadMutation.isPending}
+              data-testid="button-save-crop"
+            >
+              {uploadMutation.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : null}
+              Save Logo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

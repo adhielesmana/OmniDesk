@@ -2,6 +2,7 @@ import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send } f
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -19,6 +20,11 @@ import { WhatsAppConnect } from "./whatsapp-connect";
 import { useAuth } from "@/hooks/use-auth";
 import type { Platform } from "@shared/schema";
 
+interface BrandingData {
+  logoUrl: string | null;
+  organizationName: string | null;
+}
+
 interface AppSidebarProps {
   selectedPlatform: Platform | "all";
   onSelectPlatform: (platform: Platform | "all") => void;
@@ -33,6 +39,10 @@ export function AppSidebar({
   onSettingsClick,
 }: AppSidebarProps) {
   const [location] = useLocation();
+  
+  const { data: branding } = useQuery<BrandingData>({
+    queryKey: ["/api/admin/branding"],
+  });
 
   const platforms: { id: Platform | "all"; name: string; icon: React.ReactNode; color: string }[] = [
     {
@@ -65,8 +75,19 @@ export function AppSidebar({
     <Sidebar>
       <SidebarHeader className="p-4">
         <h1 className="text-lg font-semibold flex items-center gap-2">
-          <MessageCircle className="h-5 w-5 text-primary" />
-          Unified Inbox
+          {branding?.logoUrl ? (
+            <img
+              src={branding.logoUrl}
+              alt="Logo"
+              className="h-7 w-7 rounded object-cover"
+              data-testid="img-sidebar-logo"
+            />
+          ) : (
+            <MessageCircle className="h-5 w-5 text-primary" />
+          )}
+          <span className="truncate">
+            {branding?.organizationName || "Unified Inbox"}
+          </span>
         </h1>
       </SidebarHeader>
 
