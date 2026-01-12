@@ -1027,7 +1027,11 @@ export async function registerRoutes(
 
       const { accessToken, pageId, businessId, webhookVerifyToken } = req.body;
 
-      if (!accessToken) {
+      // Get existing settings to check if we need a new token
+      const existingSettings = await storage.getPlatformSetting(platform);
+      
+      // Require access token if no existing token
+      if (!accessToken && !existingSettings?.accessToken) {
         return res.status(400).json({ error: "Access token is required" });
       }
 
@@ -1039,9 +1043,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Business ID is required for Instagram" });
       }
 
+      // Use new token if provided, otherwise keep existing
+      const finalAccessToken = accessToken || existingSettings?.accessToken;
+
       const settings = await storage.upsertPlatformSettings({
         platform,
-        accessToken,
+        accessToken: finalAccessToken,
         pageId: pageId || null,
         businessId: businessId || null,
         webhookVerifyToken: webhookVerifyToken || null,

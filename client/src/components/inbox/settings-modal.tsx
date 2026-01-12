@@ -94,12 +94,12 @@ export function SettingsModal({
     }
   }, [autoReplySettings]);
 
-  // Load existing platform settings into form state
+  // Load existing platform settings into form state (excluding masked access tokens)
   useEffect(() => {
     const instagram = platformSettings.find(s => s.platform === "instagram");
     if (instagram) {
       setInstagramSettings({
-        accessToken: instagram.accessToken || "",
+        accessToken: "", // Don't load masked token - user must re-enter
         businessId: instagram.businessId || "",
         webhookVerifyToken: instagram.webhookVerifyToken || "",
       });
@@ -107,7 +107,7 @@ export function SettingsModal({
     const facebook = platformSettings.find(s => s.platform === "facebook");
     if (facebook) {
       setFacebookSettings({
-        accessToken: facebook.accessToken || "",
+        accessToken: "", // Don't load masked token - user must re-enter
         pageId: facebook.pageId || "",
         webhookVerifyToken: facebook.webhookVerifyToken || "",
       });
@@ -115,7 +115,7 @@ export function SettingsModal({
     const whatsapp = platformSettings.find(s => s.platform === "whatsapp");
     if (whatsapp) {
       setWhatsappSettings({
-        accessToken: whatsapp.accessToken || "",
+        accessToken: "", // Don't load masked token - user must re-enter
         phoneNumberId: whatsapp.phoneNumberId || "",
         businessId: whatsapp.businessId || "",
         webhookVerifyToken: whatsapp.webhookVerifyToken || "",
@@ -472,14 +472,18 @@ export function SettingsModal({
                   <Label htmlFor="ig-token">Access Token</Label>
                   <Input
                     id="ig-token"
-                    type="password"
-                    placeholder="Enter your Instagram access token"
+                    type="text"
+                    placeholder="Enter new token (leave empty to keep existing)"
                     value={instagramSettings.accessToken}
                     onChange={(e) =>
                       setInstagramSettings({ ...instagramSettings, accessToken: e.target.value })
                     }
                     data-testid="input-instagram-token"
+                    className="font-mono text-xs"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to keep the existing token
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -586,14 +590,18 @@ export function SettingsModal({
                   <Label htmlFor="fb-token">Page Access Token</Label>
                   <Input
                     id="fb-token"
-                    type="password"
-                    placeholder="Enter your Facebook Page access token"
+                    type="text"
+                    placeholder="Enter new token (leave empty to keep existing)"
                     value={facebookSettings.accessToken}
                     onChange={(e) =>
                       setFacebookSettings({ ...facebookSettings, accessToken: e.target.value })
                     }
                     data-testid="input-facebook-token"
+                    className="font-mono text-xs"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to keep the existing token
+                  </p>
                 </div>
 
                 <div className="space-y-2">
