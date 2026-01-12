@@ -853,7 +853,18 @@ export class DatabaseStorage implements IStorage {
 
   async createBlastRecipients(recipients: InsertBlastRecipient[]): Promise<BlastRecipient[]> {
     if (recipients.length === 0) return [];
-    return db.insert(blastRecipients).values(recipients).returning();
+    
+    // Batch insert to avoid timeout with large recipient lists (10000+)
+    const BATCH_SIZE = 500;
+    const results: BlastRecipient[] = [];
+    
+    for (let i = 0; i < recipients.length; i += BATCH_SIZE) {
+      const batch = recipients.slice(i, i + BATCH_SIZE);
+      const inserted = await db.insert(blastRecipients).values(batch).returning();
+      results.push(...inserted);
+    }
+    
+    return results;
   }
 
   async updateBlastRecipient(id: string, data: Partial<BlastRecipient>): Promise<BlastRecipient | undefined> {
