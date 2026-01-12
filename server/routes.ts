@@ -330,16 +330,27 @@ export async function registerRoutes(
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
+      console.log("Login attempt for:", username);
+      
       if (!username || !password) {
+        console.log("Missing username or password");
         return res.status(400).json({ error: "Username and password required" });
       }
 
       const user = await storage.getUserByUsername(username);
-      if (!user || !user.isActive) {
+      if (!user) {
+        console.log("User not found:", username);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      if (!user.isActive) {
+        console.log("User is inactive:", username);
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
       const valid = await verifyPassword(password, user.password);
+      console.log("Password verification result:", valid);
+      
       if (!valid) {
         return res.status(401).json({ error: "Invalid credentials" });
       }

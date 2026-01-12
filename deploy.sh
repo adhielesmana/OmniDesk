@@ -181,6 +181,16 @@ fi
 echo -e "  ${GREEN}✓${NC} Database tables created"
 echo -e "  ${GREEN}✓${NC} Migrations completed"
 
+echo -e "  ${YELLOW}→${NC} Ensuring session table exists..."
+if docker compose version &> /dev/null; then
+    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE TABLE IF NOT EXISTS session (sid VARCHAR NOT NULL COLLATE \"default\", sess JSON NOT NULL, expire TIMESTAMP(6) NOT NULL, CONSTRAINT session_pkey PRIMARY KEY (sid));" 2>/dev/null || true
+    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);" 2>/dev/null || true
+else
+    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE TABLE IF NOT EXISTS session (sid VARCHAR NOT NULL COLLATE \"default\", sess JSON NOT NULL, expire TIMESTAMP(6) NOT NULL, CONSTRAINT session_pkey PRIMARY KEY (sid));" 2>/dev/null || true
+    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);" 2>/dev/null || true
+fi
+echo -e "  ${GREEN}✓${NC} Session table ready"
+
 echo -e "  ${YELLOW}→${NC} Cleaning up legacy admin user if exists..."
 if docker compose version &> /dev/null; then
     docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
@@ -263,6 +273,13 @@ elif check_command certbot; then
         
         if [ $? -eq 0 ]; then
             echo -e "  ${GREEN}✓${NC} SSL certificate installed"
+            
+            # Fix X-Forwarded-Proto to always use https after SSL is set up
+            if grep -q 'proxy_set_header X-Forwarded-Proto \$scheme' "$NGINX_CONF"; then
+                sed -i 's/proxy_set_header X-Forwarded-Proto \$scheme/proxy_set_header X-Forwarded-Proto https/g' "$NGINX_CONF"
+                nginx -t && systemctl reload nginx
+                echo -e "  ${GREEN}✓${NC} Nginx X-Forwarded-Proto fixed for HTTPS"
+            fi
         else
             echo -e "  ${YELLOW}SSL setup failed. Try later with: certbot --nginx -d $DOMAIN${NC}"
         fi
