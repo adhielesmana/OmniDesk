@@ -65,11 +65,13 @@ export function SettingsModal({
   const [instagramSettings, setInstagramSettings] = useState({
     accessToken: "",
     businessId: "",
+    webhookVerifyToken: "",
   });
 
   const [facebookSettings, setFacebookSettings] = useState({
     accessToken: "",
     pageId: "",
+    webhookVerifyToken: "",
   });
 
   const [autoReplyPrompt, setAutoReplyPrompt] = useState("");
@@ -91,6 +93,35 @@ export function SettingsModal({
       setAutoReplyPrompt(autoReplySettings.prompt || "");
     }
   }, [autoReplySettings]);
+
+  // Load existing platform settings into form state
+  useEffect(() => {
+    const instagram = platformSettings.find(s => s.platform === "instagram");
+    if (instagram) {
+      setInstagramSettings({
+        accessToken: instagram.accessToken || "",
+        businessId: instagram.businessId || "",
+        webhookVerifyToken: instagram.webhookVerifyToken || "",
+      });
+    }
+    const facebook = platformSettings.find(s => s.platform === "facebook");
+    if (facebook) {
+      setFacebookSettings({
+        accessToken: facebook.accessToken || "",
+        pageId: facebook.pageId || "",
+        webhookVerifyToken: facebook.webhookVerifyToken || "",
+      });
+    }
+    const whatsapp = platformSettings.find(s => s.platform === "whatsapp");
+    if (whatsapp) {
+      setWhatsappSettings({
+        accessToken: whatsapp.accessToken || "",
+        phoneNumberId: whatsapp.phoneNumberId || "",
+        businessId: whatsapp.businessId || "",
+        webhookVerifyToken: whatsapp.webhookVerifyToken || "",
+      });
+    }
+  }, [platformSettings]);
 
   const saveAutoReplyMutation = useMutation({
     mutationFn: async (data: { enabled?: boolean; prompt?: string }) => {
@@ -227,6 +258,7 @@ export function SettingsModal({
     onSaveSettings("instagram", {
       accessToken: instagramSettings.accessToken,
       businessId: instagramSettings.businessId,
+      webhookVerifyToken: instagramSettings.webhookVerifyToken,
     });
     toast({
       title: "Settings Saved",
@@ -238,11 +270,21 @@ export function SettingsModal({
     onSaveSettings("facebook", {
       accessToken: facebookSettings.accessToken,
       pageId: facebookSettings.pageId,
+      webhookVerifyToken: facebookSettings.webhookVerifyToken,
     });
     toast({
       title: "Settings Saved",
       description: "Facebook settings have been saved successfully.",
     });
+  };
+
+  const generateRandomToken = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let token = '';
+    for (let i = 0; i < 32; i++) {
+      token += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return token;
   };
 
   const getConnectionStatus = (platform: Platform) => {
@@ -453,6 +495,33 @@ export function SettingsModal({
                   />
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="ig-webhook">Webhook Verify Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="ig-webhook"
+                      placeholder="Enter or generate a verify token"
+                      value={instagramSettings.webhookVerifyToken}
+                      onChange={(e) =>
+                        setInstagramSettings({ ...instagramSettings, webhookVerifyToken: e.target.value })
+                      }
+                      data-testid="input-instagram-webhook"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setInstagramSettings({ ...instagramSettings, webhookVerifyToken: generateRandomToken() })}
+                      data-testid="button-generate-instagram-token"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Generate
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use this token when configuring webhooks in Meta Developer Portal
+                  </p>
+                </div>
+
                 <div className="flex items-center gap-2 pt-2">
                   <Button onClick={handleSaveInstagram} data-testid="button-save-instagram">
                     Save Settings
@@ -538,6 +607,33 @@ export function SettingsModal({
                     }
                     data-testid="input-facebook-page"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fb-webhook">Webhook Verify Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="fb-webhook"
+                      placeholder="Enter or generate a verify token"
+                      value={facebookSettings.webhookVerifyToken}
+                      onChange={(e) =>
+                        setFacebookSettings({ ...facebookSettings, webhookVerifyToken: e.target.value })
+                      }
+                      data-testid="input-facebook-webhook"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setFacebookSettings({ ...facebookSettings, webhookVerifyToken: generateRandomToken() })}
+                      data-testid="button-generate-facebook-token"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Generate
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Use this token when configuring webhooks in Meta Developer Portal
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2">
