@@ -4,7 +4,7 @@ import type { Conversation, Contact } from "@shared/schema";
 
 const AUTOREPLY_ENABLED_KEY = "autoreply_enabled";
 const AUTOREPLY_PROMPT_KEY = "autoreply_prompt";
-const CONVERSATION_TIMEOUT_HOURS = 24;
+const AUTOREPLY_COOLDOWN_HOURS = 24;
 
 export async function isAutoReplyEnabled(): Promise<boolean> {
   const setting = await storage.getAppSetting(AUTOREPLY_ENABLED_KEY);
@@ -52,14 +52,18 @@ function normalizePhoneToJid(phone: string): string {
   return `${normalized}@s.whatsapp.net`;
 }
 
-export async function isNewConversation(conversation: Conversation): Promise<boolean> {
-  if (!conversation.lastMessageAt) return true;
+export function shouldSendAutoReply(conversation: Conversation): boolean {
+  // Check if an auto-reply was sent in the last 24 hours
+  if (!conversation.lastAutoReplyAt) {
+    // No auto-reply ever sent for this conversation
+    return true;
+  }
   
-  const lastMessageTime = new Date(conversation.lastMessageAt).getTime();
+  const lastAutoReplyTime = new Date(conversation.lastAutoReplyAt).getTime();
   const now = Date.now();
-  const hoursSinceLastMessage = (now - lastMessageTime) / (1000 * 60 * 60);
+  const hoursSinceLastAutoReply = (now - lastAutoReplyTime) / (1000 * 60 * 60);
   
-  return hoursSinceLastMessage > CONVERSATION_TIMEOUT_HOURS;
+  return hoursSinceLastAutoReply > AUTOREPLY_COOLDOWN_HOURS;
 }
 
 export async function generateAutoReply(
@@ -131,10 +135,9 @@ export async function handleAutoReply(
     return false;
   }
 
-  // Check if this is a "new" conversation (inactive > 24h)
-  const isNew = await isNewConversation(conversation);
-  if (!isNew) {
-    console.log("Auto-reply: Conversation is active (last message < 24h), skipping");
+  // Check if we should send auto-reply (cooldown check)
+  if (!shouldSendAutoReply(conversation)) {
+    console.log("Auto-reply: Already sent auto-reply within 24 hours, skipping");
     return false;
   }
 
@@ -145,7 +148,7 @@ export async function handleAutoReply(
     return false;
   }
 
-  console.log(`Auto-reply: New conversation detected for ${contact.name || phoneNumber}, generating response...`);
+  console.log(`Auto-reply: Generating response for ${contact.name || phoneNumber}...`);
 
   const reply = await generateAutoReply(prompt, contact, incomingMessage);
   if (!reply) {
@@ -160,6 +163,7 @@ export async function handleAutoReply(
     await sendMessage(jid, reply);
     console.log(`Auto-reply sent to ${contact.name || phoneNumber}`);
 
+    // Create the auto-reply message in database
     await storage.createMessage({
       conversationId: conversation.id,
       direction: "outbound",
@@ -167,6 +171,11 @@ export async function handleAutoReply(
       status: "sent",
       timestamp: new Date(),
       metadata: JSON.stringify({ isAutoReply: true }),
+    });
+
+    // Update the conversation's lastAutoReplyAt timestamp
+    await storage.updateConversation(conversation.id, {
+      lastAutoReplyAt: new Date(),
     });
 
     return true;

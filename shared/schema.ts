@@ -45,6 +45,7 @@ export const conversations = pgTable("conversations", {
   departmentId: varchar("department_id"),
   lastMessageAt: timestamp("last_message_at").defaultNow(),
   lastMessagePreview: text("last_message_preview"),
+  lastAutoReplyAt: timestamp("last_auto_reply_at"),
   unreadCount: integer("unread_count").default(0),
   isArchived: boolean("is_archived").default(false),
   isPinned: boolean("is_pinned").default(false),
