@@ -58,6 +58,7 @@ class WhatsAppService {
   private eventHandlers: WhatsAppEventHandlers | null = null;
   private authFolder = path.join(process.cwd(), ".whatsapp-auth");
   private mediaFolder = path.join(process.cwd(), "media", "whatsapp");
+  private connectedFlagFile = path.join(process.cwd(), ".whatsapp-auth", ".connected");
   private reconnectAttempts = 0;
   private reconnectDelay = 3000; // Start with 3 seconds
   private maxReconnectDelay = 60000; // Max 60 seconds between retries
@@ -71,6 +72,38 @@ class WhatsAppService {
     // Ensure media folder exists
     if (!fs.existsSync(this.mediaFolder)) {
       fs.mkdirSync(this.mediaFolder, { recursive: true });
+    }
+  }
+
+  // Mark session as successfully connected (for auto-reconnect on restart)
+  private setConnectedFlag(): void {
+    try {
+      if (!fs.existsSync(this.authFolder)) {
+        fs.mkdirSync(this.authFolder, { recursive: true });
+      }
+      fs.writeFileSync(this.connectedFlagFile, new Date().toISOString());
+    } catch (error) {
+      console.error("Failed to set connected flag:", error);
+    }
+  }
+
+  // Clear connected flag (on logout or manual disconnect)
+  private clearConnectedFlag(): void {
+    try {
+      if (fs.existsSync(this.connectedFlagFile)) {
+        fs.unlinkSync(this.connectedFlagFile);
+      }
+    } catch (error) {
+      console.error("Failed to clear connected flag:", error);
+    }
+  }
+
+  // Check if session was previously connected (should auto-reconnect)
+  private wasConnected(): boolean {
+    try {
+      return fs.existsSync(this.connectedFlagFile);
+    } catch {
+      return false;
     }
   }
 
@@ -222,10 +255,10 @@ class WhatsAppService {
     }
   }
 
-  // Auto-connect if existing session is available (called on server startup)
+  // Auto-connect if session was previously connected (called on server startup)
   async autoConnect(): Promise<boolean> {
-    if (this.hasExistingAuth()) {
-      console.log("Found existing WhatsApp session, auto-connecting...");
+    if (this.hasExistingAuth() && this.wasConnected()) {
+      console.log("Found existing WhatsApp session that was connected, auto-reconnecting...");
       try {
         await this.connect();
         return true;
@@ -234,7 +267,11 @@ class WhatsAppService {
         return false;
       }
     }
-    console.log("No existing WhatsApp session found, skipping auto-connect");
+    if (this.hasExistingAuth() && !this.wasConnected()) {
+      console.log("Found WhatsApp auth files but session was logged out, skipping auto-connect");
+    } else {
+      console.log("No existing WhatsApp session found, skipping auto-connect");
+    }
     return false;
   }
 
@@ -298,6 +335,7 @@ class WhatsAppService {
             this.reconnectAttempts = 0;
             this.reconnectDelay = 3000;
             this.stopReconnect = true;
+            this.clearConnectedFlag();
             await this.clearAuthData();
           } else if (shouldReconnect && !this.stopReconnect) {
             this.reconnectAttempts++;
@@ -317,6 +355,9 @@ class WhatsAppService {
           this.reconnectDelay = 3000;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
+          
+          // Mark as connected for auto-reconnect on restart
+          this.setConnectedFlag();
           
           // Start health check to detect silent disconnects
           this.startHealthCheck();
@@ -606,6 +647,7 @@ class WhatsAppService {
       await this.socket.logout();
       this.socket = null;
     }
+    this.clearConnectedFlag();
     await this.clearAuthData();
     this.connectionState = "disconnected";
     this.eventHandlers?.onConnectionUpdate("disconnected");
