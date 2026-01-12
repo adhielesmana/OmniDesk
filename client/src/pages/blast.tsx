@@ -364,8 +364,8 @@ function CreateCampaignDialog({
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
-  const [minInterval, setMinInterval] = useState("120");
-  const [maxInterval, setMaxInterval] = useState("180");
+  const [minInterval, setMinInterval] = useState("600");
+  const [maxInterval, setMaxInterval] = useState("1800");
 
   const { data: contactsData } = useQuery<{ contacts: Contact[]; total: number }>({
     queryKey: ["/api/contacts"],
@@ -453,7 +453,7 @@ function CreateCampaignDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="min-interval">Min Interval (seconds)</Label>
+              <Label htmlFor="min-interval">Min Interval (seconds) - Default: 10 min</Label>
               <Input
                 id="min-interval"
                 type="number"
@@ -464,7 +464,7 @@ function CreateCampaignDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="max-interval">Max Interval (seconds)</Label>
+              <Label htmlFor="max-interval">Max Interval (seconds) - Default: 30 min</Label>
               <Input
                 id="max-interval"
                 type="number"
@@ -694,7 +694,7 @@ function CampaignDetail({
               <CardTitle>Recipients</CardTitle>
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Clock className="h-4 w-4" />
-                <span>Interval: {campaign.minIntervalSeconds}-{campaign.maxIntervalSeconds}s</span>
+                <span>Interval: {Math.round((campaign.minIntervalSeconds || 0) / 60)}-{Math.round((campaign.maxIntervalSeconds || 0) / 60)} min</span>
               </div>
             </div>
           </CardHeader>
