@@ -375,6 +375,9 @@ export async function registerRoutes(
 
   // Debug endpoint for diagnosing session issues in production
   app.get("/api/debug/session", (req, res) => {
+    const cookieHeader = req.get("cookie") || "";
+    const hasSessionCookie = cookieHeader.includes("inbox.sid");
+    
     res.json({
       hasSession: !!req.session,
       hasUserId: !!req.session?.userId,
@@ -385,6 +388,8 @@ export async function registerRoutes(
       protocol: req.protocol,
       host: req.get("host"),
       xForwardedProto: req.get("x-forwarded-proto"),
+      receivedSessionCookie: hasSessionCookie,
+      cookieCount: cookieHeader.split(";").filter(c => c.trim()).length,
     });
   });
 
