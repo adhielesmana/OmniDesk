@@ -222,6 +222,22 @@ class WhatsAppService {
     }
   }
 
+  // Auto-connect if existing session is available (called on server startup)
+  async autoConnect(): Promise<boolean> {
+    if (this.hasExistingAuth()) {
+      console.log("Found existing WhatsApp session, auto-connecting...");
+      try {
+        await this.connect();
+        return true;
+      } catch (error) {
+        console.error("Failed to auto-connect WhatsApp:", error);
+        return false;
+      }
+    }
+    console.log("No existing WhatsApp session found, skipping auto-connect");
+    return false;
+  }
+
   setEventHandlers(handlers: WhatsAppEventHandlers) {
     this.eventHandlers = handlers;
   }

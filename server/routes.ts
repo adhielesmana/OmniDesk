@@ -2176,8 +2176,14 @@ export async function registerRoutes(
     console.error("Startup merge failed:", error);
   });
 
-  // WhatsApp will only connect when user explicitly clicks "Scan QR" button
-  // No auto-connect on server startup
+  // Auto-connect WhatsApp if existing session is available
+  whatsappService.autoConnect().then((connected) => {
+    if (connected) {
+      console.log("WhatsApp auto-connect initiated from existing session");
+    }
+  }).catch((error) => {
+    console.error("WhatsApp auto-connect failed:", error);
+  });
 
   app.get("/api/whatsapp/status", (req, res) => {
     res.json({
