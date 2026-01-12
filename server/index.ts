@@ -12,9 +12,8 @@ const app = express();
 const httpServer = createServer(app);
 
 // Trust proxy for proper cookie handling behind nginx/reverse proxy
-if (process.env.NODE_ENV === "production") {
-  app.set("trust proxy", 1);
-}
+// This is essential for secure cookies to work behind a reverse proxy
+app.set("trust proxy", 1);
 
 const PgStore = pgSession(session);
 const pool = new Pool({
@@ -26,6 +25,8 @@ if (!sessionSecret) {
   throw new Error("SESSION_SECRET environment variable is required");
 }
 
+const isProduction = process.env.NODE_ENV === "production";
+
 app.use(
   session({
     store: new PgStore({
@@ -36,8 +37,9 @@ app.use(
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    name: "inbox.sid",
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       httpOnly: true,
       sameSite: "lax",
       maxAge: 24 * 60 * 60 * 1000,
