@@ -13,7 +13,8 @@ import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
 import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
-import { clearCampaignTiming } from "./blast-worker";
+import { clearCampaignTiming, generateAllCampaignMessages } from "./blast-worker";
+import { isAutoReplyEnabled, getAutoReplyPrompt, setAutoReplyEnabled, setAutoReplyPrompt, deleteAutoReplyPrompt, handleAutoReply, hasValidOpenAIKey } from "./autoreply";
 import type { Contact } from "@shared/schema";
 
 const execAsync = promisify(exec);
@@ -1754,6 +1755,62 @@ export async function registerRoutes(
     }
   });
 
+  // Auto-reply settings endpoints
+  app.get("/api/autoreply/settings", requireAuth, async (req, res) => {
+    try {
+      const enabled = await isAutoReplyEnabled();
+      const prompt = await getAutoReplyPrompt();
+      res.json({ enabled, prompt });
+    } catch (error) {
+      console.error("Error fetching auto-reply settings:", error);
+      res.status(500).json({ error: "Failed to fetch auto-reply settings" });
+    }
+  });
+
+  app.post("/api/autoreply/settings", requireAdmin, async (req, res) => {
+    try {
+      const { enabled, prompt } = req.body;
+      
+      // Validate and save prompt first
+      if (typeof prompt === "string") {
+        const trimmedPrompt = prompt.trim();
+        if (trimmedPrompt === "") {
+          await deleteAutoReplyPrompt();
+        } else if (trimmedPrompt.length > 5000) {
+          return res.status(400).json({ error: "Prompt must be less than 5000 characters" });
+        } else {
+          await setAutoReplyPrompt(trimmedPrompt);
+        }
+      }
+      
+      // Validate before enabling
+      if (typeof enabled === "boolean" && enabled) {
+        // Check if prompt exists
+        const currentPrompt = await getAutoReplyPrompt();
+        if (!currentPrompt || currentPrompt.trim() === "") {
+          return res.status(400).json({ error: "Please configure a prompt before enabling auto-reply" });
+        }
+        
+        // Check if OpenAI key exists
+        const hasKey = await hasValidOpenAIKey();
+        if (!hasKey) {
+          return res.status(400).json({ error: "Please configure a valid OpenAI API key before enabling auto-reply" });
+        }
+        
+        await setAutoReplyEnabled(true);
+      } else if (typeof enabled === "boolean" && !enabled) {
+        await setAutoReplyEnabled(false);
+      }
+      
+      const updatedEnabled = await isAutoReplyEnabled();
+      const updatedPrompt = await getAutoReplyPrompt();
+      res.json({ enabled: updatedEnabled, prompt: updatedPrompt });
+    } catch (error) {
+      console.error("Error updating auto-reply settings:", error);
+      res.status(500).json({ error: "Failed to update auto-reply settings" });
+    }
+  });
+
   // WhatsApp Web connection endpoints
   let currentQR: string | null = null;
 
@@ -1849,6 +1906,16 @@ export async function registerRoutes(
           type: "conversation_updated",
           conversationId: conversation.id,
         });
+
+        // Handle auto-reply for new conversations (last message > 24h ago)
+        if (!msg.isFromMe) {
+          handleAutoReply(
+            conversation,
+            contact,
+            msg.content,
+            (jid, text) => whatsappService.sendMessage(jid, text)
+          ).catch(err => console.error("Auto-reply error:", err));
+        }
       } catch (error) {
         console.error("Error processing WhatsApp message:", error);
       }
@@ -2189,6 +2256,11 @@ export async function registerRoutes(
           status: "pending" as const,
         }));
         await storage.createBlastRecipients(recipientData);
+        
+        // Start background message generation
+        generateAllCampaignMessages(campaign.id).catch(err => {
+          console.error("Background message generation error:", err);
+        });
       }
 
       res.json(campaign);

@@ -10,6 +10,9 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **Blast Message Time Restriction**: Blast campaigns now only send messages between 7 AM and 9 PM to avoid midnight blasting and reduce WhatsApp detection risk
+- **Auto-Reply Feature**: New auto-reply system that automatically responds to conversations inactive for more than 24 hours, treating them as new conversations. Configurable via Settings modal with enable/disable toggle and customizable AI prompt. Disabled when no prompt is saved.
+- **Blast Message Pre-Generation**: All blast campaign messages are now pre-generated immediately after campaign creation with progress tracking (generatedCount, isGenerating fields)
 - **Docker Git Support**: Added git to Dockerfile for update functionality in production containers
 - **Session Handling Fix**: Added explicit session.save() in login endpoint and error logging for session store
 - **Deploy Script Improvements**: Added session table creation to deploy.sh, fixed nginx X-Forwarded-Proto for HTTPS
@@ -48,6 +51,8 @@ Preferred communication style: Simple, everyday language.
 - `server/auth.ts` - Authentication helpers, password hashing, superadmin seeding
 - `server/meta-api.ts` - Meta Graph API integration for WhatsApp/Instagram/Facebook
 - `server/whatsapp.ts` - Unofficial WhatsApp integration using Baileys library
+- `server/blast-worker.ts` - Background worker for blast message campaigns with time-of-day restrictions
+- `server/autoreply.ts` - Auto-reply system for conversations inactive > 24 hours
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect

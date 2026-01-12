@@ -252,11 +252,23 @@ export default function BlastPage() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground line-clamp-2 mb-4">{campaign.prompt}</p>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4" />
                       <span>{campaign.totalRecipients || 0}</span>
                     </div>
+                    {(campaign as any).isGenerating && (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Generating {(campaign as any).generatedCount || 0}/{campaign.totalRecipients || 0}</span>
+                      </div>
+                    )}
+                    {!(campaign as any).isGenerating && ((campaign as any).generatedCount || 0) > 0 && (
+                      <div className="flex items-center gap-1 text-blue-600">
+                        <MessageSquare className="h-4 w-4" />
+                        <span>{(campaign as any).generatedCount || 0} ready</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1">
                       <CheckCircle2 className="h-4 w-4 text-green-600" />
                       <span>{campaign.sentCount || 0}</span>
@@ -575,27 +587,6 @@ function CampaignDetail({
   queryClient: ReturnType<typeof useQueryClient>;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
-  const [previewContact, setPreviewContact] = useState<Contact | null>(null);
-  const [previewMessage, setPreviewMessage] = useState<string>("");
-  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-
-  const handlePreview = async (contact: Contact) => {
-    setPreviewContact(contact);
-    setIsPreviewLoading(true);
-    try {
-      const res = await apiRequest("POST", `/api/blast-campaigns/${campaign.id}/preview`, {
-        contactId: contact.id,
-      });
-      const data = await res.json();
-      setPreviewMessage(data.message);
-    } catch (error) {
-      toast({ title: "Failed to generate preview", variant: "destructive" });
-      setPreviewMessage("");
-    } finally {
-      setIsPreviewLoading(false);
-    }
-  };
-
   const progress = campaign.totalRecipients
     ? ((campaign.sentCount || 0) + (campaign.failedCount || 0)) / campaign.totalRecipients * 100
     : 0;
@@ -648,13 +639,29 @@ function CampaignDetail({
       </header>
 
       <div className="flex-1 overflow-auto p-6 space-y-6">
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-5">
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total Recipients</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{campaign.totalRecipients || 0}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Messages Generated</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">
+                {(campaign as any).generatedCount || 0}
+                {(campaign as any).isGenerating && (
+                  <Loader2 className="inline-block h-4 w-4 ml-2 animate-spin" />
+                )}
+              </div>
+              {(campaign as any).isGenerating && (
+                <p className="text-xs text-muted-foreground mt-1">Generating...</p>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -675,7 +682,7 @@ function CampaignDetail({
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Progress</CardDescription>
+              <CardDescription>Send Progress</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{Math.round(progress)}%</div>
@@ -709,59 +716,47 @@ function CampaignDetail({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {campaign.recipients?.map((recipient) => (
                   <div
                     key={recipient.id}
-                    className="flex items-center justify-between p-3 border rounded-lg"
+                    className="p-3 border rounded-lg"
                     data-testid={`recipient-${recipient.id}`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-                        {(recipient.contact.name || "?")[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium">
-                          {recipient.contact.name || recipient.contact.phoneNumber || "Unknown"}
-                        </p>
-                        {recipient.contact.phoneNumber && recipient.contact.name && (
-                          <p className="text-xs text-muted-foreground">{recipient.contact.phoneNumber}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {recipient.generatedMessage && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setPreviewContact(recipient.contact);
-                            setPreviewMessage(recipient.generatedMessage || "");
-                          }}
-                          data-testid={`button-view-message-${recipient.id}`}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      )}
-                      {campaign.status === "draft" && !recipient.generatedMessage && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handlePreview(recipient.contact)}
-                          disabled={isPreviewLoading}
-                          data-testid={`button-preview-${recipient.id}`}
-                        >
-                          {isPreviewLoading && previewContact?.id === recipient.contact.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                          {(recipient.contact.name || "?")[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-medium">
+                            {recipient.contact.name || recipient.contact.phoneNumber || "Unknown"}
+                          </p>
+                          {recipient.contact.phoneNumber && recipient.contact.name && (
+                            <p className="text-xs text-muted-foreground">{recipient.contact.phoneNumber}</p>
                           )}
-                        </Button>
-                      )}
-                      <Badge className={getRecipientStatusColor(recipient.status)}>
-                        {recipient.status}
-                      </Badge>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {recipient.status === "pending" && !recipient.generatedMessage && (
+                          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        )}
+                        <Badge className={getRecipientStatusColor(recipient.status)}>
+                          {recipient.status}
+                        </Badge>
+                      </div>
                     </div>
+                    {recipient.generatedMessage && (
+                      <div className="mt-3 p-3 bg-muted rounded-md">
+                        <p className="text-sm text-muted-foreground mb-1">Generated Message:</p>
+                        <p className="text-sm whitespace-pre-wrap">{recipient.generatedMessage}</p>
+                      </div>
+                    )}
+                    {recipient.errorMessage && (
+                      <div className="mt-2 p-2 bg-destructive/10 text-destructive text-sm rounded">
+                        {recipient.errorMessage}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -770,24 +765,6 @@ function CampaignDetail({
         </Card>
       </div>
 
-      <Dialog open={!!previewContact && !!previewMessage} onOpenChange={() => { setPreviewContact(null); setPreviewMessage(""); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Message Preview</DialogTitle>
-            <DialogDescription>
-              {previewContact?.name || previewContact?.phoneNumber || "Unknown Contact"}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-4 bg-muted rounded-lg">
-            <p className="text-sm whitespace-pre-wrap">{previewMessage}</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setPreviewContact(null); setPreviewMessage(""); }}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

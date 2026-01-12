@@ -136,6 +136,8 @@ async function generateUniqueMessage(
 }
 
 async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
+  // For running campaigns, messages should already be pre-generated
+  // Just check if there are any pending recipients that need generation
   const recipient = await storage.getNextPendingRecipient(campaign.id);
   if (!recipient) {
     return false;
@@ -151,6 +153,18 @@ async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
     return true;
   }
 
+  // Check if message is already generated (pre-generation flow)
+  const fullRecipient = await storage.getBlastRecipient(recipient.id);
+  if (fullRecipient?.generatedMessage) {
+    // Message already generated, just mark as queued
+    await storage.updateBlastRecipient(recipient.id, {
+      status: "queued",
+      scheduledAt: new Date(),
+    });
+    return true;
+  }
+
+  // Fallback: generate message if not pre-generated
   const apiKey = await getOpenAIKey();
   if (!apiKey) {
     await storage.updateBlastRecipient(recipient.id, {
@@ -257,6 +271,14 @@ async function checkCampaignCompletion(campaignId: string): Promise<void> {
   }
 }
 
+// Check if current time is within allowed sending hours (7 AM - 9 PM local time)
+function isWithinSendingHours(): boolean {
+  const now = new Date();
+  const hour = now.getHours();
+  // Allow sending between 7 AM (7) and 9 PM (21)
+  return hour >= 7 && hour < 21;
+}
+
 async function processBlastWorker(): Promise<void> {
   if (isProcessing) return;
   isProcessing = true;
@@ -266,33 +288,45 @@ async function processBlastWorker(): Promise<void> {
     const runningCampaigns = campaigns.filter(c => c.status === "running");
     const now = Date.now();
 
+    // Check if we're within allowed sending hours
+    if (!isWithinSendingHours()) {
+      // Outside sending hours - don't send any messages, just log occasionally
+      if (runningCampaigns.length > 0) {
+        console.log("Outside sending hours (7 AM - 9 PM). Blast messages paused until morning.");
+      }
+      isProcessing = false;
+      return;
+    }
+
     for (const campaign of runningCampaigns) {
       // Check if enough time has passed since last message for this campaign
       const nextAllowedTime = campaignNextSendTime.get(campaign.id) || 0;
       
       if (now < nextAllowedTime) {
-        // Not yet time to send for this campaign, just generate messages
-        await processNextRecipient(campaign);
+        // Not yet time to send for this campaign
         continue;
       }
 
-      // Generate next message if needed
-      await processNextRecipient(campaign);
-
-      // Find a queued message ready to send
+      // Find a queued message ready to send (messages are pre-generated)
       const dueRecipients = await storage.getDueRecipients(1);
       const campaignRecipient = dueRecipients.find(r => r.campaignId === campaign.id);
       
       if (campaignRecipient) {
+        // Double-check we're within sending hours at send time
+        if (!isWithinSendingHours()) {
+          console.log(`Outside sending hours - skipping send for campaign "${campaign.name}"`);
+          continue;
+        }
+        
         await sendQueuedMessage(campaignRecipient);
 
         // Set next allowed send time with randomized interval
-        const minInterval = campaign.minIntervalSeconds || 120;
-        const maxInterval = campaign.maxIntervalSeconds || 180;
+        const minInterval = campaign.minIntervalSeconds || 600;
+        const maxInterval = campaign.maxIntervalSeconds || 1800;
         const waitTime = getRandomInterval(minInterval, maxInterval) * 1000;
         
         campaignNextSendTime.set(campaign.id, now + waitTime);
-        console.log(`Next message for campaign "${campaign.name}" in ${waitTime / 1000}s`);
+        console.log(`Next message for campaign "${campaign.name}" in ${Math.round(waitTime / 60000)} minutes`);
       }
 
       await checkCampaignCompletion(campaign.id);
@@ -330,4 +364,71 @@ export function stopBlastWorker(): void {
 // Clear campaign timing when paused or cancelled so it starts fresh when resumed
 export function clearCampaignTiming(campaignId: string): void {
   campaignNextSendTime.delete(campaignId);
+}
+
+// Background message generation for all recipients in a campaign
+export async function generateAllCampaignMessages(campaignId: string): Promise<void> {
+  console.log(`Starting message generation for campaign ${campaignId}...`);
+  
+  const campaign = await storage.getBlastCampaign(campaignId);
+  if (!campaign) {
+    console.error(`Campaign ${campaignId} not found`);
+    return;
+  }
+
+  const apiKey = await getOpenAIKey();
+  if (!apiKey) {
+    console.error("OpenAI API key not configured for message generation");
+    return;
+  }
+
+  await storage.setBlastCampaignGenerating(campaignId, true);
+
+  try {
+    const recipients = await storage.getBlastRecipients(campaignId);
+    const pendingRecipients = recipients.filter(r => r.status === "pending" && !r.generatedMessage);
+    
+    console.log(`Generating messages for ${pendingRecipients.length} recipients...`);
+
+    for (const recipient of pendingRecipients) {
+      // Check if campaign was cancelled or deleted
+      const currentCampaign = await storage.getBlastCampaign(campaignId);
+      if (!currentCampaign || currentCampaign.status === "cancelled") {
+        console.log(`Campaign ${campaignId} cancelled, stopping generation`);
+        break;
+      }
+
+      try {
+        // Generate unique message with duplicate checking
+        const message = await generateUniqueMessage(apiKey, campaign.prompt, recipient.contact, campaignId);
+        
+        // Update recipient with generated message and set status to queued
+        await storage.updateBlastRecipient(recipient.id, {
+          generatedMessage: message,
+          status: "queued",
+        });
+        
+        await storage.incrementBlastCampaignGeneratedCount(campaignId);
+        console.log(`Generated message for ${recipient.contact.name || recipient.contact.phoneNumber}`);
+        
+        // Small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        console.error(`Failed to generate message for recipient ${recipient.id}:`, errorMessage);
+        
+        await storage.updateBlastRecipient(recipient.id, {
+          status: "failed",
+          errorMessage: `Generation failed: ${errorMessage}`,
+        });
+        await storage.incrementBlastCampaignGenerationFailedCount(campaignId);
+      }
+    }
+
+    console.log(`Message generation complete for campaign ${campaignId}`);
+  } catch (error) {
+    console.error(`Error during message generation for campaign ${campaignId}:`, error);
+  } finally {
+    await storage.setBlastCampaignGenerating(campaignId, false);
+  }
 }

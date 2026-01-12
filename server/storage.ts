@@ -153,6 +153,9 @@ export interface IStorage {
   deleteBlastCampaign(id: string): Promise<void>;
   incrementBlastCampaignSentCount(id: string): Promise<void>;
   incrementBlastCampaignFailedCount(id: string): Promise<void>;
+  incrementBlastCampaignGeneratedCount(id: string): Promise<void>;
+  incrementBlastCampaignGenerationFailedCount(id: string): Promise<void>;
+  setBlastCampaignGenerating(id: string, isGenerating: boolean): Promise<void>;
 
   // Blast Recipients
   getBlastRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]>;
@@ -793,6 +796,36 @@ export class DatabaseStorage implements IStorage {
       .update(blastCampaigns)
       .set({ 
         failedCount: sql`${blastCampaigns.failedCount} + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(blastCampaigns.id, id));
+  }
+
+  async incrementBlastCampaignGeneratedCount(id: string): Promise<void> {
+    await db
+      .update(blastCampaigns)
+      .set({ 
+        generatedCount: sql`${blastCampaigns.generatedCount} + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(blastCampaigns.id, id));
+  }
+
+  async incrementBlastCampaignGenerationFailedCount(id: string): Promise<void> {
+    await db
+      .update(blastCampaigns)
+      .set({ 
+        generationFailedCount: sql`${blastCampaigns.generationFailedCount} + 1`,
+        updatedAt: new Date() 
+      })
+      .where(eq(blastCampaigns.id, id));
+  }
+
+  async setBlastCampaignGenerating(id: string, isGenerating: boolean): Promise<void> {
+    await db
+      .update(blastCampaigns)
+      .set({ 
+        isGenerating,
         updatedAt: new Date() 
       })
       .where(eq(blastCampaigns.id, id));

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2 } from "lucide-react";
+import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, MessageCircle, Loader2 } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram, SiOpenai } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -18,7 +20,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Platform, PlatformSettings } from "@shared/schema";
 
-type SettingsTab = Platform | "openai";
+type SettingsTab = Platform | "openai" | "autoreply";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -33,6 +35,11 @@ interface OpenAIStatus {
   isCustomKey: boolean;
   isValid: boolean | null;
   lastValidatedAt: string | null;
+}
+
+interface AutoReplySettings {
+  enabled: boolean;
+  prompt: string | null;
 }
 
 export function SettingsModal({
@@ -65,9 +72,45 @@ export function SettingsModal({
     pageId: "",
   });
 
+  const [autoReplyPrompt, setAutoReplyPrompt] = useState("");
+  const [autoReplyEnabled, setAutoReplyEnabledState] = useState(false);
+
   const { data: openaiStatus, isLoading: openaiLoading } = useQuery<OpenAIStatus>({
     queryKey: ["/api/settings/openai"],
     enabled: isOpen,
+  });
+
+  const { data: autoReplySettings, isLoading: autoReplyLoading } = useQuery<AutoReplySettings>({
+    queryKey: ["/api/autoreply/settings"],
+    enabled: isOpen,
+  });
+
+  useEffect(() => {
+    if (autoReplySettings) {
+      setAutoReplyEnabledState(autoReplySettings.enabled);
+      setAutoReplyPrompt(autoReplySettings.prompt || "");
+    }
+  }, [autoReplySettings]);
+
+  const saveAutoReplyMutation = useMutation({
+    mutationFn: async (data: { enabled?: boolean; prompt?: string }) => {
+      const res = await apiRequest("POST", "/api/autoreply/settings", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/autoreply/settings"] });
+      toast({
+        title: "Settings Saved",
+        description: "Auto-reply settings have been saved successfully.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save auto-reply settings.",
+        variant: "destructive",
+      });
+    },
   });
 
   const saveOpenAIMutation = useMutation({
@@ -215,7 +258,7 @@ export function SettingsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="whatsapp" className="gap-2" data-testid="tab-whatsapp">
               <SiWhatsapp className="h-4 w-4 text-[#25D366]" />
               WhatsApp
@@ -231,6 +274,10 @@ export function SettingsModal({
             <TabsTrigger value="openai" className="gap-2" data-testid="tab-openai">
               <SiOpenai className="h-4 w-4" />
               OpenAI
+            </TabsTrigger>
+            <TabsTrigger value="autoreply" className="gap-2" data-testid="tab-autoreply">
+              <MessageCircle className="h-4 w-4" />
+              Auto Reply
             </TabsTrigger>
           </TabsList>
 
@@ -652,6 +699,113 @@ export function SettingsModal({
                     Get an OpenAI API Key
                     <ExternalLink className="h-3 w-3" />
                   </a>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="autoreply" className="space-y-4 mt-4">
+            <Card>
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5 text-primary" />
+                      Auto-Reply Settings
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Automatically respond to new conversations after 24 hours of inactivity
+                    </CardDescription>
+                  </div>
+                  {autoReplyLoading ? (
+                    <Badge variant="secondary">Loading...</Badge>
+                  ) : (
+                    <Badge variant={autoReplyEnabled ? "default" : "secondary"}>
+                      {autoReplyEnabled ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1" />
+                          Enabled
+                        </>
+                      ) : (
+                        "Disabled"
+                      )}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                  <div>
+                    <Label htmlFor="autoreply-enabled" className="font-medium">Enable Auto-Reply</Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      When enabled, the AI will automatically respond to messages from conversations 
+                      that have been inactive for more than 24 hours.
+                    </p>
+                  </div>
+                  <Switch
+                    id="autoreply-enabled"
+                    checked={autoReplyEnabled}
+                    onCheckedChange={(checked) => {
+                      setAutoReplyEnabledState(checked);
+                      if (!autoReplyPrompt.trim()) {
+                        toast({
+                          title: "Prompt Required",
+                          description: "Please configure the auto-reply prompt before enabling.",
+                          variant: "destructive",
+                        });
+                        setAutoReplyEnabledState(false);
+                        return;
+                      }
+                      saveAutoReplyMutation.mutate({ enabled: checked });
+                    }}
+                    disabled={saveAutoReplyMutation.isPending || (!autoReplyPrompt.trim() && !autoReplyEnabled)}
+                    data-testid="switch-autoreply-enabled"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="autoreply-prompt">AI Prompt</Label>
+                  <Textarea
+                    id="autoreply-prompt"
+                    placeholder="Enter instructions for how the AI should respond to new conversations. For example:
+
+You are a customer service representative. Greet the customer warmly and ask how you can help them today. Be professional and friendly."
+                    value={autoReplyPrompt}
+                    onChange={(e) => setAutoReplyPrompt(e.target.value)}
+                    rows={6}
+                    data-testid="textarea-autoreply-prompt"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    This prompt will guide the AI on how to respond. Without a prompt, auto-reply will be disabled.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <Button
+                    onClick={() => saveAutoReplyMutation.mutate({ prompt: autoReplyPrompt })}
+                    disabled={saveAutoReplyMutation.isPending}
+                    data-testid="button-save-autoreply"
+                  >
+                    {saveAutoReplyMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
+                    Save Prompt
+                  </Button>
+                </div>
+
+                <div className="pt-4 border-t border-border">
+                  <div className="p-3 bg-muted rounded-lg">
+                    <p className="text-sm font-medium flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4" />
+                      How it works
+                    </p>
+                    <ul className="text-sm text-muted-foreground mt-2 space-y-1 list-disc list-inside">
+                      <li>Auto-reply only triggers for conversations inactive for more than 24 hours</li>
+                      <li>Each new message from a "new" conversation will get one automatic response</li>
+                      <li>The AI uses the prompt above to generate personalized responses</li>
+                      <li>Requires a valid OpenAI API key configured in the OpenAI tab</li>
+                    </ul>
+                  </div>
                 </div>
               </CardContent>
             </Card>
