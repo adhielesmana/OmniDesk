@@ -601,6 +601,121 @@ export async function registerRoutes(
     }
   });
 
+  // ============= BRANDING SETTINGS =============
+  const brandingFolder = path.join(process.cwd(), "media", "branding");
+  if (!fs.existsSync(brandingFolder)) {
+    fs.mkdirSync(brandingFolder, { recursive: true });
+  }
+
+  app.get("/api/admin/branding", requireAuth, async (req, res) => {
+    try {
+      const logoSetting = await storage.getAppSetting("organization_logo");
+      const nameSetting = await storage.getAppSetting("organization_name");
+      res.json({
+        logoUrl: logoSetting?.value || null,
+        organizationName: nameSetting?.value || null,
+      });
+    } catch (error) {
+      console.error("Error fetching branding:", error);
+      res.status(500).json({ error: "Failed to fetch branding" });
+    }
+  });
+
+  app.post("/api/admin/branding/logo", requireSuperadmin, upload.single("logo"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+      if (!allowedTypes.includes(req.file.mimetype)) {
+        return res.status(400).json({ error: "Invalid file type. Only JPEG, PNG, GIF, WebP allowed." });
+      }
+
+      const ext = req.file.mimetype.split("/")[1] === "jpeg" ? "jpg" : req.file.mimetype.split("/")[1];
+      const filename = `logo_${Date.now()}.${ext}`;
+      const filepath = path.join(brandingFolder, filename);
+
+      const oldLogoSetting = await storage.getAppSetting("organization_logo");
+      if (oldLogoSetting?.value) {
+        const oldFilename = oldLogoSetting.value.replace("/api/branding/logo/", "");
+        const oldPath = path.join(brandingFolder, oldFilename);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+        }
+      }
+
+      fs.writeFileSync(filepath, req.file.buffer);
+
+      const logoUrl = `/api/branding/logo/${filename}`;
+      await storage.setAppSetting("organization_logo", logoUrl);
+
+      res.json({ logoUrl });
+    } catch (error) {
+      console.error("Error uploading logo:", error);
+      res.status(500).json({ error: "Failed to upload logo" });
+    }
+  });
+
+  app.delete("/api/admin/branding/logo", requireSuperadmin, async (req, res) => {
+    try {
+      const logoSetting = await storage.getAppSetting("organization_logo");
+      if (logoSetting?.value) {
+        const filename = logoSetting.value.replace("/api/branding/logo/", "");
+        const filepath = path.join(brandingFolder, filename);
+        if (fs.existsSync(filepath)) {
+          fs.unlinkSync(filepath);
+        }
+      }
+      await storage.deleteAppSetting("organization_logo");
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting logo:", error);
+      res.status(500).json({ error: "Failed to delete logo" });
+    }
+  });
+
+  app.patch("/api/admin/branding", requireSuperadmin, async (req, res) => {
+    try {
+      const { organizationName } = req.body;
+      if (organizationName !== undefined) {
+        await storage.setAppSetting("organization_name", organizationName || null);
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating branding:", error);
+      res.status(500).json({ error: "Failed to update branding" });
+    }
+  });
+
+  app.get("/api/branding/logo/:filename", (req, res) => {
+    try {
+      const { filename } = req.params;
+      const safeName = path.basename(filename);
+      const filepath = path.join(brandingFolder, safeName);
+
+      if (!fs.existsSync(filepath)) {
+        return res.status(404).json({ error: "Logo not found" });
+      }
+
+      const ext = path.extname(safeName).toLowerCase();
+      const mimeTypes: Record<string, string> = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+      };
+
+      res.setHeader("Content-Type", mimeTypes[ext] || "application/octet-stream");
+      res.setHeader("Cache-Control", "public, max-age=31536000");
+      fs.createReadStream(filepath).pipe(res);
+    } catch (error) {
+      console.error("Error serving logo:", error);
+      res.status(500).json({ error: "Failed to serve logo" });
+    }
+  });
+
   // Merge duplicate conversations by phone number
   app.post("/api/admin/merge-duplicates", requireAdmin, async (req, res) => {
     try {
