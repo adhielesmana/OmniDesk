@@ -3,7 +3,6 @@ import { useLocation } from "wouter";
 import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -219,8 +218,8 @@ export function MessageThread({
         </div>
       </div>
 
-      {/* Messages */}
-      <ScrollArea className="flex-1 px-3 md:px-4" ref={scrollRef}>
+      {/* Messages - scrollable area */}
+      <div className="flex-1 overflow-y-auto px-3 md:px-4 min-h-0" ref={scrollRef}>
         <div className="py-4 space-y-3">
           {messages.length === 0 ? (
             <div className="text-center py-12">
@@ -280,7 +279,7 @@ export function MessageThread({
           )}
           <div ref={messagesEndRef} />
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Message Composer */}
       <MessageComposer
