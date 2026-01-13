@@ -12,7 +12,7 @@ declare global {
   }
 }
 
-const HMAC_TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
+const HMAC_TIMESTAMP_TOLERANCE_MS = 10 * 60 * 1000; // 10 minutes tolerance for clock drift
 
 // In-memory sliding window rate limiter for per-minute rate limiting
 const rateLimitWindows: Map<string, { count: number; resetAt: number }> = new Map();
@@ -142,10 +142,18 @@ export async function apiAuthMiddleware(
   }
 
   const now = Date.now();
-  if (Math.abs(now - timestampMs) > HMAC_TIMESTAMP_TOLERANCE_MS) {
+  const timeDiff = Math.abs(now - timestampMs);
+  if (timeDiff > HMAC_TIMESTAMP_TOLERANCE_MS) {
+    // Detect if client might be sending seconds instead of milliseconds
+    const looksLikeSeconds = timestampMs < 10000000000; // Unix seconds are 10 digits
     return res.status(401).json({
       error: "Request timestamp expired or in future",
       serverTime: now,
+      receivedTimestamp: timestampMs,
+      differenceMs: timeDiff,
+      hint: looksLikeSeconds 
+        ? "Timestamp appears to be in seconds - use milliseconds (Date.now() or time()*1000)"
+        : "Ensure your system clock is synchronized (within 10 minutes of server time)",
     });
   }
 
