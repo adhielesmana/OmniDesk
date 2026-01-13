@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, Key, Copy, Eye, EyeOff } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, Key, Copy, Eye, EyeOff, Send, Clock, Phone, XCircle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
@@ -83,6 +83,10 @@ export default function AdminPage() {
               <Key className="h-4 w-4 mr-2" />
               API Clients
             </TabsTrigger>
+            <TabsTrigger value="api-queue" data-testid="tab-api-queue">
+              <Send className="h-4 w-4 mr-2" />
+              API Queue
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -118,6 +122,10 @@ export default function AdminPage() {
 
           <TabsContent value="api-clients" className="space-y-4">
             <ApiClientsTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="api-queue" className="space-y-4">
+            <ApiQueueTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -2178,6 +2186,213 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface ApiQueueMessage {
+  id: string;
+  requestId: string;
+  clientId: string;
+  clientName: string;
+  phoneNumber: string;
+  recipientName: string | null;
+  message: string;
+  status: "queued" | "processing" | "sending" | "sent" | "failed";
+  priority: number;
+  errorMessage: string | null;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
+
+  const { data: messages = [], isLoading, refetch } = useQuery<ApiQueueMessage[]>({
+    queryKey: ["/api/admin/api-message-queue"],
+    refetchInterval: 10000,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/api-message-queue/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-message-queue"] });
+      toast({ title: "Message cancelled" });
+    },
+    onError: () => {
+      toast({ title: "Failed to cancel message", variant: "destructive" });
+    },
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "queued":
+        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Queued</Badge>;
+      case "processing":
+        return <Badge className="bg-blue-500"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>;
+      case "sending":
+        return <Badge className="bg-yellow-500"><Send className="h-3 w-3 mr-1" />Sending</Badge>;
+      case "sent":
+        return <Badge className="bg-green-500"><CheckCircle2 className="h-3 w-3 mr-1" />Sent</Badge>;
+      case "failed":
+        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const filteredMessages = statusFilter === "all" 
+    ? messages 
+    : messages.filter(m => m.status === statusFilter);
+
+  const counts = {
+    all: messages.length,
+    queued: messages.filter(m => m.status === "queued").length,
+    processing: messages.filter(m => m.status === "processing").length,
+    sending: messages.filter(m => m.status === "sending").length,
+    sent: messages.filter(m => m.status === "sent").length,
+    failed: messages.filter(m => m.status === "failed").length,
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <div>
+            <CardTitle>API Message Queue</CardTitle>
+            <CardDescription>Messages sent via external API awaiting delivery</CardDescription>
+          </div>
+          <Button variant="outline" size="icon" onClick={() => refetch()} data-testid="button-refresh-queue">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button 
+              variant={statusFilter === "all" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("all")}
+              data-testid="filter-all"
+            >
+              All ({counts.all})
+            </Button>
+            <Button 
+              variant={statusFilter === "queued" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("queued")}
+              data-testid="filter-queued"
+            >
+              Queued ({counts.queued})
+            </Button>
+            <Button 
+              variant={statusFilter === "processing" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("processing")}
+              data-testid="filter-processing"
+            >
+              Processing ({counts.processing})
+            </Button>
+            <Button 
+              variant={statusFilter === "sent" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("sent")}
+              data-testid="filter-sent"
+            >
+              Sent ({counts.sent})
+            </Button>
+            <Button 
+              variant={statusFilter === "failed" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("failed")}
+              data-testid="filter-failed"
+            >
+              Failed ({counts.failed})
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredMessages.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Send className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No messages in queue</p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-2">
+                {filteredMessages.map((msg) => (
+                  <Card 
+                    key={msg.id} 
+                    className="cursor-pointer hover-elevate"
+                    onClick={() => setExpandedMessage(expandedMessage === msg.id ? null : msg.id)}
+                    data-testid={`queue-message-${msg.id}`}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{msg.phoneNumber}</span>
+                            {msg.recipientName && (
+                              <span className="text-muted-foreground">({msg.recipientName})</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                            <span>Client: {msg.clientName}</span>
+                            <span>•</span>
+                            <span>{new Date(msg.createdAt).toLocaleString()}</span>
+                            {msg.scheduledAt && (
+                              <>
+                                <span>•</span>
+                                <span>Scheduled: {new Date(msg.scheduledAt).toLocaleString()}</span>
+                              </>
+                            )}
+                          </div>
+                          <p className={`text-sm ${expandedMessage === msg.id ? "" : "line-clamp-2"}`}>
+                            {msg.message}
+                          </p>
+                          {msg.errorMessage && (
+                            <p className="text-sm text-destructive mt-1">{msg.errorMessage}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(msg.status)}
+                          {(msg.status === "queued" || msg.status === "failed") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMutation.mutate(msg.id);
+                              }}
+                              disabled={deleteMutation.isPending}
+                              data-testid={`button-delete-${msg.id}`}
+                            >
+                              {deleteMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

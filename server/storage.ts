@@ -202,6 +202,8 @@ export interface IStorage {
   updateApiMessage(id: string, data: Partial<ApiMessageQueue>): Promise<ApiMessageQueue | undefined>;
   getQueuedApiMessages(limit: number): Promise<ApiMessageQueue[]>;
   updateApiMessageStatus(id: string, status: ApiMessageStatus, errorMessage?: string): Promise<ApiMessageQueue | undefined>;
+  deleteApiMessage(id: string): Promise<void>;
+  getApiMessageQueueWithClient(): Promise<(ApiMessageQueue & { clientName: string })[]>;
 
   // API Request Logs
   createApiRequestLog(log: Omit<ApiRequestLog, "id" | "createdAt">): Promise<ApiRequestLog>;
@@ -1423,6 +1425,42 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apiMessageQueue.id, id))
       .returning();
     return updated || undefined;
+  }
+
+  async deleteApiMessage(id: string): Promise<void> {
+    await db.delete(apiMessageQueue).where(eq(apiMessageQueue.id, id));
+  }
+
+  async getApiMessageQueueWithClient(): Promise<(ApiMessageQueue & { clientName: string })[]> {
+    const results = await db
+      .select({
+        id: apiMessageQueue.id,
+        requestId: apiMessageQueue.requestId,
+        clientId: apiMessageQueue.clientId,
+        phoneNumber: apiMessageQueue.phoneNumber,
+        recipientName: apiMessageQueue.recipientName,
+        message: apiMessageQueue.message,
+        status: apiMessageQueue.status,
+        priority: apiMessageQueue.priority,
+        contactId: apiMessageQueue.contactId,
+        conversationId: apiMessageQueue.conversationId,
+        errorMessage: apiMessageQueue.errorMessage,
+        externalMessageId: apiMessageQueue.externalMessageId,
+        metadata: apiMessageQueue.metadata,
+        scheduledAt: apiMessageQueue.scheduledAt,
+        sentAt: apiMessageQueue.sentAt,
+        createdAt: apiMessageQueue.createdAt,
+        updatedAt: apiMessageQueue.updatedAt,
+        clientName: apiClients.name,
+      })
+      .from(apiMessageQueue)
+      .leftJoin(apiClients, eq(apiMessageQueue.clientId, apiClients.id))
+      .orderBy(desc(apiMessageQueue.createdAt));
+    
+    return results.map(r => ({
+      ...r,
+      clientName: r.clientName || "Unknown",
+    }));
   }
 
   // ============= API REQUEST LOGS =============

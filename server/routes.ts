@@ -570,6 +570,35 @@ export async function registerRoutes(
     }
   });
 
+  // ============= API MESSAGE QUEUE ROUTES =============
+  app.get("/api/admin/api-message-queue", requireSuperadmin, async (req, res) => {
+    try {
+      const messages = await storage.getApiMessageQueueWithClient();
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching API message queue:", error);
+      res.status(500).json({ error: "Failed to fetch message queue" });
+    }
+  });
+
+  app.delete("/api/admin/api-message-queue/:id", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const message = await storage.getApiMessage(id);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      if (message.status === "sent") {
+        return res.status(400).json({ error: "Cannot delete sent messages" });
+      }
+      await storage.deleteApiMessage(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting API message:", error);
+      res.status(500).json({ error: "Failed to delete message" });
+    }
+  });
+
   app.get("/api/admin/api-clients/:id/logs", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
