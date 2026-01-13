@@ -1190,6 +1190,36 @@ export async function registerRoutes(
     }
   });
 
+  // Get older messages for pagination (load more)
+  app.get("/api/conversations/:id/older-messages", async (req, res) => {
+    try {
+      const { before, beforeId, limit } = req.query;
+      
+      if (!before || !beforeId) {
+        return res.status(400).json({ error: "Missing 'before' timestamp or 'beforeId' parameter" });
+      }
+
+      const beforeTimestamp = new Date(before as string);
+      const messageLimit = limit ? parseInt(limit as string) : 50;
+
+      if (isNaN(beforeTimestamp.getTime())) {
+        return res.status(400).json({ error: "Invalid 'before' timestamp" });
+      }
+
+      const result = await storage.getOlderMessages(
+        req.params.id, 
+        beforeTimestamp, 
+        beforeId as string,
+        messageLimit
+      );
+
+      res.json(result);
+    } catch (error) {
+      console.error("Error fetching older messages:", error);
+      res.status(500).json({ error: "Failed to fetch older messages" });
+    }
+  });
+
   // Update conversation (archive, pin, etc.)
   app.patch("/api/conversations/:id", async (req, res) => {
     try {

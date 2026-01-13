@@ -133,6 +133,7 @@ export interface IStorage {
 
   // Messages
   getMessages(conversationId: string): Promise<Message[]>;
+  getOlderMessages(conversationId: string, beforeTimestamp: Date, beforeId: string, limit?: number): Promise<{ messages: Message[]; hasMore: boolean }>;
   getMessage(id: string): Promise<Message | undefined>;
   getMessageByExternalId(externalId: string): Promise<Message | undefined>;
   createMessage(message: InsertMessage): Promise<Message>;
@@ -570,7 +571,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getConversation(id: string): Promise<ConversationWithMessages | undefined> {
+  async getConversation(id: string, messageLimit: number = 100): Promise<ConversationWithMessages | undefined> {
     const [row] = await db
       .select()
       .from(conversations)
@@ -579,17 +580,62 @@ export class DatabaseStorage implements IStorage {
 
     if (!row) return undefined;
 
+    // Get total message count for this conversation
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(messages)
+      .where(eq(messages.conversationId, id));
+    const totalMessages = Number(countResult?.count || 0);
+
+    // Fetch only the most recent messages (ordered by timestamp descending, then reverse for display)
     const conversationMessages = await db
       .select()
       .from(messages)
       .where(eq(messages.conversationId, id))
-      .orderBy(messages.timestamp);
+      .orderBy(desc(messages.timestamp))
+      .limit(messageLimit);
+
+    // Reverse to get chronological order for display
+    conversationMessages.reverse();
 
     return {
       ...row.conversations,
       contact: row.contacts!,
       messages: conversationMessages,
+      hasMoreMessages: totalMessages > messageLimit,
+      totalMessages,
     };
+  }
+
+  async getOlderMessages(conversationId: string, beforeTimestamp: Date, beforeId: string, limit: number = 50): Promise<{ messages: Message[]; hasMore: boolean }> {
+    // Use (timestamp, id) pair for deterministic cursoring to avoid skipping messages with same timestamp
+    const olderMessages = await db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          or(
+            sql`${messages.timestamp} < ${beforeTimestamp}`,
+            and(
+              sql`${messages.timestamp} = ${beforeTimestamp}`,
+              sql`${messages.id} < ${beforeId}`
+            )
+          )
+        )
+      )
+      .orderBy(desc(messages.timestamp), desc(messages.id))
+      .limit(limit + 1); // Fetch one extra to check if there are more
+
+    // Check if there are more messages
+    const hasMore = olderMessages.length > limit;
+    if (hasMore) {
+      olderMessages.pop(); // Remove the extra message
+    }
+
+    // Reverse to get chronological order
+    olderMessages.reverse();
+    return { messages: olderMessages, hasMore };
   }
 
   async getConversationByContactId(contactId: string): Promise<Conversation | undefined> {

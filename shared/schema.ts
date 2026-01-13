@@ -199,6 +199,8 @@ export type ConversationWithContact = Conversation & {
 export type ConversationWithMessages = Conversation & {
   contact: Contact;
   messages: Message[];
+  hasMoreMessages?: boolean;
+  totalMessages?: number;
 };
 
 // User role enum

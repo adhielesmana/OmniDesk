@@ -1,6 +1,7 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { useLocation } from "wouter";
-import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft } from "lucide-react";
+import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -77,12 +78,65 @@ export function MessageThread({
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [olderMessages, setOlderMessages] = useState<Message[]>([]);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreToLoad, setHasMoreToLoad] = useState(false);
+  const prevConversationId = useRef<string | null>(null);
+
+  // Reset older messages when conversation changes
+  useEffect(() => {
+    if (conversation?.id && conversation.id !== prevConversationId.current) {
+      setOlderMessages([]);
+      setHasMoreToLoad(conversation.hasMoreMessages || false);
+      prevConversationId.current = conversation.id;
+    }
+  }, [conversation?.id, conversation?.hasMoreMessages]);
 
   const handleViewContactInfo = () => {
     if (conversation?.contact?.id) {
       setLocation(`/contacts?selected=${conversation.contact.id}`);
     }
   };
+
+  // Combine older messages with current messages and dedupe by id
+  const allMessages = (() => {
+    const combined = [...olderMessages, ...(conversation?.messages || [])];
+    const seen = new Set<string>();
+    return combined.filter(msg => {
+      if (seen.has(msg.id)) return false;
+      seen.add(msg.id);
+      return true;
+    });
+  })();
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversation?.id || isLoadingMore || allMessages.length === 0) return;
+
+    const oldestMessage = allMessages[0];
+    if (!oldestMessage?.timestamp || !oldestMessage?.id) return;
+
+    setIsLoadingMore(true);
+    try {
+      const response = await apiRequest(
+        `/api/conversations/${conversation.id}/older-messages?before=${new Date(oldestMessage.timestamp).toISOString()}&beforeId=${oldestMessage.id}&limit=50`
+      );
+      const data = response as { messages: Message[]; hasMore: boolean };
+      
+      if (data.messages && data.messages.length > 0) {
+        // Dedupe when adding to prevent duplicates
+        setOlderMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMessages = data.messages.filter(m => !existingIds.has(m.id));
+          return [...newMessages, ...prev];
+        });
+      }
+      setHasMoreToLoad(data.hasMore);
+    } catch (error) {
+      console.error("Failed to load older messages:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [conversation?.id, isLoadingMore, allMessages]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -142,7 +196,7 @@ export function MessageThread({
     );
   }
 
-  const { contact, messages, platform } = conversation;
+  const { contact, platform } = conversation;
 
   const getInitials = (name: string | null | undefined) => {
     if (!name) return "?";
@@ -225,15 +279,37 @@ export function MessageThread({
       {/* Messages - scrollable area */}
       <div className="flex-1 overflow-y-auto px-3 md:px-4 min-h-0" ref={scrollRef}>
         <div className="py-4 space-y-3">
-          {messages.length === 0 ? (
+          {/* Load more button */}
+          {hasMoreToLoad && (
+            <div className="flex justify-center pb-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={loadOlderMessages}
+                disabled={isLoadingMore}
+                data-testid="button-load-more-messages"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  "Load older messages"
+                )}
+              </Button>
+            </div>
+          )}
+
+          {allMessages.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-muted-foreground text-sm">
                 No messages yet. Send a message to start the conversation.
               </p>
             </div>
           ) : (
-            messages.map((message, index) => {
-              const previousMessage = index > 0 ? messages[index - 1] : null;
+            allMessages.map((message, index) => {
+              const previousMessage = index > 0 ? allMessages[index - 1] : null;
               const showDateSeparator = shouldShowDateSeparator(message, previousMessage);
               const isOutbound = message.direction === "outbound";
 
