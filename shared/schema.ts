@@ -316,7 +316,9 @@ export type InsertAppSetting = z.infer<typeof insertAppSettingSchema>;
 export const blastCampaignStatusEnum = pgEnum("blast_campaign_status", ["draft", "scheduled", "running", "paused", "completed", "cancelled"]);
 
 // Blast message status enum  
-export const blastMessageStatusEnum = pgEnum("blast_message_status", ["pending", "generating", "queued", "sending", "sent", "failed"]);
+// pending: waiting to be generated, awaiting_review: generated and waiting for admin review
+// approved: reviewed and ready to send, sending/sent/failed: final states
+export const blastMessageStatusEnum = pgEnum("blast_message_status", ["pending", "generating", "awaiting_review", "approved", "sending", "sent", "failed", "skipped"]);
 
 // Blast campaigns table - stores campaign metadata and AI prompt
 export const blastCampaigns = pgTable("blast_campaigns", {
@@ -351,6 +353,10 @@ export const blastRecipients = pgTable("blast_recipients", {
   conversationId: varchar("conversation_id").references(() => conversations.id),
   status: blastMessageStatusEnum("status").notNull().default("pending"),
   generatedMessage: text("generated_message"),
+  reviewedMessage: text("reviewed_message"), // Admin-edited message (used instead of generatedMessage if set)
+  reviewedBy: varchar("reviewed_by").references(() => users.id), // Who reviewed/approved
+  generatedAt: timestamp("generated_at"), // When AI generated the message
+  approvedAt: timestamp("approved_at"), // When admin approved for sending
   errorMessage: text("error_message"),
   scheduledAt: timestamp("scheduled_at"),
   sentAt: timestamp("sent_at"),
@@ -362,6 +368,7 @@ export const blastRecipients = pgTable("blast_recipients", {
   index("blast_recipients_contact_idx").on(table.contactId),
   index("blast_recipients_status_idx").on(table.status),
   index("blast_recipients_scheduled_idx").on(table.scheduledAt),
+  index("blast_recipients_campaign_status_idx").on(table.campaignId, table.status), // For efficient queue queries
 ]);
 
 // Blast campaign relations
@@ -417,7 +424,7 @@ export type BlastCampaignStatus = "draft" | "scheduled" | "running" | "paused" |
 
 export type BlastRecipient = typeof blastRecipients.$inferSelect;
 export type InsertBlastRecipient = z.infer<typeof insertBlastRecipientSchema>;
-export type BlastMessageStatus = "pending" | "generating" | "queued" | "sending" | "sent" | "failed";
+export type BlastMessageStatus = "pending" | "generating" | "awaiting_review" | "approved" | "sending" | "sent" | "failed" | "skipped";
 
 export type BlastCampaignWithRecipients = BlastCampaign & {
   recipients: (BlastRecipient & { contact: Contact })[];
@@ -426,8 +433,10 @@ export type BlastCampaignWithRecipients = BlastCampaign & {
 export type BlastCampaignWithStats = BlastCampaign & {
   pendingCount: number;
   generatingCount: number;
-  queuedCount: number;
+  awaitingReviewCount: number;
+  approvedCount: number;
   sendingCount: number;
+  skippedCount: number;
 };
 
 // WhatsApp auth state storage for session persistence
