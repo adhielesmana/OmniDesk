@@ -1244,7 +1244,7 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
   const openConfigDialog = (platform: "facebook" | "instagram") => {
     const settings = platform === "facebook" ? facebookSettings : instagramSettings;
     setFormData({
-      accessToken: settings?.accessToken || "",
+      accessToken: "", // Don't pre-populate token - user enters new one if changing
       pageId: settings?.pageId || "",
       businessId: settings?.businessId || "",
       webhookVerifyToken: settings?.webhookVerifyToken || "",
@@ -1485,11 +1485,11 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="accessToken">Page Access Token *</Label>
+              <Label htmlFor="accessToken">Page Access Token {((selectedPlatform === "facebook" ? facebookSettings : instagramSettings)?.accessToken) ? "" : "*"}</Label>
               <Input
                 id="accessToken"
                 type="text"
-                placeholder="Your page access token"
+                placeholder={((selectedPlatform === "facebook" ? facebookSettings : instagramSettings)?.accessToken) ? "Leave empty to keep existing token" : "Your page access token"}
                 value={formData.accessToken}
                 onChange={(e) => setFormData({ ...formData, accessToken: e.target.value })}
                 className="font-mono text-sm"
@@ -1547,7 +1547,11 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                   });
                 }
               }}
-              disabled={saveMutation.isPending || !formData.accessToken || (selectedPlatform === "facebook" && !formData.pageId) || (selectedPlatform === "instagram" && !formData.businessId)}
+              disabled={saveMutation.isPending || 
+                // Require token only for new connections (no existing token)
+                (!formData.accessToken && !((selectedPlatform === "facebook" ? facebookSettings : instagramSettings)?.accessToken)) || 
+                (selectedPlatform === "facebook" && !formData.pageId) || 
+                (selectedPlatform === "instagram" && !formData.businessId)}
               data-testid="button-save-platform"
             >
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
