@@ -1125,6 +1125,125 @@ export async function registerRoutes(
     }
   });
 
+  // Sync Facebook/Instagram conversations (fetch previous messages)
+  app.post("/api/platform-settings/:platform/sync", requireAdmin, async (req, res) => {
+    try {
+      const platform = req.params.platform as Platform;
+      if (!["instagram", "facebook"].includes(platform)) {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
+
+      const settings = await storage.getPlatformSetting(platform);
+      if (!settings || !settings.accessToken) {
+        return res.status(400).json({ error: "Platform not configured" });
+      }
+
+      const metaApi = new MetaApiService(platform, {
+        accessToken: settings.accessToken,
+        pageId: settings.pageId || undefined,
+        businessId: settings.businessId || undefined,
+      });
+
+      console.log(`Starting ${platform} message sync...`);
+      const { conversations, error } = await metaApi.fetchConversations(50);
+
+      if (error) {
+        console.error(`${platform} sync error:`, error);
+        return res.status(400).json({ error });
+      }
+
+      let syncedConversations = 0;
+      let syncedMessages = 0;
+      const pageId = settings.pageId || settings.businessId;
+
+      for (const conv of conversations) {
+        // Find the customer participant (not the page)
+        const customerParticipant = conv.participants?.data?.find(
+          (p: any) => p.id !== pageId
+        );
+
+        if (!customerParticipant) continue;
+
+        // Find or create contact
+        let contact = await storage.getContactByPlatformId(customerParticipant.id, platform);
+        
+        if (!contact) {
+          // Try to get profile info
+          const profile = await metaApi.getUserProfile(customerParticipant.id);
+          
+          contact = await storage.createContact({
+            platformId: customerParticipant.id,
+            platform,
+            name: profile?.name || customerParticipant.name || customerParticipant.email,
+            profilePictureUrl: profile?.profilePicture,
+          });
+        }
+
+        // Find or create conversation
+        let conversation = await storage.getConversationByContactId(contact.id);
+        
+        if (!conversation) {
+          conversation = await storage.createConversation({
+            contactId: contact.id,
+            platform,
+            unreadCount: 0,
+          });
+          syncedConversations++;
+        }
+
+        // Process messages
+        const messages = conv.messages?.data || [];
+        for (const msg of messages) {
+          if (!msg.message && !msg.attachments) continue;
+
+          // Check if message already exists
+          const existingMsg = await storage.getMessageByExternalId(msg.id);
+          if (existingMsg) continue;
+
+          // Determine direction (from page = outbound, from customer = inbound)
+          const isFromPage = msg.from?.id === pageId;
+          
+          await storage.createMessage({
+            conversationId: conversation.id,
+            externalId: msg.id,
+            direction: isFromPage ? "outbound" : "inbound",
+            content: msg.message,
+            status: "delivered",
+            timestamp: new Date(msg.created_time),
+          });
+          syncedMessages++;
+        }
+
+        // Update conversation's last message
+        if (messages.length > 0) {
+          const latestMsg = messages[0];
+          await storage.updateConversation(conversation.id, {
+            lastMessageAt: new Date(latestMsg.created_time),
+            lastMessagePreview: latestMsg.message?.slice(0, 100),
+          });
+        }
+      }
+
+      // Update last sync time
+      await storage.upsertPlatformSettings({
+        ...settings,
+        lastSyncAt: new Date(),
+      });
+
+      console.log(`${platform} sync complete: ${syncedConversations} conversations, ${syncedMessages} messages`);
+      
+      res.json({ 
+        success: true, 
+        syncedConversations, 
+        syncedMessages,
+        totalConversations: conversations.length,
+      });
+    } catch (error) {
+      console.error("Error syncing platform:", error);
+      res.status(500).json({ error: "Failed to sync messages" });
+    }
+  });
+
   // ============= OPENAI SETTINGS ROUTES =============
   
   // Get OpenAI API key status

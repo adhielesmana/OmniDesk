@@ -324,6 +324,60 @@ export class MetaApiService {
     }
   }
 
+  // Fetch Facebook/Instagram conversations with messages
+  async fetchConversations(limit: number = 25): Promise<{
+    conversations: Array<{
+      id: string;
+      participants: Array<{ id: string; name?: string; email?: string }>;
+      messages: Array<{
+        id: string;
+        message: string;
+        from: { id: string; name?: string; email?: string };
+        to: { data: Array<{ id: string; name?: string }> };
+        created_time: string;
+      }>;
+      updated_time: string;
+    }>;
+    error?: string;
+  }> {
+    try {
+      if (this.platform !== "facebook" && this.platform !== "instagram") {
+        return { conversations: [], error: "Only Facebook and Instagram support conversation sync" };
+      }
+
+      const entityId = this.platform === "facebook" ? this.config.pageId : this.config.businessId;
+      
+      // First fetch conversations
+      const conversationsUrl = `${GRAPH_API_BASE}/${entityId}/conversations?fields=participants,updated_time,messages.limit(50){id,message,from,to,created_time}&limit=${limit}`;
+      
+      console.log(`Fetching ${this.platform} conversations from: ${conversationsUrl}`);
+      
+      const response = await fetch(conversationsUrl, {
+        headers: {
+          Authorization: `Bearer ${this.config.accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Error fetching conversations:", errorData);
+        return { 
+          conversations: [], 
+          error: errorData.error?.message || `API error: ${response.status}` 
+        };
+      }
+
+      const data = await response.json();
+      return { conversations: data.data || [] };
+    } catch (error) {
+      console.error("Error in fetchConversations:", error);
+      return { 
+        conversations: [], 
+        error: error instanceof Error ? error.message : "Unknown error" 
+      };
+    }
+  }
+
   static parseWhatsAppWebhook(body: any): WebhookMessage | null {
     try {
       const entry = body.entry?.[0];

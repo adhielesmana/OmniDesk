@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, MessageCircle, Loader2 } from "lucide-react";
+import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, MessageCircle, Loader2, Download } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram, SiOpenai } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,7 @@ export function SettingsModal({
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<SettingsTab>("whatsapp");
   const [isTesting, setIsTesting] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [openaiKey, setOpenaiKey] = useState("");
 
   const [whatsappSettings, setWhatsappSettings] = useState({
@@ -238,6 +239,38 @@ export function SettingsModal({
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleSyncMessages = async (platform: Platform) => {
+    if (platform !== "facebook" && platform !== "instagram") return;
+    
+    setIsSyncing(true);
+    try {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}/sync`);
+      const data = await res.json();
+      
+      if (data.success) {
+        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+        toast({
+          title: "Sync Complete",
+          description: `Synced ${data.syncedConversations} conversations and ${data.syncedMessages} messages from ${platform.charAt(0).toUpperCase() + platform.slice(1)}.`,
+        });
+      } else {
+        toast({
+          title: "Sync Failed",
+          description: data.error || "Failed to sync messages.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Sync Error",
+        description: "Failed to sync messages. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -543,6 +576,19 @@ export function SettingsModal({
                     )}
                     Test Connection
                   </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSyncMessages("instagram")}
+                    disabled={isSyncing || !getConnectionStatus("instagram")}
+                    data-testid="button-sync-instagram"
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Sync Messages
+                  </Button>
                 </div>
 
                 <div className="pt-4 border-t border-border">
@@ -660,6 +706,19 @@ export function SettingsModal({
                       <RefreshCw className="h-4 w-4 mr-2" />
                     )}
                     Test Connection
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleSyncMessages("facebook")}
+                    disabled={isSyncing || !getConnectionStatus("facebook")}
+                    data-testid="button-sync-facebook"
+                  >
+                    {isSyncing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4 mr-2" />
+                    )}
+                    Sync Messages
                   </Button>
                 </div>
 

@@ -125,6 +125,7 @@ export interface IStorage {
   // Messages
   getMessages(conversationId: string): Promise<Message[]>;
   getMessage(id: string): Promise<Message | undefined>;
+  getMessageByExternalId(externalId: string): Promise<Message | undefined>;
   createMessage(message: InsertMessage): Promise<Message>;
   updateMessageStatus(id: string, status: Message["status"]): Promise<Message | undefined>;
   updateMessageStatusByExternalId(externalId: string, status: Message["status"]): Promise<Message | undefined>;
@@ -590,6 +591,11 @@ export class DatabaseStorage implements IStorage {
 
   async getMessage(id: string): Promise<Message | undefined> {
     const [message] = await db.select().from(messages).where(eq(messages.id, id));
+    return message || undefined;
+  }
+
+  async getMessageByExternalId(externalId: string): Promise<Message | undefined> {
+    const [message] = await db.select().from(messages).where(eq(messages.externalId, externalId));
     return message || undefined;
   }
 
