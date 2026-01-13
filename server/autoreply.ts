@@ -1,10 +1,13 @@
 import OpenAI from "openai";
 import { storage } from "./storage";
-import type { Conversation, Contact } from "@shared/schema";
+import type { Conversation, Contact, Platform } from "@shared/schema";
 
 const AUTOREPLY_ENABLED_KEY = "autoreply_enabled";
 const AUTOREPLY_PROMPT_KEY = "autoreply_prompt";
 const AUTOREPLY_COOLDOWN_HOURS = 24;
+
+// Platform-specific send message function type
+export type SendMessageFn = (recipientId: string, message: string) => Promise<void>;
 
 // Default timezone for Indonesia (WIB)
 const DEFAULT_TIMEZONE = "Asia/Jakarta";
@@ -122,7 +125,8 @@ export function shouldSendAutoReply(conversation: Conversation): boolean {
 export async function generateAutoReply(
   prompt: string,
   contact: Contact,
-  incomingMessage: string
+  incomingMessage: string,
+  platform: Platform = "whatsapp"
 ): Promise<string | null> {
   const apiKey = await getOpenAIKey();
   if (!apiKey) {
@@ -133,16 +137,22 @@ export async function generateAutoReply(
   // Get current date/time context
   const { formattedDate, formattedTime, dayName, greeting } = getLocalDateTime(DEFAULT_TIMEZONE);
 
+  // Platform-friendly name
+  const platformName = platform === "whatsapp" ? "WhatsApp" : 
+                       platform === "facebook" ? "Facebook Messenger" : 
+                       platform === "instagram" ? "Instagram" : platform;
+
   try {
     const openai = new OpenAI({ apiKey });
 
-    const systemPrompt = `You are an AI assistant responding to messages on behalf of a business.
+    const systemPrompt = `You are an AI assistant responding to messages on behalf of a business via ${platformName}.
 Follow these instructions carefully:
 ${prompt}
 
 Contact Information:
 - Name: ${contact.name || "Unknown"}
-- Phone: ${contact.phoneNumber || "Unknown"}
+- Platform: ${platformName}
+${contact.phoneNumber ? `- Phone: ${contact.phoneNumber}` : ""}
 
 Current Date and Time (Indonesia timezone - WIB):
 - Date: ${formattedDate}
@@ -178,7 +188,8 @@ export async function handleAutoReply(
   conversation: Conversation,
   contact: Contact,
   incomingMessage: string,
-  sendMessage: (jid: string, message: string) => Promise<void>
+  sendMessage: SendMessageFn,
+  platform: Platform = "whatsapp"
 ): Promise<boolean> {
   // First check if enabled
   const enabled = await isAutoReplyEnabled();
@@ -204,27 +215,31 @@ export async function handleAutoReply(
     return false;
   }
 
-  // Get phone number for contact
-  const phoneNumber = contact.platformId || contact.whatsappLid || contact.phoneNumber;
-  if (!phoneNumber) {
-    console.log("Auto-reply: No phone number for contact");
+  // Get recipient ID based on platform
+  const recipientId = contact.platformId || contact.whatsappLid || contact.phoneNumber;
+  if (!recipientId) {
+    console.log(`Auto-reply: No recipient ID for contact on ${platform}`);
     return false;
   }
 
-  console.log(`Auto-reply: Generating response for ${contact.name || phoneNumber}...`);
+  const platformName = platform === "whatsapp" ? "WhatsApp" : 
+                       platform === "facebook" ? "Facebook" : 
+                       platform === "instagram" ? "Instagram" : platform;
 
-  const reply = await generateAutoReply(prompt, contact, incomingMessage);
+  console.log(`Auto-reply (${platformName}): Generating response for ${contact.name || recipientId}...`);
+
+  const reply = await generateAutoReply(prompt, contact, incomingMessage, platform);
   if (!reply) {
     console.log("Auto-reply: Failed to generate response");
     return false;
   }
 
   try {
-    // Normalize phone number to proper JID format
-    const jid = normalizePhoneToJid(phoneNumber);
+    // For WhatsApp, normalize to JID format; for others, use platformId directly
+    const targetId = platform === "whatsapp" ? normalizePhoneToJid(recipientId) : recipientId;
     
-    await sendMessage(jid, reply);
-    console.log(`Auto-reply sent to ${contact.name || phoneNumber}`);
+    await sendMessage(targetId, reply);
+    console.log(`Auto-reply (${platformName}) sent to ${contact.name || recipientId}`);
 
     // Create the auto-reply message in database
     await storage.createMessage({
@@ -233,7 +248,7 @@ export async function handleAutoReply(
       content: reply,
       status: "sent",
       timestamp: new Date(),
-      metadata: JSON.stringify({ isAutoReply: true }),
+      metadata: JSON.stringify({ isAutoReply: true, platform }),
     });
 
     // Update the conversation's lastAutoReplyAt timestamp
@@ -243,7 +258,7 @@ export async function handleAutoReply(
 
     return true;
   } catch (error) {
-    console.error("Auto-reply: Error sending message:", error);
+    console.error(`Auto-reply (${platformName}): Error sending message:`, error);
     return false;
   }
 }

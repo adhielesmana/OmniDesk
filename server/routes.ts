@@ -1465,6 +1465,37 @@ export async function registerRoutes(
           type: "conversation_updated",
           conversationId: conversation.id,
         });
+
+        // Handle auto-reply for Facebook and Instagram (not for echo messages)
+        if (!isEcho && webhookMessage.content && ["facebook", "instagram"].includes(webhookMessage.platform)) {
+          const settings = await storage.getPlatformSetting(webhookMessage.platform);
+          if (settings?.accessToken) {
+            const metaApi = new MetaApiService(webhookMessage.platform, {
+              accessToken: settings.accessToken,
+              pageId: settings.pageId || undefined,
+              businessId: settings.businessId || undefined,
+            });
+            
+            // Create a send function for this platform
+            const sendMetaMessage = async (recipientId: string, messageContent: string) => {
+              const result = await metaApi.sendMessage(recipientId, messageContent);
+              if (!result.success) {
+                throw new Error(result.error || "Failed to send message");
+              }
+            };
+            
+            // Trigger auto-reply (runs in background, don't await to not block webhook response)
+            handleAutoReply(
+              conversation,
+              contact,
+              webhookMessage.content,
+              sendMetaMessage,
+              webhookMessage.platform
+            ).catch((err) => {
+              console.error(`Auto-reply error for ${webhookMessage.platform}:`, err);
+            });
+          }
+        }
       }
 
       res.sendStatus(200);
@@ -2066,7 +2097,8 @@ export async function registerRoutes(
             conversation,
             contact,
             msg.content,
-            (jid, text) => whatsappService.sendMessage(jid, text)
+            (jid, text) => whatsappService.sendMessage(jid, text),
+            "whatsapp"
           ).catch(err => console.error("Auto-reply error:", err));
         }
       } catch (error) {
