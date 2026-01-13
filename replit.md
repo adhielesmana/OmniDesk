@@ -10,6 +10,8 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **Production Update Fix**: Fixed "Run Update" feature for Docker containers that don't have a .git directory. Now automatically initializes git repository if missing and handles fresh installations.
+- **Blast Campaign Prompt Editing**: Added ability to edit AI prompts for existing blast campaigns via dialog in campaign detail view.
 - **WhatsApp Ban Prevention Improvements**: Comprehensive anti-ban protections:
   - Conservative rate limits: 10 messages/minute, 100/hour, 500/day (Jakarta timezone)
   - Per-contact spacing: 5 second minimum between messages to same contact

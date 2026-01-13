@@ -921,6 +921,22 @@ export async function registerRoutes(
   });
 
   // ============= SYSTEM UPDATE ROUTES =============
+  const GITHUB_REPO_URL = "https://github.com/adhielesmana/omnidesk.git";
+  
+  // Helper to ensure git repo is initialized
+  async function ensureGitRepo(): Promise<void> {
+    const cwd = process.cwd();
+    try {
+      await execAsync("git rev-parse --git-dir", { cwd });
+    } catch {
+      // No git repo, initialize one
+      updateStatus.updateLog.push("Initializing git repository...");
+      await execAsync("git init", { cwd });
+      await execAsync(`git remote add origin ${GITHUB_REPO_URL}`, { cwd });
+      updateStatus.updateLog.push("Git repository initialized");
+    }
+  }
+  
   app.get("/api/admin/update/status", requireSuperadmin, async (req, res) => {
     res.json(updateStatus);
   });
@@ -933,26 +949,42 @@ export async function registerRoutes(
     try {
       updateStatus.isChecking = true;
       updateStatus.error = null;
-      updateStatus.updateLog = ["Fetching updates from remote..."];
+      updateStatus.updateLog = ["Checking git repository..."];
 
+      await ensureGitRepo();
+      
+      updateStatus.updateLog.push("Fetching updates from remote...");
       await execAsync("git fetch origin", { cwd: process.cwd() });
       updateStatus.updateLog.push("Remote fetched successfully");
 
-      const { stdout: localCommit } = await execAsync("git rev-parse HEAD", { cwd: process.cwd() });
+      // Check if we have any local commits (fresh repo may not have HEAD)
+      let localCommit = "";
+      try {
+        const { stdout } = await execAsync("git rev-parse HEAD", { cwd: process.cwd() });
+        localCommit = stdout.trim();
+      } catch {
+        // Fresh repo with no commits - update is always available
+        localCommit = "";
+      }
+      
       const { stdout: remoteCommit } = await execAsync("git rev-parse origin/main", { cwd: process.cwd() });
 
-      updateStatus.localCommit = localCommit.trim();
+      updateStatus.localCommit = localCommit || "(fresh install)";
       updateStatus.remoteCommit = remoteCommit.trim();
-      updateStatus.hasUpdate = updateStatus.localCommit !== updateStatus.remoteCommit;
+      updateStatus.hasUpdate = localCommit !== remoteCommit.trim();
       updateStatus.lastChecked = new Date();
       updateStatus.isChecking = false;
 
       if (updateStatus.hasUpdate) {
-        const { stdout: commitLog } = await execAsync(
-          `git log --oneline ${updateStatus.localCommit}..${updateStatus.remoteCommit}`,
-          { cwd: process.cwd() }
-        );
-        updateStatus.updateLog.push(`Found ${commitLog.split('\n').filter(Boolean).length} new commits`);
+        if (!localCommit) {
+          updateStatus.updateLog.push("Fresh installation detected - ready to pull latest code");
+        } else {
+          const { stdout: commitLog } = await execAsync(
+            `git log --oneline ${localCommit}..${updateStatus.remoteCommit}`,
+            { cwd: process.cwd() }
+          );
+          updateStatus.updateLog.push(`Found ${commitLog.split('\n').filter(Boolean).length} new commits`);
+        }
       } else {
         updateStatus.updateLog.push("Already up to date");
       }
@@ -979,9 +1011,28 @@ export async function registerRoutes(
     res.json({ message: "Update started", status: updateStatus });
 
     try {
-      updateStatus.updateLog.push("Pulling latest changes (git pull)...");
-      const { stdout: pullOutput } = await execAsync("git pull origin main", { cwd: process.cwd() });
-      updateStatus.updateLog.push(pullOutput.trim());
+      await ensureGitRepo();
+      
+      // Check if we have any commits (fresh repo)
+      let hasPreviousCommits = false;
+      try {
+        await execAsync("git rev-parse HEAD", { cwd: process.cwd() });
+        hasPreviousCommits = true;
+      } catch {
+        hasPreviousCommits = false;
+      }
+      
+      if (hasPreviousCommits) {
+        updateStatus.updateLog.push("Pulling latest changes (git pull)...");
+        const { stdout: pullOutput } = await execAsync("git pull origin main", { cwd: process.cwd() });
+        updateStatus.updateLog.push(pullOutput.trim());
+      } else {
+        // Fresh repo - fetch and reset to origin/main
+        updateStatus.updateLog.push("Fresh install - fetching from remote...");
+        await execAsync("git fetch origin", { cwd: process.cwd() });
+        await execAsync("git checkout -b main origin/main", { cwd: process.cwd() });
+        updateStatus.updateLog.push("Checked out main branch from remote");
+      }
 
       updateStatus.updateLog.push("Running deploy script...");
       
