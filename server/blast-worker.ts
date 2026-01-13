@@ -560,3 +560,138 @@ export async function generateCampaignMessageBatch(campaignId: string): Promise<
 export async function triggerImmediateGeneration(campaignId: string): Promise<void> {
   await generateCampaignMessageBatch(campaignId);
 }
+
+// ============= EXTERNAL API MESSAGE QUEUE PROCESSING =============
+
+// Track next allowed send time for API queue (shared across all API messages)
+let apiQueueNextSendTime: number = 0;
+let apiQueueInterval: NodeJS.Timeout | null = null;
+let isApiQueueProcessing = false;
+
+// Configuration for API queue sending (same conservative approach as blast campaigns)
+const API_QUEUE_MIN_INTERVAL_SECONDS = 120; // 2 minutes minimum between messages
+const API_QUEUE_MAX_INTERVAL_SECONDS = 180; // 3 minutes maximum between messages
+const API_QUEUE_BATCH_SIZE = 5; // Process up to 5 messages per batch
+
+async function processApiMessageQueue(): Promise<void> {
+  if (isApiQueueProcessing) return;
+  isApiQueueProcessing = true;
+
+  try {
+    // Check if we're within sending hours (7 AM - 9 PM)
+    if (!isWithinSendingHours()) {
+      isApiQueueProcessing = false;
+      return;
+    }
+
+    const now = Date.now();
+    
+    // Check if enough time has passed since last message
+    if (now < apiQueueNextSendTime) {
+      isApiQueueProcessing = false;
+      return;
+    }
+
+    // Get queued messages to process
+    const queuedMessages = await storage.getQueuedApiMessages(1);
+    
+    if (queuedMessages.length === 0) {
+      isApiQueueProcessing = false;
+      return;
+    }
+
+    const message = queuedMessages[0];
+
+    // Mark as processing
+    await storage.updateApiMessageStatus(message.id, "processing");
+
+    try {
+      // Double-check we're within sending hours before sending
+      if (!isWithinSendingHours()) {
+        console.log("Outside sending hours - requeuing API message");
+        await storage.updateApiMessageStatus(message.id, "queued");
+        isApiQueueProcessing = false;
+        return;
+      }
+
+      // Try to find or create contact and conversation
+      let contactId = message.contactId;
+      let conversationId = message.conversationId;
+
+      // If no contact linked, try to find by phone number
+      if (!contactId) {
+        const existingContact = await storage.getContactByPhoneNumber(message.phoneNumber);
+        if (existingContact) {
+          contactId = existingContact.id;
+          
+          // Find existing conversation
+          const existingConversation = await storage.getConversationByContactId(existingContact.id);
+          if (existingConversation) {
+            conversationId = existingConversation.id;
+          }
+        }
+      }
+
+      // Send the message via WhatsApp
+      await storage.updateApiMessageStatus(message.id, "sending");
+      
+      const formattedNumber = message.phoneNumber + "@s.whatsapp.net";
+      const result = await whatsappService.sendMessage(formattedNumber, message.message);
+      
+      if (!result.success) {
+        throw new Error(result.error || "Failed to send WhatsApp message");
+      }
+
+      // Update message as sent
+      await storage.updateApiMessage(message.id, {
+        status: "sent",
+        externalMessageId: result.messageId || null,
+        contactId: contactId || null,
+        conversationId: conversationId || null,
+        sentAt: new Date(),
+      });
+
+      console.log(`API queue: Sent message to ${message.phoneNumber} (request: ${message.requestId})`);
+
+      // Set next allowed send time with randomized interval
+      const waitTime = getRandomInterval(API_QUEUE_MIN_INTERVAL_SECONDS, API_QUEUE_MAX_INTERVAL_SECONDS) * 1000;
+      apiQueueNextSendTime = now + waitTime;
+      console.log(`API queue: Next message in ${Math.round(waitTime / 60000)} minutes`);
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      console.error(`API queue: Failed to send message ${message.id}:`, errorMessage);
+      
+      await storage.updateApiMessageStatus(message.id, "failed", errorMessage);
+    }
+  } catch (error) {
+    console.error("API queue processing error:", error);
+  } finally {
+    isApiQueueProcessing = false;
+  }
+}
+
+export function startApiQueueWorker(): void {
+  if (apiQueueInterval) {
+    console.log("API queue worker already running");
+    return;
+  }
+
+  console.log("Starting API queue worker...");
+  
+  // Check queue every 10 seconds
+  apiQueueInterval = setInterval(async () => {
+    await processApiMessageQueue();
+  }, 10000);
+
+  // Run immediately on startup
+  processApiMessageQueue();
+}
+
+export function stopApiQueueWorker(): void {
+  if (apiQueueInterval) {
+    clearInterval(apiQueueInterval);
+    apiQueueInterval = null;
+  }
+  console.log("API queue worker stopped");
+}
