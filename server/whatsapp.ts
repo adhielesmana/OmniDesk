@@ -37,6 +37,8 @@ export interface WhatsAppMessage {
   mediaUrl?: string;
   mediaType?: "image" | "video" | "audio" | "document" | "location";
   metadata?: string;
+  // Additional identifier if available (e.g., phone when from is LID, or LID when from is phone)
+  alternateId?: string;
 }
 
 export interface WhatsAppContact {
@@ -691,6 +693,15 @@ class WhatsAppService {
             const isFromMe = msg.key.fromMe || false;
             const messageId = msg.key.id || "";
             
+            // Try to extract alternate identifier (phone from LID context or vice versa)
+            // Baileys sometimes provides participant info that differs from remoteJid
+            let alternateId: string | undefined;
+            const participant = (msg.key as any).participant;
+            if (participant && participant !== from) {
+              // participant is different from remoteJid - might be the phone/LID pair
+              alternateId = participant.replace("@s.whatsapp.net", "").replace("@lid", "").replace("@c.us", "");
+            }
+            
             let content = "";
             let mediaUrl: string | undefined;
             let mediaType: "image" | "video" | "audio" | "document" | "location" | undefined;
@@ -743,6 +754,7 @@ class WhatsAppService {
                   isFromMe,
                   mediaType,
                   metadata: JSON.stringify(locationMeta),
+                  alternateId,
                 });
               }
               continue;
@@ -766,6 +778,7 @@ class WhatsAppService {
                   isFromMe,
                   mediaType,
                   metadata: JSON.stringify(locationMeta),
+                  alternateId,
                 });
               }
               continue;
@@ -782,6 +795,7 @@ class WhatsAppService {
                 isFromMe,
                 mediaUrl,
                 mediaType,
+                alternateId,
               });
             }
           }

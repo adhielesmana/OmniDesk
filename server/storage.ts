@@ -385,6 +385,112 @@ export class DatabaseStorage implements IStorage {
     return newContact;
   }
 
+  /**
+   * Find a WhatsApp contact by primary ID (phone or LID) and optionally an alternate ID.
+   * If two separate contacts are found (one by each ID), merge them into one.
+   * This prevents duplicate conversations for the same person.
+   */
+  async findOrMergeWhatsAppContact(
+    primaryId: string,
+    alternateId?: string
+  ): Promise<Contact | undefined> {
+    const primaryCanonical = getCanonicalPhoneNumber(primaryId);
+    const primaryIsLid = primaryCanonical.length >= 15;
+    
+    // Search by primary ID first
+    let primaryContact = await this.getContactByPhoneNumber(primaryCanonical);
+    if (!primaryContact) {
+      primaryContact = await this.getContactByPlatformId(primaryCanonical, "whatsapp");
+    }
+    
+    // If we have an alternate ID, search for that too
+    let alternateContact: Contact | undefined;
+    if (alternateId) {
+      const altCanonical = getCanonicalPhoneNumber(alternateId);
+      alternateContact = await this.getContactByPhoneNumber(altCanonical);
+      if (!alternateContact) {
+        alternateContact = await this.getContactByPlatformId(altCanonical, "whatsapp");
+      }
+    }
+    
+    // If both found and they're different contacts, merge them
+    if (primaryContact && alternateContact && primaryContact.id !== alternateContact.id) {
+      console.log(`Merging duplicate WhatsApp contacts: ${primaryContact.id} <- ${alternateContact.id}`);
+      
+      // Move all conversations from alternate to primary
+      await db
+        .update(conversations)
+        .set({ contactId: primaryContact.id })
+        .where(eq(conversations.contactId, alternateContact.id));
+      
+      // Update primary contact with any missing identifiers from alternate
+      const updates: Partial<InsertContact> = {};
+      if (!primaryContact.phoneNumber && alternateContact.phoneNumber) {
+        updates.phoneNumber = alternateContact.phoneNumber;
+      }
+      if (!primaryContact.whatsappLid && alternateContact.whatsappLid) {
+        updates.whatsappLid = alternateContact.whatsappLid;
+      }
+      if (!primaryContact.name && alternateContact.name) {
+        updates.name = alternateContact.name;
+      }
+      if (!primaryContact.profilePictureUrl && alternateContact.profilePictureUrl) {
+        updates.profilePictureUrl = alternateContact.profilePictureUrl;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await this.updateContact(primaryContact.id, updates);
+        Object.assign(primaryContact, updates);
+      }
+      
+      // Delete the alternate contact
+      await db.delete(contacts).where(eq(contacts.id, alternateContact.id));
+      
+      return primaryContact;
+    }
+    
+    // If only alternate contact found, use it but update its identifiers
+    if (!primaryContact && alternateContact) {
+      const updates: Partial<InsertContact> = {};
+      const altCanonical = alternateId ? getCanonicalPhoneNumber(alternateId) : "";
+      const altIsLid = altCanonical.length >= 15;
+      
+      // Add the primary ID as the missing identifier
+      if (primaryIsLid && !alternateContact.whatsappLid) {
+        updates.whatsappLid = primaryCanonical;
+      } else if (!primaryIsLid && !alternateContact.phoneNumber) {
+        updates.phoneNumber = `+${primaryCanonical}`;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await this.updateContact(alternateContact.id, updates);
+        Object.assign(alternateContact, updates);
+      }
+      
+      return alternateContact;
+    }
+    
+    // If primary contact found, update with alternate ID if provided
+    if (primaryContact && alternateId) {
+      const altCanonical = getCanonicalPhoneNumber(alternateId);
+      const altIsLid = altCanonical.length >= 15;
+      const updates: Partial<InsertContact> = {};
+      
+      if (altIsLid && !primaryContact.whatsappLid) {
+        updates.whatsappLid = altCanonical;
+      } else if (!altIsLid && !primaryContact.phoneNumber) {
+        updates.phoneNumber = `+${altCanonical}`;
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        await this.updateContact(primaryContact.id, updates);
+        Object.assign(primaryContact, updates);
+      }
+    }
+    
+    return primaryContact;
+  }
+
   async updateContact(id: string, contact: Partial<InsertContact>): Promise<Contact | undefined> {
     const [updated] = await db
       .update(contacts)
