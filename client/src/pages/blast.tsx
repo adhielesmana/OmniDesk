@@ -27,7 +27,11 @@ import {
   Users,
   Clock,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  RefreshCw,
+  Edit,
+  SkipForward,
+  Zap
 } from "lucide-react";
 import type { BlastCampaign, BlastRecipient, Contact } from "@shared/schema";
 
@@ -53,10 +57,12 @@ function getRecipientStatusColor(status: BlastRecipient["status"]): string {
   switch (status) {
     case "pending": return "bg-muted text-muted-foreground";
     case "generating": return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300";
-    case "queued": return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
+    case "awaiting_review": return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
+    case "approved": return "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300";
     case "sending": return "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300";
     case "sent": return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
     case "failed": return "bg-destructive/10 text-destructive";
+    case "skipped": return "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
     default: return "bg-muted text-muted-foreground";
   }
 }
@@ -558,6 +564,257 @@ function CreateCampaignDialog({
   );
 }
 
+interface QueueCounts {
+  pending: number;
+  generating: number;
+  awaitingReview: number;
+  approved: number;
+}
+
+interface QueueResponse {
+  recipients: BlastRecipientWithContact[];
+  counts: QueueCounts;
+}
+
+function MessageQueueCard({
+  campaignId,
+  campaignStatus,
+  queryClient,
+  toast,
+}: {
+  campaignId: string;
+  campaignStatus: string;
+  queryClient: ReturnType<typeof useQueryClient>;
+  toast: ReturnType<typeof useToast>["toast"];
+}) {
+  const [editingRecipient, setEditingRecipient] = useState<BlastRecipientWithContact | null>(null);
+  const [editedMessage, setEditedMessage] = useState("");
+
+  const { data: queueData, isLoading } = useQuery<QueueResponse>({
+    queryKey: ["/api/blast-campaigns", campaignId, "queue"],
+    queryFn: async () => {
+      const res = await fetch(`/api/blast-campaigns/${campaignId}/queue`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch queue");
+      return res.json();
+    },
+    refetchInterval: 5000,
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/blast-campaigns/${campaignId}/generate`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaignId, "queue"] });
+      toast({ title: `Generated ${data.generated} messages` });
+    },
+    onError: () => {
+      toast({ title: "Failed to generate messages", variant: "destructive" });
+    },
+  });
+
+  const skipMutation = useMutation({
+    mutationFn: async (recipientId: string) => {
+      const res = await apiRequest("POST", `/api/blast-recipients/${recipientId}/skip`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaignId, "queue"] });
+      toast({ title: "Message skipped" });
+    },
+    onError: () => {
+      toast({ title: "Failed to skip message", variant: "destructive" });
+    },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: async (recipientId: string) => {
+      const res = await apiRequest("POST", `/api/blast-recipients/${recipientId}/regenerate`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaignId, "queue"] });
+      toast({ title: "Message will be regenerated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to regenerate message", variant: "destructive" });
+    },
+  });
+
+  const updateMessageMutation = useMutation({
+    mutationFn: async ({ recipientId, message }: { recipientId: string; message: string }) => {
+      const res = await apiRequest("PATCH", `/api/blast-recipients/${recipientId}`, {
+        reviewedMessage: message,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaignId, "queue"] });
+      setEditingRecipient(null);
+      toast({ title: "Message updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update message", variant: "destructive" });
+    },
+  });
+
+  const startEdit = (recipient: BlastRecipientWithContact) => {
+    setEditingRecipient(recipient);
+    setEditedMessage(recipient.reviewedMessage || recipient.generatedMessage || "");
+  };
+
+  const saveEdit = () => {
+    if (editingRecipient) {
+      updateMessageMutation.mutate({ recipientId: editingRecipient.id, message: editedMessage });
+    }
+  };
+
+  const queuedRecipients = queueData?.recipients || [];
+  const counts = queueData?.counts || { pending: 0, generating: 0, awaitingReview: 0, approved: 0 };
+  const isActive = campaignStatus === "draft" || campaignStatus === "running" || campaignStatus === "paused";
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Message Queue
+          </CardTitle>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline">
+              {counts.pending} pending
+            </Badge>
+            <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950">
+              {counts.generating} generating
+            </Badge>
+            <Badge variant="outline" className="bg-purple-50 dark:bg-purple-950">
+              {counts.approved} ready to send
+            </Badge>
+            {isActive && (
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending || counts.pending === 0}
+                data-testid="button-generate-more"
+              >
+                {generateMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4 mr-1" />
+                )}
+                Generate More
+              </Button>
+            )}
+          </div>
+        </div>
+        <CardDescription>
+          Messages are generated 5 at a time and automatically queued for sending.
+          You can review, edit, or skip any message before it's sent.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : queuedRecipients.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-50" />
+            <p>No messages in queue</p>
+            {isActive && counts.pending > 0 && (
+              <p className="text-sm mt-1">Click "Generate More" to generate messages</p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {queuedRecipients.map((recipient) => (
+              <div
+                key={recipient.id}
+                className="p-3 border rounded-lg"
+                data-testid={`queue-recipient-${recipient.id}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-sm shrink-0">
+                      {(recipient.contact.name || "?")[0].toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">
+                        {recipient.contact.name || recipient.contact.phoneNumber || "Unknown"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge className={getRecipientStatusColor(recipient.status)}>
+                      {recipient.status === "awaiting_review" ? "reviewing" : recipient.status}
+                    </Badge>
+                    {isActive && ["awaiting_review", "approved"].includes(recipient.status) && (
+                      <>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => startEdit(recipient)}
+                          data-testid={`button-edit-${recipient.id}`}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => regenerateMutation.mutate(recipient.id)}
+                          disabled={regenerateMutation.isPending}
+                          data-testid={`button-regenerate-${recipient.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          onClick={() => skipMutation.mutate(recipient.id)}
+                          disabled={skipMutation.isPending}
+                          data-testid={`button-skip-${recipient.id}`}
+                        >
+                          <SkipForward className="h-4 w-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {editingRecipient?.id === recipient.id ? (
+                  <div className="mt-2 space-y-2">
+                    <Textarea
+                      value={editedMessage}
+                      onChange={(e) => setEditedMessage(e.target.value)}
+                      className="text-sm"
+                      rows={4}
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={saveEdit} disabled={updateMessageMutation.isPending}>
+                        {updateMessageMutation.isPending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                        Save
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditingRecipient(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-2 p-2 bg-muted rounded text-sm whitespace-pre-wrap">
+                    {recipient.reviewedMessage || recipient.generatedMessage || "No message"}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function CampaignDetail({
   campaign,
   isLoading,
@@ -699,6 +956,13 @@ function CampaignDetail({
             <p className="text-sm whitespace-pre-wrap">{campaign.prompt}</p>
           </CardContent>
         </Card>
+
+        <MessageQueueCard 
+          campaignId={campaign.id} 
+          campaignStatus={campaign.status}
+          queryClient={queryClient}
+          toast={toast}
+        />
 
         <Card>
           <CardHeader>

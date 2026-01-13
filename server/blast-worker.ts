@@ -520,11 +520,12 @@ export async function generateCampaignMessageBatch(campaignId: string): Promise<
         // Generate unique message with duplicate checking
         const message = await generateUniqueMessage(apiKey, campaign.prompt, recipient.contact, campaignId);
         
-        // Update recipient with generated message - status goes to awaiting_review
+        // Update recipient with generated message - directly approved and ready to send
         await storage.updateBlastRecipient(recipient.id, {
           generatedMessage: message,
           generatedAt: new Date(),
-          status: "awaiting_review", // Admin must approve before sending
+          approvedAt: new Date(),
+          status: "approved", // Directly ready to send, admin can review/delete if needed
         });
         
         await storage.incrementBlastCampaignGeneratedCount(campaignId);
