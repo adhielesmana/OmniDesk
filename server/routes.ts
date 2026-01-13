@@ -13,7 +13,7 @@ import { MetaApiService, type WebhookMessage } from "./meta-api";
 import { whatsappService } from "./whatsapp";
 import { updateContactSchema, type Platform, type User, insertUserSchema, insertDepartmentSchema } from "@shared/schema";
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
-import { clearCampaignTiming, generateAllCampaignMessages } from "./blast-worker";
+import { clearCampaignTiming, triggerImmediateGeneration, generateCampaignMessageBatch } from "./blast-worker";
 import { isAutoReplyEnabled, getAutoReplyPrompt, setAutoReplyEnabled, setAutoReplyPrompt, deleteAutoReplyPrompt, handleAutoReply, hasValidOpenAIKey } from "./autoreply";
 import type { Contact } from "@shared/schema";
 
@@ -2465,8 +2465,8 @@ export async function registerRoutes(
         }));
         await storage.createBlastRecipients(recipientData);
         
-        // Start background message generation
-        generateAllCampaignMessages(campaign.id).catch(err => {
+        // Start staged message generation (generates 5 messages at a time)
+        triggerImmediateGeneration(campaign.id).catch(err => {
           console.error("Background message generation error:", err);
         });
       }
@@ -2647,6 +2647,222 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error generating preview:", error);
       res.status(500).json({ error: "Failed to generate preview" });
+    }
+  });
+
+  // ============= BLAST MESSAGE QUEUE MANAGEMENT =============
+  
+  // Get message queue for a campaign (awaiting_review and approved messages)
+  app.get("/api/blast-campaigns/:id/queue", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const queuedRecipients = await storage.getQueuedRecipients(req.params.id);
+      const counts = await storage.getRecipientQueueCounts(req.params.id);
+      
+      res.json({ 
+        recipients: queuedRecipients,
+        counts 
+      });
+    } catch (error) {
+      console.error("Error getting message queue:", error);
+      res.status(500).json({ error: "Failed to get message queue" });
+    }
+  });
+
+  // Get single recipient details
+  app.get("/api/blast-recipients/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const recipient = await storage.getBlastRecipientWithContact(req.params.id);
+      if (!recipient) {
+        return res.status(404).json({ error: "Recipient not found" });
+      }
+      res.json(recipient);
+    } catch (error) {
+      console.error("Error getting recipient:", error);
+      res.status(500).json({ error: "Failed to get recipient" });
+    }
+  });
+
+  // Update/edit recipient message
+  app.patch("/api/blast-recipients/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { reviewedMessage, status } = req.body;
+      const recipient = await storage.getBlastRecipient(req.params.id);
+      if (!recipient) {
+        return res.status(404).json({ error: "Recipient not found" });
+      }
+
+      // Only allow editing messages in awaiting_review or approved status
+      if (!["awaiting_review", "approved"].includes(recipient.status)) {
+        return res.status(400).json({ error: "Cannot edit message in current status" });
+      }
+
+      const updateData: Record<string, any> = {};
+      
+      if (reviewedMessage !== undefined) {
+        updateData.reviewedMessage = reviewedMessage;
+        updateData.reviewedBy = req.session.userId;
+      }
+      
+      if (status !== undefined) {
+        if (!["awaiting_review", "approved", "skipped"].includes(status)) {
+          return res.status(400).json({ error: "Invalid status" });
+        }
+        updateData.status = status;
+        if (status === "approved") {
+          updateData.approvedAt = new Date();
+        }
+      }
+
+      const updated = await storage.updateBlastRecipient(req.params.id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating recipient:", error);
+      res.status(500).json({ error: "Failed to update recipient" });
+    }
+  });
+
+  // Approve a recipient message for sending
+  app.post("/api/blast-recipients/:id/approve", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { reviewedMessage } = req.body;
+      const recipient = await storage.getBlastRecipient(req.params.id);
+      if (!recipient) {
+        return res.status(404).json({ error: "Recipient not found" });
+      }
+
+      if (recipient.status !== "awaiting_review") {
+        return res.status(400).json({ error: "Can only approve messages awaiting review" });
+      }
+
+      const updateData: Record<string, any> = {
+        status: "approved",
+        approvedAt: new Date(),
+        reviewedBy: req.session.userId,
+      };
+
+      // If admin provided an edited message, use it
+      if (reviewedMessage) {
+        updateData.reviewedMessage = reviewedMessage;
+      }
+
+      const updated = await storage.updateBlastRecipient(req.params.id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error approving recipient:", error);
+      res.status(500).json({ error: "Failed to approve recipient" });
+    }
+  });
+
+  // Bulk approve multiple messages
+  app.post("/api/blast-campaigns/:id/approve-all", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      const queuedRecipients = await storage.getQueuedRecipients(req.params.id);
+      const awaitingReview = queuedRecipients.filter(r => r.status === "awaiting_review");
+      
+      let approvedCount = 0;
+      for (const recipient of awaitingReview) {
+        await storage.updateBlastRecipient(recipient.id, {
+          status: "approved",
+          approvedAt: new Date(),
+          reviewedBy: req.session.userId,
+        });
+        approvedCount++;
+      }
+
+      res.json({ success: true, approvedCount });
+    } catch (error) {
+      console.error("Error bulk approving:", error);
+      res.status(500).json({ error: "Failed to approve messages" });
+    }
+  });
+
+  // Regenerate message for a recipient (reset to pending)
+  app.post("/api/blast-recipients/:id/regenerate", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const recipient = await storage.getBlastRecipient(req.params.id);
+      if (!recipient) {
+        return res.status(404).json({ error: "Recipient not found" });
+      }
+
+      if (!["awaiting_review", "approved", "failed"].includes(recipient.status)) {
+        return res.status(400).json({ error: "Cannot regenerate message in current status" });
+      }
+
+      // Reset to pending so it gets regenerated
+      const updated = await storage.updateBlastRecipient(req.params.id, {
+        status: "pending",
+        generatedMessage: null,
+        reviewedMessage: null,
+        reviewedBy: null,
+        generatedAt: null,
+        approvedAt: null,
+        errorMessage: null,
+      });
+
+      // Trigger immediate generation for this campaign
+      triggerImmediateGeneration(recipient.campaignId).catch(err => {
+        console.error("Regeneration trigger error:", err);
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error regenerating message:", error);
+      res.status(500).json({ error: "Failed to regenerate message" });
+    }
+  });
+
+  // Skip/delete a recipient from the queue
+  app.post("/api/blast-recipients/:id/skip", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const recipient = await storage.getBlastRecipient(req.params.id);
+      if (!recipient) {
+        return res.status(404).json({ error: "Recipient not found" });
+      }
+
+      if (["sent", "sending"].includes(recipient.status)) {
+        return res.status(400).json({ error: "Cannot skip message that is being sent or already sent" });
+      }
+
+      const updated = await storage.updateBlastRecipient(req.params.id, {
+        status: "skipped",
+        reviewedBy: req.session.userId,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("Error skipping recipient:", error);
+      res.status(500).json({ error: "Failed to skip recipient" });
+    }
+  });
+
+  // Manually trigger generation for a campaign
+  app.post("/api/blast-campaigns/:id/generate", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const campaign = await storage.getBlastCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+
+      if (campaign.status === "cancelled" || campaign.status === "completed") {
+        return res.status(400).json({ error: "Cannot generate for finished campaign" });
+      }
+
+      // Trigger generation in background
+      const result = await generateCampaignMessageBatch(req.params.id);
+      res.json({ success: true, generated: result.generated, remaining: result.total });
+    } catch (error) {
+      console.error("Error triggering generation:", error);
+      res.status(500).json({ error: "Failed to trigger generation" });
     }
   });
 
