@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { getCachedConversation, setCachedConversation } from "@/lib/conversationCache";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ConversationList } from "@/components/inbox/conversation-list";
@@ -73,11 +74,25 @@ function InboxContent({
     queryKey: ["/api/conversations"],
   });
 
+  // Get cached conversation for instant loading
+  const cachedConversation = selectedConversationId 
+    ? getCachedConversation(selectedConversationId) 
+    : null;
+
   const { data: selectedConversation, isLoading: isLoadingConversation } =
     useQuery<ConversationWithMessages>({
       queryKey: ["/api/conversations", selectedConversationId],
       enabled: !!selectedConversationId,
+      initialData: cachedConversation || undefined,
+      staleTime: 0, // Always refetch to get latest messages
     });
+
+  // Cache the conversation when it's fetched
+  useEffect(() => {
+    if (selectedConversation && selectedConversation.id) {
+      setCachedConversation(selectedConversation);
+    }
+  }, [selectedConversation]);
 
   const { data: platformSettings = [] } = useQuery<PlatformSettings[]>({
     queryKey: ["/api/platform-settings"],

@@ -10,6 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **Browser Cache for Conversations**: Added localStorage-based caching for conversations. Previously opened conversations load instantly from cache while fetching updates in background. Cache stores up to 50 conversations with 24-hour expiry. Automatically cleans up old entries to prevent storage bloat.
 - **Message Pagination Performance Fix**: Fixed slow conversation loading by implementing cursor-based pagination. Conversations now load only the 100 most recent messages initially, with a "Load older messages" button to fetch earlier messages on demand. Uses (timestamp, id) pair for deterministic cursor to avoid skipping messages. Frontend dedupes messages to prevent duplicates when queries refresh.
 - **Production Update Fix**: Fixed "Run Update" feature for Docker containers that don't have a .git directory. Now automatically initializes git repository if missing and handles fresh installations. Also cleans up legacy `.whatsapp-auth` files that conflict with git checkout (session data is now stored in database).
 - **API Message Queue View**: Added "API Queue" tab in Admin panel showing all queued external API messages with status filters (Queued, Processing, Sending, Sent, Failed), message details, and ability to cancel/delete queued or failed messages. Auto-refreshes every 10 seconds.
