@@ -2299,6 +2299,14 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
               Processing ({counts.processing})
             </Button>
             <Button 
+              variant={statusFilter === "sending" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("sending")}
+              data-testid="filter-sending"
+            >
+              Sending ({counts.sending})
+            </Button>
+            <Button 
               variant={statusFilter === "sent" ? "default" : "outline"} 
               size="sm" 
               onClick={() => setStatusFilter("sent")}
