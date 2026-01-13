@@ -203,38 +203,54 @@ function InboxContent({
       />
 
       <SidebarInset className="flex flex-col flex-1 min-w-0">
-        {/* Mobile: Show conversation list OR thread, not both */}
+        {/* Mobile: Conditional render - show one panel at a time */}
         {/* Desktop: Show both side by side */}
         <div className="flex flex-1 min-h-0 h-full">
-          {/* Conversation List Panel */}
-          <div
-            className={`
-              flex-col h-full
-              md:w-80 lg:w-96 md:flex-shrink-0 md:border-r md:border-border
-              ${showConversationList ? "flex w-full md:w-80 lg:w-96" : "hidden md:flex"}
-            `}
-          >
-            {/* Mobile Header for Conversation List */}
-            <header className="sticky top-0 z-50 flex items-center justify-between h-14 px-3 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 md:hidden shrink-0">
-              <div className="flex items-center gap-2">
-                <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
-                <div className="flex items-center gap-2">
-                  <MessageCircle className="h-5 w-5 text-primary" />
-                  <span className="font-semibold">Chats</span>
-                </div>
-              </div>
-              <ThemeToggle />
-            </header>
+          {/* Mobile View - Conditional Rendering */}
+          <div className="md:hidden flex flex-col h-full w-full">
+            {showConversationList ? (
+              <>
+                {/* Mobile Header for Conversation List */}
+                <header className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
+                  <div className="flex items-center gap-2">
+                    <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
+                    <div className="flex items-center gap-2">
+                      <MessageCircle className="h-5 w-5 text-primary" />
+                      <span className="font-semibold">Chats</span>
+                    </div>
+                  </div>
+                  <ThemeToggle />
+                </header>
+                <ConversationList
+                  conversations={sortedConversations}
+                  selectedConversationId={selectedConversationId}
+                  onSelectConversation={handleSelectConversation}
+                  onArchive={(id) => archiveMutation.mutate(id)}
+                  onPin={(id) => pinMutation.mutate(id)}
+                  isLoading={isLoadingConversations}
+                  selectedPlatform={selectedPlatform}
+                />
+              </>
+            ) : (
+              <MessageThread
+                conversation={selectedConversation || null}
+                onSendMessage={handleSendMessage}
+                isSending={sendMessageMutation.isPending}
+                isLoading={isLoadingConversation}
+                onBack={handleBackToList}
+              />
+            )}
+          </div>
 
-            {/* Desktop Header */}
-            <header className="hidden md:flex items-center justify-between h-14 px-4 border-b border-border bg-card">
+          {/* Desktop View - Both panels visible */}
+          <div className="hidden md:flex flex-col h-full w-80 lg:w-96 flex-shrink-0 border-r border-border">
+            <header className="flex items-center justify-between h-14 px-4 border-b border-border bg-card shrink-0">
               <div className="flex items-center gap-2">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
                 <span className="font-semibold">Conversations</span>
               </div>
               <ThemeToggle />
             </header>
-
             <ConversationList
               conversations={sortedConversations}
               selectedConversationId={selectedConversationId}
@@ -246,13 +262,7 @@ function InboxContent({
             />
           </div>
 
-          {/* Message Thread Panel */}
-          <div
-            className={`
-              flex-1 min-w-0 flex-col h-full
-              ${!showConversationList ? "flex w-full md:w-auto" : "hidden md:flex"}
-            `}
-          >
+          <div className="hidden md:flex flex-1 min-w-0 flex-col h-full">
             <MessageThread
               conversation={selectedConversation || null}
               onSendMessage={handleSendMessage}

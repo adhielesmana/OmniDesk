@@ -135,14 +135,19 @@ export function ConversationList({
               const isSelected = conv.id === selectedConversationId;
 
               return (
-                <div
+                <button
+                  type="button"
                   key={conv.id}
-                  className={`group relative p-2.5 rounded-xl cursor-pointer transition-all active:scale-[0.98] ${
+                  className={`group relative p-2.5 rounded-xl cursor-pointer w-full text-left ${
                     isSelected 
                       ? "bg-primary/10 border border-primary/20" 
                       : "hover:bg-muted/50 active:bg-muted"
                   }`}
-                  onClick={() => onSelectConversation(conv.id)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onSelectConversation(conv.id);
+                  }}
                   data-testid={`conversation-item-${conv.id}`}
                 >
                   <div className="flex items-center gap-3">
@@ -220,7 +225,7 @@ export function ConversationList({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </div>
+                </button>
               );
             })
           )}
