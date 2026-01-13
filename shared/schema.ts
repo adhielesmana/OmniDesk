@@ -448,3 +448,151 @@ export const whatsappAuthState = pgTable("whatsapp_auth_state", {
 
 export type WhatsAppAuthState = typeof whatsappAuthState.$inferSelect;
 export type InsertWhatsAppAuthState = typeof whatsappAuthState.$inferInsert;
+
+// ============= EXTERNAL API TABLES =============
+
+// API clients table - stores API keys for external apps
+export const apiClients = pgTable("api_clients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // Friendly name for the API client
+  clientId: text("client_id").notNull().unique(), // Public client ID for X-Client-Id header
+  secretHash: text("secret_hash").notNull(), // Hashed secret key (never store plain)
+  isActive: boolean("is_active").default(true),
+  rateLimitPerMinute: integer("rate_limit_per_minute").default(60),
+  rateLimitPerDay: integer("rate_limit_per_day").default(1000),
+  requestCountToday: integer("request_count_today").default(0),
+  lastRequestAt: timestamp("last_request_at"),
+  lastResetAt: timestamp("last_reset_at").defaultNow(),
+  createdBy: varchar("created_by").references(() => users.id),
+  ipWhitelist: text("ip_whitelist").array(), // Optional IP whitelist
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("api_clients_client_id_idx").on(table.clientId),
+  index("api_clients_is_active_idx").on(table.isActive),
+]);
+
+// API message queue status enum
+export const apiMessageStatusEnum = pgEnum("api_message_status", [
+  "queued",      // Message received and queued
+  "processing",  // Being processed
+  "sending",     // Being sent via WhatsApp
+  "sent",        // Successfully sent
+  "failed",      // Failed to send
+]);
+
+// API message queue table - external API message queue
+export const apiMessageQueue = pgTable("api_message_queue", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  requestId: text("request_id").notNull().unique(), // Unique request ID from external app
+  clientId: varchar("client_id").notNull().references(() => apiClients.id),
+  phoneNumber: text("phone_number").notNull(), // Destination phone number
+  message: text("message").notNull(), // Message content
+  status: apiMessageStatusEnum("status").notNull().default("queued"),
+  priority: integer("priority").default(0), // Higher = processed first
+  contactId: varchar("contact_id").references(() => contacts.id), // Linked contact if found
+  conversationId: varchar("conversation_id").references(() => conversations.id), // Linked conversation if found
+  errorMessage: text("error_message"),
+  externalMessageId: text("external_message_id"), // WhatsApp message ID after sending
+  metadata: text("metadata"), // Optional JSON metadata from API caller
+  scheduledAt: timestamp("scheduled_at"), // When to send (null = ASAP within quiet hours)
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("api_message_queue_status_idx").on(table.status),
+  index("api_message_queue_client_idx").on(table.clientId),
+  index("api_message_queue_request_idx").on(table.requestId),
+  index("api_message_queue_scheduled_idx").on(table.scheduledAt),
+  index("api_message_queue_priority_status_idx").on(table.priority, table.status),
+]);
+
+// API request logs for audit trail
+export const apiRequestLogs = pgTable("api_request_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  clientId: varchar("client_id").notNull().references(() => apiClients.id),
+  endpoint: text("endpoint").notNull(),
+  method: text("method").notNull(),
+  requestBody: text("request_body"), // Sanitized request body
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"), // Sanitized response
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  durationMs: integer("duration_ms"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("api_request_logs_client_idx").on(table.clientId),
+  index("api_request_logs_created_idx").on(table.createdAt),
+]);
+
+// API clients relations
+export const apiClientsRelations = relations(apiClients, ({ one, many }) => ({
+  createdByUser: one(users, {
+    fields: [apiClients.createdBy],
+    references: [users.id],
+  }),
+  messageQueue: many(apiMessageQueue),
+  requestLogs: many(apiRequestLogs),
+}));
+
+// API message queue relations
+export const apiMessageQueueRelations = relations(apiMessageQueue, ({ one }) => ({
+  client: one(apiClients, {
+    fields: [apiMessageQueue.clientId],
+    references: [apiClients.id],
+  }),
+  contact: one(contacts, {
+    fields: [apiMessageQueue.contactId],
+    references: [contacts.id],
+  }),
+  conversation: one(conversations, {
+    fields: [apiMessageQueue.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
+// API request logs relations
+export const apiRequestLogsRelations = relations(apiRequestLogs, ({ one }) => ({
+  client: one(apiClients, {
+    fields: [apiRequestLogs.clientId],
+    references: [apiClients.id],
+  }),
+}));
+
+// Insert schemas for API tables
+export const insertApiClientSchema = createInsertSchema(apiClients).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  requestCountToday: true,
+  lastRequestAt: true,
+  lastResetAt: true,
+});
+
+export const insertApiMessageQueueSchema = createInsertSchema(apiMessageQueue).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true,
+  contactId: true,
+  conversationId: true,
+  errorMessage: true,
+  externalMessageId: true,
+  sentAt: true,
+});
+
+// Types for API tables
+export type ApiClient = typeof apiClients.$inferSelect;
+export type InsertApiClient = z.infer<typeof insertApiClientSchema>;
+
+export type ApiMessageQueue = typeof apiMessageQueue.$inferSelect;
+export type InsertApiMessageQueue = z.infer<typeof insertApiMessageQueueSchema>;
+export type ApiMessageStatus = "queued" | "processing" | "sending" | "sent" | "failed";
+
+export type ApiRequestLog = typeof apiRequestLogs.$inferSelect;
+
+export type ApiClientWithStats = ApiClient & {
+  queuedCount: number;
+  sentTodayCount: number;
+  failedTodayCount: number;
+};
