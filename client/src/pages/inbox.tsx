@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
@@ -34,6 +35,7 @@ function InboxContent({
 }) {
   const { toast } = useToast();
   const { setOpenMobile } = useSidebar();
+  const isMobile = useIsMobile();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,12 +179,22 @@ function InboxContent({
 
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
-    setMobileSheetOpen(true);
+    // Only open sheet overlay on mobile
+    if (isMobile) {
+      setMobileSheetOpen(true);
+    }
   };
 
   const handleCloseSheet = () => {
     setMobileSheetOpen(false);
   };
+
+  // Close sheet when switching to desktop mode
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileSheetOpen(false);
+    }
+  }, [isMobile]);
 
   const getInitials = useCallback((name: string | null | undefined) => {
     if (!name) return "?";
