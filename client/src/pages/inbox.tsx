@@ -275,6 +275,7 @@ function InboxContent({
                 side="right" 
                 className="w-full sm:w-full p-0 flex flex-col"
                 data-testid="mobile-conversation-sheet"
+                hideCloseButton
               >
                 {/* Sheet Header */}
                 <div className="flex items-center justify-between px-3 h-14 border-b border-border bg-card shrink-0">
