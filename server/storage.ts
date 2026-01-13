@@ -24,6 +24,12 @@ import {
   type ConversationWithContact,
   type ConversationWithMessages,
   type Platform,
+  type ApiClient,
+  type InsertApiClient,
+  type ApiMessageQueue,
+  type InsertApiMessageQueue,
+  type ApiMessageStatus,
+  type ApiRequestLog,
   users,
   contacts,
   conversations,
@@ -35,6 +41,9 @@ import {
   appSettings,
   blastCampaigns,
   blastRecipients,
+  apiClients,
+  apiMessageQueue,
+  apiRequestLogs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
@@ -174,6 +183,29 @@ export interface IStorage {
   // Cleanup/Maintenance
   mergeDuplicateConversations(): Promise<{ mergedContacts: number; mergedConversations: number }>;
   deleteConversation(id: string): Promise<void>;
+
+  // API Clients
+  getApiClients(): Promise<ApiClient[]>;
+  getApiClient(id: string): Promise<ApiClient | undefined>;
+  getApiClientByClientId(clientId: string): Promise<ApiClient | undefined>;
+  createApiClient(client: InsertApiClient): Promise<ApiClient>;
+  updateApiClient(id: string, client: Partial<InsertApiClient>): Promise<ApiClient | undefined>;
+  deleteApiClient(id: string): Promise<void>;
+  incrementApiClientRequestCount(clientId: string): Promise<void>;
+  resetApiClientDailyCount(id: string): Promise<void>;
+
+  // API Message Queue
+  getApiMessageQueue(clientId?: string): Promise<ApiMessageQueue[]>;
+  getApiMessage(id: string): Promise<ApiMessageQueue | undefined>;
+  getApiMessageByRequestId(requestId: string): Promise<ApiMessageQueue | undefined>;
+  createApiMessage(message: InsertApiMessageQueue): Promise<ApiMessageQueue>;
+  updateApiMessage(id: string, data: Partial<ApiMessageQueue>): Promise<ApiMessageQueue | undefined>;
+  getQueuedApiMessages(limit: number): Promise<ApiMessageQueue[]>;
+  updateApiMessageStatus(id: string, status: ApiMessageStatus, errorMessage?: string): Promise<ApiMessageQueue | undefined>;
+
+  // API Request Logs
+  createApiRequestLog(log: Omit<ApiRequestLog, "id" | "createdAt">): Promise<ApiRequestLog>;
+  getApiRequestLogs(clientId: string, limit?: number): Promise<ApiRequestLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1255,6 +1287,147 @@ export class DatabaseStorage implements IStorage {
     }
 
     return { mergedContacts, mergedConversations };
+  }
+
+  // ============= API CLIENTS =============
+  async getApiClients(): Promise<ApiClient[]> {
+    return db.select().from(apiClients).orderBy(desc(apiClients.createdAt));
+  }
+
+  async getApiClient(id: string): Promise<ApiClient | undefined> {
+    const [client] = await db.select().from(apiClients).where(eq(apiClients.id, id));
+    return client || undefined;
+  }
+
+  async getApiClientByClientId(clientId: string): Promise<ApiClient | undefined> {
+    const [client] = await db.select().from(apiClients).where(eq(apiClients.clientId, clientId));
+    return client || undefined;
+  }
+
+  async createApiClient(client: InsertApiClient): Promise<ApiClient> {
+    const [newClient] = await db.insert(apiClients).values(client).returning();
+    return newClient;
+  }
+
+  async updateApiClient(id: string, client: Partial<InsertApiClient>): Promise<ApiClient | undefined> {
+    const [updated] = await db
+      .update(apiClients)
+      .set({ ...client, updatedAt: new Date() })
+      .where(eq(apiClients.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteApiClient(id: string): Promise<void> {
+    await db.delete(apiClients).where(eq(apiClients.id, id));
+  }
+
+  async incrementApiClientRequestCount(clientId: string): Promise<void> {
+    await db
+      .update(apiClients)
+      .set({
+        requestCountToday: sql`${apiClients.requestCountToday} + 1`,
+        lastRequestAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(apiClients.clientId, clientId));
+  }
+
+  async resetApiClientDailyCount(id: string): Promise<void> {
+    await db
+      .update(apiClients)
+      .set({
+        requestCountToday: 0,
+        lastResetAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(apiClients.id, id));
+  }
+
+  // ============= API MESSAGE QUEUE =============
+  async getApiMessageQueue(clientId?: string): Promise<ApiMessageQueue[]> {
+    if (clientId) {
+      return db
+        .select()
+        .from(apiMessageQueue)
+        .where(eq(apiMessageQueue.clientId, clientId))
+        .orderBy(desc(apiMessageQueue.createdAt));
+    }
+    return db.select().from(apiMessageQueue).orderBy(desc(apiMessageQueue.createdAt));
+  }
+
+  async getApiMessage(id: string): Promise<ApiMessageQueue | undefined> {
+    const [message] = await db.select().from(apiMessageQueue).where(eq(apiMessageQueue.id, id));
+    return message || undefined;
+  }
+
+  async getApiMessageByRequestId(requestId: string): Promise<ApiMessageQueue | undefined> {
+    const [message] = await db
+      .select()
+      .from(apiMessageQueue)
+      .where(eq(apiMessageQueue.requestId, requestId));
+    return message || undefined;
+  }
+
+  async createApiMessage(message: InsertApiMessageQueue): Promise<ApiMessageQueue> {
+    const [newMessage] = await db.insert(apiMessageQueue).values(message).returning();
+    return newMessage;
+  }
+
+  async updateApiMessage(id: string, data: Partial<ApiMessageQueue>): Promise<ApiMessageQueue | undefined> {
+    const [updated] = await db
+      .update(apiMessageQueue)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(apiMessageQueue.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async getQueuedApiMessages(limit: number): Promise<ApiMessageQueue[]> {
+    return db
+      .select()
+      .from(apiMessageQueue)
+      .where(eq(apiMessageQueue.status, "queued"))
+      .orderBy(desc(apiMessageQueue.priority), asc(apiMessageQueue.createdAt))
+      .limit(limit);
+  }
+
+  async updateApiMessageStatus(
+    id: string,
+    status: ApiMessageStatus,
+    errorMessage?: string
+  ): Promise<ApiMessageQueue | undefined> {
+    const updateData: Partial<ApiMessageQueue> = {
+      status,
+      updatedAt: new Date(),
+    };
+    if (errorMessage !== undefined) {
+      updateData.errorMessage = errorMessage;
+    }
+    if (status === "sent") {
+      updateData.sentAt = new Date();
+    }
+    const [updated] = await db
+      .update(apiMessageQueue)
+      .set(updateData)
+      .where(eq(apiMessageQueue.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  // ============= API REQUEST LOGS =============
+  async createApiRequestLog(log: Omit<ApiRequestLog, "id" | "createdAt">): Promise<ApiRequestLog> {
+    const [newLog] = await db.insert(apiRequestLogs).values(log).returning();
+    return newLog;
+  }
+
+  async getApiRequestLogs(clientId: string, limit: number = 100): Promise<ApiRequestLog[]> {
+    return db
+      .select()
+      .from(apiRequestLogs)
+      .where(eq(apiRequestLogs.clientId, clientId))
+      .orderBy(desc(apiRequestLogs.createdAt))
+      .limit(limit);
   }
 }
 
