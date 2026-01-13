@@ -156,7 +156,7 @@ export function MessageThread({
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header - Mobile friendly with back button */}
-      <div className="flex items-center justify-between px-2 md:px-4 h-14 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 shrink-0">
+      <div className="sticky top-0 z-50 flex items-center justify-between px-2 md:px-4 h-14 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {onBack && (
             <Button 
