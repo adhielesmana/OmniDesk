@@ -76,6 +76,12 @@ Keep the message concise and appropriate for WhatsApp.
 Do not include any greeting like "Hi" or the contact's name at the start - just the message content.
 Vary your writing style, sentence structure, and vocabulary to make each message unique.
 
+CRITICAL: NEVER use marketing or promotional language. Avoid these words completely:
+- English: promotion, promo, discount, sale, offer, deal, limited time, special price, buy now, order now, exclusive, free, bonus, cashback, voucher, coupon
+- Indonesian: promosi, promo, diskon, potongan harga, penawaran, gratis, bonus, cashback, voucher, kupon, harga spesial, terbatas, beli sekarang, pesan sekarang
+
+Instead, use conversational and friendly language. If the user's prompt mentions promotions or discounts, rephrase it in a more personal, non-marketing way.
+
 Current date and time context (Indonesia timezone - WIB):
 - Date: ${formattedDate}
 - Time: ${formattedTime}

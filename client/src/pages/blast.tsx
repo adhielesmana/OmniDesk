@@ -922,6 +922,25 @@ function CampaignDetail({
   queryClient: ReturnType<typeof useQueryClient>;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const [showEditPromptDialog, setShowEditPromptDialog] = useState(false);
+  const [editedPrompt, setEditedPrompt] = useState(campaign.prompt);
+
+  const updatePromptMutation = useMutation({
+    mutationFn: async (newPrompt: string) => {
+      const res = await apiRequest("PATCH", `/api/blast-campaigns/${campaign.id}`, { prompt: newPrompt });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaign.id] });
+      toast({ title: "Prompt updated successfully" });
+      setShowEditPromptDialog(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to update prompt", variant: "destructive" });
+    },
+  });
+
   const progress = campaign.totalRecipients
     ? ((campaign.sentCount || 0) + (campaign.failedCount || 0)) / campaign.totalRecipients * 100
     : 0;
@@ -1027,13 +1046,61 @@ function CampaignDetail({
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
             <CardTitle>AI Prompt</CardTitle>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                setEditedPrompt(campaign.prompt);
+                setShowEditPromptDialog(true);
+              }}
+              data-testid="button-edit-prompt"
+            >
+              <Edit className="h-4 w-4" />
+            </Button>
           </CardHeader>
           <CardContent>
             <p className="text-sm whitespace-pre-wrap">{campaign.prompt}</p>
           </CardContent>
         </Card>
+
+        <Dialog open={showEditPromptDialog} onOpenChange={setShowEditPromptDialog}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit AI Prompt</DialogTitle>
+              <DialogDescription>
+                Update the prompt used to generate personalized messages for this campaign.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <Textarea
+                value={editedPrompt}
+                onChange={(e) => setEditedPrompt(e.target.value)}
+                placeholder="Enter your message prompt..."
+                rows={6}
+                className="resize-none"
+                data-testid="input-edit-prompt"
+              />
+              <p className="text-xs text-muted-foreground mt-2">
+                Note: Updating the prompt will only affect newly generated messages, not messages already in the queue.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditPromptDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => updatePromptMutation.mutate(editedPrompt)}
+                disabled={!editedPrompt.trim() || updatePromptMutation.isPending}
+                data-testid="button-save-prompt"
+              >
+                {updatePromptMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Prompt
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <MessageQueueCard 
           campaignId={campaign.id} 
