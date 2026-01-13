@@ -2355,14 +2355,18 @@ export async function registerRoutes(
     console.error("WhatsApp auto-connect failed:", error);
   });
 
-  app.get("/api/whatsapp/status", (req, res) => {
+  // ============= WHATSAPP CONNECTION ROUTES =============
+  // These endpoints are available to all authenticated users (not admin-only)
+  // so regular users can reconnect WhatsApp if disconnected
+  
+  app.get("/api/whatsapp/status", requireAuth, (req, res) => {
     res.json({
       status: whatsappService.getConnectionState(),
       qr: currentQR,
     });
   });
 
-  app.post("/api/whatsapp/connect", async (req, res) => {
+  app.post("/api/whatsapp/connect", requireAuth, async (req, res) => {
     try {
       await whatsappService.connect();
       res.json({ success: true, status: whatsappService.getConnectionState() });
@@ -2372,7 +2376,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/whatsapp/disconnect", async (req, res) => {
+  app.post("/api/whatsapp/disconnect", requireAuth, async (req, res) => {
     try {
       await whatsappService.disconnect();
       res.json({ success: true });
@@ -2382,7 +2386,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/whatsapp/logout", async (req, res) => {
+  app.post("/api/whatsapp/logout", requireAuth, async (req, res) => {
     try {
       await whatsappService.logout();
       res.json({ success: true });
@@ -2392,7 +2396,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/whatsapp/send", async (req, res) => {
+  app.post("/api/whatsapp/send", requireAuth, async (req, res) => {
     try {
       const { to, content } = req.body;
       const result = await whatsappService.sendMessage(to, content);
