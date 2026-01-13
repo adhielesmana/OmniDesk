@@ -20,11 +20,13 @@ interface WebhookMessage {
   platform: Platform;
   senderId: string;
   senderName?: string;
+  recipientId?: string;
   content?: string;
   mediaUrl?: string;
   mediaType?: string;
   timestamp: Date;
   externalId: string;
+  isEcho?: boolean;
 }
 
 export class MetaApiService {
@@ -534,14 +536,18 @@ export class MetaApiService {
         content = "[Message deleted]";
       }
 
+      const isEcho = message.is_echo === true;
+
       return {
         platform: "facebook",
         senderId: messaging.sender.id,
+        recipientId: messaging.recipient?.id,
         content,
         mediaUrl,
         mediaType,
         timestamp: new Date(messaging.timestamp),
         externalId: message.mid,
+        isEcho,
       };
     } catch (error) {
       console.error("Error parsing Facebook webhook:", error);

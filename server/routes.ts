@@ -1380,14 +1380,25 @@ export async function registerRoutes(
       }
 
       if (webhookMessage) {
+        // For echo messages (sent by page/auto-reply), the recipient is the customer
+        // For regular messages, the sender is the customer
+        const isEcho = webhookMessage.isEcho === true;
+        const customerId = isEcho ? webhookMessage.recipientId : webhookMessage.senderId;
+        
+        if (!customerId) {
+          console.log("No customer ID found in webhook message, skipping");
+          res.sendStatus(200);
+          return;
+        }
+
         // Find or create contact
         let contact = await storage.getContactByPlatformId(
-          webhookMessage.senderId,
+          customerId,
           webhookMessage.platform
         );
 
         if (!contact) {
-          let name = webhookMessage.senderName;
+          let name = isEcho ? undefined : webhookMessage.senderName;
           let profilePictureUrl: string | undefined;
           
           // Try to fetch profile info from Meta for Facebook/Instagram
@@ -1399,7 +1410,7 @@ export async function registerRoutes(
                 pageId: settings.pageId || undefined,
                 businessId: settings.businessId || undefined,
               });
-              const profile = await metaApi.getUserProfile(webhookMessage.senderId);
+              const profile = await metaApi.getUserProfile(customerId);
               if (profile) {
                 name = profile.name || name;
                 profilePictureUrl = profile.profilePicture;
@@ -1408,7 +1419,7 @@ export async function registerRoutes(
           }
           
           contact = await storage.createContact({
-            platformId: webhookMessage.senderId,
+            platformId: customerId,
             platform: webhookMessage.platform,
             name,
             profilePictureUrl,
@@ -1422,19 +1433,20 @@ export async function registerRoutes(
           conversation = await storage.createConversation({
             contactId: contact.id,
             platform: webhookMessage.platform,
-            unreadCount: 1,
+            unreadCount: isEcho ? 0 : 1,
           });
-        } else {
+        } else if (!isEcho) {
+          // Only increment unread count for incoming messages, not echo/auto-reply
           await storage.updateConversation(conversation.id, {
             unreadCount: (conversation.unreadCount || 0) + 1,
           });
         }
 
-        // Create message
+        // Create message - echo messages are outbound, regular messages are inbound
         const message = await storage.createMessage({
           conversationId: conversation.id,
           externalId: webhookMessage.externalId,
-          direction: "inbound",
+          direction: isEcho ? "outbound" : "inbound",
           content: webhookMessage.content,
           mediaUrl: webhookMessage.mediaUrl,
           mediaType: webhookMessage.mediaType,
