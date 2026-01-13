@@ -157,12 +157,14 @@ APP_PORT=$AVAILABLE_PORT
 echo ""
 echo -e "${BLUE}[4/7] Building and starting containers...${NC}"
 echo -e "  ${YELLOW}→${NC} Starting PostgreSQL database..."
-echo -e "  ${YELLOW}→${NC} Building application image..."
+echo -e "  ${YELLOW}→${NC} Building application image (no cache)..."
 
 if docker compose version &> /dev/null; then
-    docker compose up -d --build
+    docker compose build --no-cache
+    docker compose up -d
 else
-    docker-compose up -d --build
+    docker-compose build --no-cache
+    docker-compose up -d
 fi
 
 echo -e "  ${GREEN}✓${NC} PostgreSQL database container started"
