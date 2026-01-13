@@ -133,8 +133,9 @@ export function ConversationList({
               const isSelected = conv.id === selectedConversationId;
 
               return (
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   key={conv.id}
                   className={`group relative p-2.5 rounded-xl cursor-pointer w-full text-left ${
                     isSelected 
@@ -145,6 +146,12 @@ export function ConversationList({
                     e.preventDefault();
                     e.stopPropagation();
                     onSelectConversation(conv.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectConversation(conv.id);
+                    }
                   }}
                   data-testid={`conversation-item-${conv.id}`}
                 >
@@ -223,7 +230,7 @@ export function ConversationList({
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                </button>
+                </div>
               );
             })
           )}
