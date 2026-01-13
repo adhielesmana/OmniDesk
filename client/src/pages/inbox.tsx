@@ -255,15 +255,15 @@ function InboxContent({
               />
             </div>
 
-            {/* Conversation Sheet - Slides up from bottom */}
+            {/* Conversation Sheet - Slides in from right */}
             <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
               <SheetContent 
-                side="bottom" 
-                className="h-[95vh] p-0 flex flex-col rounded-t-xl"
+                side="right" 
+                className="w-full sm:w-full p-0 flex flex-col"
                 data-testid="mobile-conversation-sheet"
               >
                 {/* Sheet Header */}
-                <div className="flex items-center justify-between px-3 h-14 border-b border-border bg-card shrink-0 rounded-t-xl">
+                <div className="flex items-center justify-between px-3 h-14 border-b border-border bg-card shrink-0">
                   <div className="flex items-center gap-3 min-w-0">
                     <Button 
                       variant="ghost" 
