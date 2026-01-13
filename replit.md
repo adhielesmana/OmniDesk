@@ -10,6 +10,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **Database-Backed WhatsApp Session**: WhatsApp authentication state is now stored in the PostgreSQL database (`whatsapp_auth_state` table) instead of filesystem. This allows sessions to persist across server restarts, backups, and deployments. Users can reconnect by clicking the login button without scanning the QR code again.
 - **Blast Message Time Restriction**: Blast campaigns now only send messages between 7 AM and 9 PM to avoid midnight blasting and reduce WhatsApp detection risk
 - **Auto-Reply Feature**: New auto-reply system that automatically responds to conversations inactive for more than 24 hours, treating them as new conversations. Configurable via Settings modal with enable/disable toggle and customizable AI prompt. Disabled when no prompt is saved.
 - **Blast Message Pre-Generation**: All blast campaign messages are now pre-generated immediately after campaign creation with progress tracking (generatedCount, isGenerating fields)
@@ -69,6 +70,10 @@ Preferred communication style: Simple, everyday language.
 - `platformSettings` - API credentials and configuration per platform
 - `quickReplies` - Saved quick reply templates
 - `appSettings` - Application-wide settings including OpenAI API key with validation status
+- `whatsappAuthState` - Database-backed WhatsApp authentication credentials for session persistence
+
+**Key Server Files**:
+- `server/whatsapp-db-auth.ts` - Database-backed authentication state for Baileys library
 
 ### Authentication & Authorization
 - **Session Management**: PostgreSQL-backed session store with 24-hour expiry

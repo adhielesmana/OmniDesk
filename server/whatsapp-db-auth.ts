@@ -49,45 +49,49 @@ export async function useDbAuthState(): Promise<{
   };
 
   // Load or initialize credentials
-  let creds: AuthenticationCreds = await readData(CREDS_KEY) || initAuthCreds();
+  const creds: AuthenticationCreds = await readData(CREDS_KEY) || initAuthCreds();
+
+  // Create state object first so saveCreds can reference state.creds (which Baileys mutates)
+  const state: AuthenticationState = {
+    creds,
+    keys: {
+      get: async <T extends keyof SignalDataTypeMap>(type: T, ids: string[]): Promise<{ [id: string]: SignalDataTypeMap[T] }> => {
+        const data: { [id: string]: SignalDataTypeMap[T] } = {};
+        await Promise.all(
+          ids.map(async (id) => {
+            const key = `${KEY_PREFIX}${type}-${id}`;
+            let value = await readData(key);
+            if (type === 'app-state-sync-key' && value) {
+              value = proto.Message.AppStateSyncKeyData.fromObject(value);
+            }
+            if (value) {
+              data[id] = value;
+            }
+          })
+        );
+        return data;
+      },
+      set: async (data: any): Promise<void> => {
+        const tasks: Promise<void>[] = [];
+        for (const category in data) {
+          for (const id in data[category]) {
+            const value = data[category][id];
+            const key = `${KEY_PREFIX}${category}-${id}`;
+            tasks.push(
+              value ? writeData(key, value) : removeData(key)
+            );
+          }
+        }
+        await Promise.all(tasks);
+      }
+    }
+  };
 
   return {
-    state: {
-      creds,
-      keys: {
-        get: async <T extends keyof SignalDataTypeMap>(type: T, ids: string[]): Promise<{ [id: string]: SignalDataTypeMap[T] }> => {
-          const data: { [id: string]: SignalDataTypeMap[T] } = {};
-          await Promise.all(
-            ids.map(async (id) => {
-              const key = `${KEY_PREFIX}${type}-${id}`;
-              let value = await readData(key);
-              if (type === 'app-state-sync-key' && value) {
-                value = proto.Message.AppStateSyncKeyData.fromObject(value);
-              }
-              if (value) {
-                data[id] = value;
-              }
-            })
-          );
-          return data;
-        },
-        set: async (data: any): Promise<void> => {
-          const tasks: Promise<void>[] = [];
-          for (const category in data) {
-            for (const id in data[category]) {
-              const value = data[category][id];
-              const key = `${KEY_PREFIX}${category}-${id}`;
-              tasks.push(
-                value ? writeData(key, value) : removeData(key)
-              );
-            }
-          }
-          await Promise.all(tasks);
-        }
-      }
-    },
+    state,
+    // saveCreds must write state.creds (not the original creds variable) because Baileys mutates state.creds directly
     saveCreds: async (): Promise<void> => {
-      await writeData(CREDS_KEY, creds);
+      await writeData(CREDS_KEY, state.creds);
     },
     clearCreds: async (): Promise<void> => {
       await clearAllData();
