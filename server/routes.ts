@@ -883,7 +883,8 @@ export async function registerRoutes(
     try {
       let departmentFilter: string[] | undefined;
 
-      if (req.session.user?.role !== "superadmin") {
+      // Superadmin and admin can see all conversations, regular users only see their department's
+      if (req.session.user?.role !== "superadmin" && req.session.user?.role !== "admin") {
         const userDepartmentIds = await getUserDepartmentIds(req.session.userId!, req.session.user!.role);
         if (userDepartmentIds !== "all") {
           departmentFilter = userDepartmentIds;

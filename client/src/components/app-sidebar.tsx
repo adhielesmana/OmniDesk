@@ -47,6 +47,7 @@ export function AppSidebar({
   onSettingsClick,
 }: AppSidebarProps) {
   const [location] = useLocation();
+  const { isAdmin } = useAuth();
   
   const { data: branding } = useQuery<BrandingData>({
     queryKey: ["/api/admin/branding"],
@@ -217,14 +218,16 @@ export function AppSidebar({
 
       <SidebarFooter className="p-2 space-y-2">
         <WhatsAppConnect />
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={onSettingsClick} data-testid="button-settings">
-              <Settings className="h-5 w-5" />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        {isAdmin && (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={onSettingsClick} data-testid="button-settings">
+                <Settings className="h-5 w-5" />
+                <span>Settings</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
         <UserMenu />
       </SidebarFooter>
     </Sidebar>
