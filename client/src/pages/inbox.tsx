@@ -221,20 +221,44 @@ function InboxContent({
         {/* Desktop: Show both side by side */}
         <div className="flex flex-1 min-h-0 h-full">
           {/* Mobile View - Conditional Rendering */}
-          <div className="md:hidden flex flex-col h-full w-full">
-            {showConversationList ? (
-              <>
-                {/* Mobile Header for Conversation List */}
-                <header className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
-                  <div className="flex items-center gap-2">
-                    <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
-                    <div className="flex items-center gap-2">
-                      <MessageCircle className="h-5 w-5 text-primary" />
+          <div className="md:hidden flex flex-col h-full w-full overflow-hidden">
+            {/* Fixed Mobile Header - Always visible */}
+            <header className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
+              <div className="flex items-center gap-2 min-w-0">
+                {!showConversationList ? (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="shrink-0" 
+                    onClick={handleBackToList}
+                    data-testid="button-back-to-list-mobile"
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </Button>
+                ) : (
+                  <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
+                )}
+                <div className="flex items-center gap-2 min-w-0">
+                  {showConversationList ? (
+                    <>
+                      <MessageCircle className="h-5 w-5 text-primary shrink-0" />
                       <span className="font-semibold">Chats</span>
-                    </div>
-                  </div>
-                  <ThemeToggle />
-                </header>
+                    </>
+                  ) : selectedConversation ? (
+                    <span className="font-semibold truncate">
+                      {selectedConversation.contact.name || selectedConversation.contact.phoneNumber || "Unknown"}
+                    </span>
+                  ) : (
+                    <span className="font-semibold">Conversation</span>
+                  )}
+                </div>
+              </div>
+              <ThemeToggle />
+            </header>
+
+            {/* Content area - switches between list and thread */}
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {showConversationList ? (
                 <ConversationList
                   conversations={sortedConversations}
                   selectedConversationId={selectedConversationId}
@@ -244,16 +268,17 @@ function InboxContent({
                   isLoading={isLoadingConversations}
                   selectedPlatform={selectedPlatform}
                 />
-              </>
-            ) : (
-              <MessageThread
-                conversation={selectedConversation || null}
-                onSendMessage={handleSendMessage}
-                isSending={sendMessageMutation.isPending}
-                isLoading={isLoadingConversation}
-                onBack={handleBackToList}
-              />
-            )}
+              ) : (
+                <MessageThread
+                  conversation={selectedConversation || null}
+                  onSendMessage={handleSendMessage}
+                  isSending={sendMessageMutation.isPending}
+                  isLoading={isLoadingConversation}
+                  onBack={handleBackToList}
+                  hideHeader
+                />
+              )}
+            </div>
           </div>
 
           {/* Desktop View - Both panels visible */}

@@ -21,6 +21,7 @@ interface MessageThreadProps {
   isSending: boolean;
   isLoading: boolean;
   onBack?: () => void;
+  hideHeader?: boolean;
 }
 
 function MessageStatusIcon({ status }: { status: MessageStatus | null }) {
@@ -71,6 +72,7 @@ export function MessageThread({
   isSending,
   isLoading,
   onBack,
+  hideHeader = false,
 }: MessageThreadProps) {
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -154,69 +156,71 @@ export function MessageThread({
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      {/* Header - Fixed at top, not scrollable */}
-      <div className="flex items-center justify-between px-2 md:px-4 h-14 border-b border-border bg-card shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          {onBack && (
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="md:hidden shrink-0" 
-              onClick={onBack}
-              data-testid="button-back-to-list"
-            >
-              <ArrowLeft className="h-5 w-5" />
-            </Button>
-          )}
-          <div className="relative shrink-0">
-            <Avatar className="h-9 w-9">
-              <AvatarImage src={contact.profilePictureUrl || undefined} />
-              <AvatarFallback className="bg-muted text-muted-foreground text-sm">
-                {getInitials(contact.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
-              <PlatformIcon platform={platform} className="h-3 w-3" />
+      {/* Header - Only show if not hidden (desktop always shows, mobile uses parent header) */}
+      {!hideHeader && (
+        <div className="flex items-center justify-between px-2 md:px-4 h-14 border-b border-border bg-card shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            {onBack && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="md:hidden shrink-0" 
+                onClick={onBack}
+                data-testid="button-back-to-list"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+            )}
+            <div className="relative shrink-0">
+              <Avatar className="h-9 w-9">
+                <AvatarImage src={contact.profilePictureUrl || undefined} />
+                <AvatarFallback className="bg-muted text-muted-foreground text-sm">
+                  {getInitials(contact.name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
+                <PlatformIcon platform={platform} className="h-3 w-3" />
+              </div>
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-semibold text-foreground text-sm truncate">
+                {contact.name || contact.phoneNumber || "Unknown"}
+              </h2>
+              <p className="text-xs text-muted-foreground truncate">
+                {getPlatformName(platform)}
+              </p>
             </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="font-semibold text-foreground text-sm truncate">
-              {contact.name || contact.phoneNumber || "Unknown"}
-            </h2>
-            <p className="text-xs text-muted-foreground truncate">
-              {getPlatformName(platform)}
-            </p>
+
+          <div className="flex items-center shrink-0">
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-call">
+              <Phone className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-video">
+              <Video className="h-4 w-4" />
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" data-testid="button-thread-menu">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleViewContactInfo} data-testid="menu-view-contact">
+                  <User className="h-4 w-4 mr-2" />
+                  View Contact
+                </DropdownMenuItem>
+                <DropdownMenuItem>
+                  <Phone className="h-4 w-4 mr-2 sm:hidden" />
+                  Call
+                </DropdownMenuItem>
+                <DropdownMenuItem>Mark as Unread</DropdownMenuItem>
+                <DropdownMenuItem>Block Contact</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
-
-        <div className="flex items-center shrink-0">
-          <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-call">
-            <Phone className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-video">
-            <Video className="h-4 w-4" />
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" data-testid="button-thread-menu">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleViewContactInfo} data-testid="menu-view-contact">
-                <User className="h-4 w-4 mr-2" />
-                View Contact
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Phone className="h-4 w-4 mr-2 sm:hidden" />
-                Call
-              </DropdownMenuItem>
-              <DropdownMenuItem>Mark as Unread</DropdownMenuItem>
-              <DropdownMenuItem>Block Contact</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
+      )}
 
       {/* Messages - scrollable area */}
       <div className="flex-1 overflow-y-auto px-3 md:px-4 min-h-0" ref={scrollRef}>
