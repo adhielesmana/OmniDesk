@@ -113,7 +113,15 @@ if [ -z "$DOMAIN" ]; then
 fi
 
 echo ""
-echo -e "${BLUE}[2/7] Stopping existing containers...${NC}"
+echo -e "${BLUE}[2/7] Preserving WhatsApp session and stopping containers...${NC}"
+
+# Backup WhatsApp session before stopping containers
+if [ -d "whatsapp_auth" ] && [ "$(ls -A whatsapp_auth 2>/dev/null)" ]; then
+    cp -r whatsapp_auth whatsapp_auth_backup 2>/dev/null || true
+    echo -e "  ${GREEN}✓${NC} WhatsApp session backed up"
+else
+    echo -e "  ${YELLOW}No WhatsApp session to backup${NC}"
+fi
 
 if docker compose version &> /dev/null; then
     docker compose down 2>/dev/null || true
@@ -159,6 +167,18 @@ fi
 
 echo -e "  ${GREEN}✓${NC} PostgreSQL database container started"
 echo -e "  ${GREEN}✓${NC} Application container started"
+
+# Restore WhatsApp session from backup if the folder is empty or missing
+if [ -d "whatsapp_auth_backup" ] && [ "$(ls -A whatsapp_auth_backup 2>/dev/null)" ]; then
+    if [ ! -d "whatsapp_auth" ] || [ -z "$(ls -A whatsapp_auth 2>/dev/null)" ]; then
+        mkdir -p whatsapp_auth
+        cp -r whatsapp_auth_backup/* whatsapp_auth/ 2>/dev/null || true
+        echo -e "  ${GREEN}✓${NC} WhatsApp session restored from backup"
+    else
+        echo -e "  ${GREEN}✓${NC} WhatsApp session already exists"
+    fi
+    rm -rf whatsapp_auth_backup 2>/dev/null || true
+fi
 
 echo ""
 echo -e "${BLUE}[5/7] Running database setup...${NC}"
