@@ -161,9 +161,14 @@ export interface IStorage {
   // Blast Recipients
   getBlastRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]>;
   getBlastRecipient(id: string): Promise<BlastRecipient | undefined>;
+  getBlastRecipientWithContact(id: string): Promise<(BlastRecipient & { contact: Contact }) | undefined>;
   createBlastRecipients(recipients: InsertBlastRecipient[]): Promise<BlastRecipient[]>;
   updateBlastRecipient(id: string, data: Partial<BlastRecipient>): Promise<BlastRecipient | undefined>;
   getNextPendingRecipient(campaignId: string): Promise<BlastRecipient | undefined>;
+  getPendingGenerationRecipients(campaignId: string, limit: number): Promise<(BlastRecipient & { contact: Contact })[]>;
+  getQueuedRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]>;
+  getApprovedRecipients(campaignId: string, limit: number): Promise<(BlastRecipient & { contact: Contact })[]>;
+  getRecipientQueueCounts(campaignId: string): Promise<{ pending: number; generating: number; awaitingReview: number; approved: number }>;
   getDueRecipients(limit?: number): Promise<(BlastRecipient & { contact: Contact; campaign: BlastCampaign })[]>;
 
   // Cleanup/Maintenance
@@ -899,6 +904,97 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(blastRecipients.createdAt))
       .limit(1);
     return recipient || undefined;
+  }
+
+  async getBlastRecipientWithContact(id: string): Promise<(BlastRecipient & { contact: Contact }) | undefined> {
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .where(eq(blastRecipients.id, id))
+      .limit(1);
+    
+    if (result.length === 0) return undefined;
+    return {
+      ...result[0].blast_recipients,
+      contact: result[0].contacts,
+    };
+  }
+
+  async getPendingGenerationRecipients(campaignId: string, limit: number): Promise<(BlastRecipient & { contact: Contact })[]> {
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .where(and(
+        eq(blastRecipients.campaignId, campaignId),
+        eq(blastRecipients.status, "pending")
+      ))
+      .orderBy(asc(blastRecipients.createdAt))
+      .limit(limit);
+
+    return result.map((row) => ({
+      ...row.blast_recipients,
+      contact: row.contacts,
+    }));
+  }
+
+  async getQueuedRecipients(campaignId: string): Promise<(BlastRecipient & { contact: Contact })[]> {
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .where(and(
+        eq(blastRecipients.campaignId, campaignId),
+        or(
+          eq(blastRecipients.status, "awaiting_review"),
+          eq(blastRecipients.status, "approved")
+        )
+      ))
+      .orderBy(asc(blastRecipients.createdAt));
+
+    return result.map((row) => ({
+      ...row.blast_recipients,
+      contact: row.contacts,
+    }));
+  }
+
+  async getApprovedRecipients(campaignId: string, limit: number): Promise<(BlastRecipient & { contact: Contact })[]> {
+    const result = await db
+      .select()
+      .from(blastRecipients)
+      .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
+      .where(and(
+        eq(blastRecipients.campaignId, campaignId),
+        eq(blastRecipients.status, "approved")
+      ))
+      .orderBy(asc(blastRecipients.approvedAt))
+      .limit(limit);
+
+    return result.map((row) => ({
+      ...row.blast_recipients,
+      contact: row.contacts,
+    }));
+  }
+
+  async getRecipientQueueCounts(campaignId: string): Promise<{ pending: number; generating: number; awaitingReview: number; approved: number }> {
+    const result = await db
+      .select({
+        status: blastRecipients.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(blastRecipients)
+      .where(eq(blastRecipients.campaignId, campaignId))
+      .groupBy(blastRecipients.status);
+
+    const counts = { pending: 0, generating: 0, awaitingReview: 0, approved: 0 };
+    for (const row of result) {
+      if (row.status === "pending") counts.pending = row.count;
+      else if (row.status === "generating") counts.generating = row.count;
+      else if (row.status === "awaiting_review") counts.awaitingReview = row.count;
+      else if (row.status === "approved") counts.approved = row.count;
+    }
+    return counts;
   }
 
   async getDueRecipients(limit: number = 10): Promise<(BlastRecipient & { contact: Contact; campaign: BlastCampaign })[]> {
