@@ -30,7 +30,7 @@ Preferred communication style: Simple, everyday language.
 - **Session Handling Fix**: Added explicit session.save() in login endpoint and error logging for session store
 - **Deploy Script Improvements**: Added session table creation to deploy.sh, fixed nginx X-Forwarded-Proto for HTTPS
 - **WhatsApp LID Handling**: Added `whatsappLid` field to contacts schema to store WhatsApp Linked IDs (15+ digit internal identifiers) separately from phone numbers. LIDs are WhatsApp-internal identifiers that don't correspond to real phone numbers - only WhatsApp knows the mapping. Migrated 254 existing LID-only contacts from phone_number to whatsapp_lid field.
-- **Contact Lookup Enhancement**: Updated storage layer to search contacts by both phone_number and whatsapp_lid fields when processing incoming messages. Prevents duplicate contacts/conversations for LID-only contacts.
+- **WhatsApp Contact Matching & Auto-Merge**: Enhanced contact resolution to prevent duplicate conversations. When an incoming message has both a LID and phone number (from Baileys metadata), the system searches for contacts by both identifiers. If two separate contacts are found (one matched by LID, one by phone), they're automatically merged: conversations are moved to the primary contact, identifiers are combined, and the duplicate is deleted. This prevents the issue where the same person appears twice when WhatsApp switches between using their LID and phone number.
 - **Authentication System**: Added user authentication with session management using express-session and PostgreSQL session store
 - **User Roles**: Implemented superadmin, admin, and user roles with role-based access control
 - **Department Management**: Added departments for organizing conversations and users

@@ -2347,12 +2347,12 @@ export async function registerRoutes(
           return;
         }
         
-        // First try to find existing contact by phone number or LID
-        let contact = await storage.getContactByPhoneNumber(normalizedId);
-        if (!contact) {
-          // Fallback to platform ID lookup (also checks whatsappLid field)
-          contact = await storage.getContactByPlatformId(normalizedId, "whatsapp");
-        }
+        // Normalize alternate ID if provided
+        const alternateId = msg.alternateId ? normalizeWhatsAppJid(msg.alternateId) : undefined;
+        
+        // Use the enhanced contact lookup that can merge duplicates
+        let contact = await storage.findOrMergeWhatsAppContact(normalizedId, alternateId);
+        
         if (!contact) {
           // For outbound messages (isFromMe), msg.fromName is OUR name, not the recipient's
           // Use phone number as default name for outbound messages to unknown contacts
@@ -2360,35 +2360,17 @@ export async function registerRoutes(
             ? (isLid ? normalizedId : `+${normalizedId}`)
             : msg.fromName;
           
-          // Create new contact - if it's a LID, don't store as phone number
-          if (isLid) {
-            contact = await storage.createContact({
-              platformId: normalizedId,
-              platform: "whatsapp",
-              name: contactName,
-              whatsappLid: normalizedId, // Store LID separately
-              // Don't set phone number for LID-only contacts
-            });
-          } else {
-            contact = await storage.createContact({
-              platformId: normalizedId,
-              platform: "whatsapp",
-              name: contactName,
-              phoneNumber: `+${normalizedId}`,
-            });
-          }
-        } else {
-          // Update existing contact with missing identifiers
-          // Only update identifiers, NOT the name (especially for outbound messages)
-          const updates: Record<string, string> = {};
-          if (isLid && !contact.whatsappLid) {
-            updates.whatsappLid = normalizedId;
-          } else if (!isLid && !contact.phoneNumber) {
-            updates.phoneNumber = `+${normalizedId}`;
-          }
-          if (Object.keys(updates).length > 0) {
-            await storage.updateContact(contact.id, updates);
-          }
+          // Determine which ID is LID and which is phone
+          const altIsLid = alternateId ? alternateId.length >= 15 : false;
+          
+          // Create new contact with both identifiers if available
+          contact = await storage.createContact({
+            platformId: normalizedId,
+            platform: "whatsapp",
+            name: contactName,
+            phoneNumber: isLid ? (alternateId && !altIsLid ? `+${alternateId}` : undefined) : `+${normalizedId}`,
+            whatsappLid: isLid ? normalizedId : (alternateId && altIsLid ? alternateId : undefined),
+          });
         }
 
         let conversation = await storage.getConversationByContactId(contact.id);
@@ -2533,40 +2515,24 @@ export async function registerRoutes(
           // Skip our own WhatsApp number
           if (myJid && normalizedHistoryId === myJid) continue;
           
-          // First try to find existing contact by phone number or LID
-          let contact = await storage.getContactByPhoneNumber(normalizedHistoryId);
+          // Normalize alternate ID if provided
+          const alternateId = msg.alternateId ? normalizeWhatsAppJid(msg.alternateId) : undefined;
+          
+          // Use enhanced contact lookup
+          let contact = await storage.findOrMergeWhatsAppContact(normalizedHistoryId, alternateId);
+          
           if (!contact) {
-            // Fallback to platform ID lookup (also checks whatsappLid field)
-            contact = await storage.getContactByPlatformId(normalizedHistoryId, "whatsapp");
-          }
-          if (!contact) {
-            // Create new contact - if it's a LID, don't store as phone number
-            if (isLid) {
-              contact = await storage.createContact({
-                platformId: normalizedHistoryId,
-                platform: "whatsapp",
-                name: msg.fromName,
-                whatsappLid: normalizedHistoryId,
-              });
-            } else {
-              contact = await storage.createContact({
-                platformId: normalizedHistoryId,
-                platform: "whatsapp",
-                name: msg.fromName,
-                phoneNumber: `+${normalizedHistoryId}`,
-              });
-            }
-          } else {
-            // Update existing contact with missing identifiers
-            const updates: Record<string, string> = {};
-            if (isLid && !contact.whatsappLid) {
-              updates.whatsappLid = normalizedHistoryId;
-            } else if (!isLid && !contact.phoneNumber) {
-              updates.phoneNumber = `+${normalizedHistoryId}`;
-            }
-            if (Object.keys(updates).length > 0) {
-              await storage.updateContact(contact.id, updates);
-            }
+            // Determine which ID is LID and which is phone
+            const altIsLid = alternateId ? alternateId.length >= 15 : false;
+            
+            // Create new contact with both identifiers if available
+            contact = await storage.createContact({
+              platformId: normalizedHistoryId,
+              platform: "whatsapp",
+              name: msg.fromName,
+              phoneNumber: isLid ? (alternateId && !altIsLid ? `+${alternateId}` : undefined) : `+${normalizedHistoryId}`,
+              whatsappLid: isLid ? normalizedHistoryId : (alternateId && altIsLid ? alternateId : undefined),
+            });
           }
 
           let conversation = await storage.getConversationByContactId(contact.id);

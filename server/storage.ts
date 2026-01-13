@@ -417,11 +417,24 @@ export class DatabaseStorage implements IStorage {
     if (primaryContact && alternateContact && primaryContact.id !== alternateContact.id) {
       console.log(`Merging duplicate WhatsApp contacts: ${primaryContact.id} <- ${alternateContact.id}`);
       
-      // Move all conversations from alternate to primary
+      // Move all related records from alternate to primary
+      // 1. Move conversations
       await db
         .update(conversations)
         .set({ contactId: primaryContact.id })
         .where(eq(conversations.contactId, alternateContact.id));
+      
+      // 2. Move blast recipients
+      await db
+        .update(blastRecipients)
+        .set({ contactId: primaryContact.id })
+        .where(eq(blastRecipients.contactId, alternateContact.id));
+      
+      // 3. Move API message queue entries
+      await db
+        .update(apiMessageQueue)
+        .set({ contactId: primaryContact.id })
+        .where(eq(apiMessageQueue.contactId, alternateContact.id));
       
       // Update primary contact with any missing identifiers from alternate
       const updates: Partial<InsertContact> = {};
@@ -437,13 +450,19 @@ export class DatabaseStorage implements IStorage {
       if (!primaryContact.profilePictureUrl && alternateContact.profilePictureUrl) {
         updates.profilePictureUrl = alternateContact.profilePictureUrl;
       }
+      // Merge tags if both have them
+      if (alternateContact.tags && alternateContact.tags.length > 0) {
+        const existingTags = primaryContact.tags || [];
+        const mergedTags = Array.from(new Set([...existingTags, ...alternateContact.tags]));
+        updates.tags = mergedTags;
+      }
       
       if (Object.keys(updates).length > 0) {
         await this.updateContact(primaryContact.id, updates);
         Object.assign(primaryContact, updates);
       }
       
-      // Delete the alternate contact
+      // Delete the alternate contact (all FK references have been moved)
       await db.delete(contacts).where(eq(contacts.id, alternateContact.id));
       
       return primaryContact;
