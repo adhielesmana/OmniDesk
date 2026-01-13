@@ -6,6 +6,59 @@ const AUTOREPLY_ENABLED_KEY = "autoreply_enabled";
 const AUTOREPLY_PROMPT_KEY = "autoreply_prompt";
 const AUTOREPLY_COOLDOWN_HOURS = 24;
 
+// Default timezone for Indonesia (WIB)
+const DEFAULT_TIMEZONE = "Asia/Jakarta";
+
+// Get current date/time info in the configured timezone
+function getLocalDateTime(timezone: string = DEFAULT_TIMEZONE): { 
+  formattedDate: string; 
+  formattedTime: string;
+  dayName: string;
+  greeting: string;
+} {
+  const now = new Date();
+  
+  // Get hour in the specified timezone
+  const hourString = now.toLocaleString("en-US", { 
+    timeZone: timezone, 
+    hour: "numeric", 
+    hour12: false 
+  });
+  const hour = parseInt(hourString, 10);
+  
+  // Get formatted date and time
+  const formattedDate = now.toLocaleDateString("id-ID", {
+    timeZone: timezone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  
+  const formattedTime = now.toLocaleTimeString("id-ID", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  
+  const dayName = now.toLocaleDateString("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+  });
+  
+  // Determine appropriate greeting
+  let greeting = "Selamat pagi"; // Default morning
+  if (hour >= 11 && hour < 15) {
+    greeting = "Selamat siang";
+  } else if (hour >= 15 && hour < 18) {
+    greeting = "Selamat sore";
+  } else if (hour >= 18 || hour < 5) {
+    greeting = "Selamat malam";
+  }
+  
+  return { formattedDate, formattedTime, dayName, greeting };
+}
+
 export async function isAutoReplyEnabled(): Promise<boolean> {
   const setting = await storage.getAppSetting(AUTOREPLY_ENABLED_KEY);
   return setting?.value === "true";
@@ -76,6 +129,9 @@ export async function generateAutoReply(
     console.log("Auto-reply: OpenAI API key not configured");
     return null;
   }
+  
+  // Get current date/time context
+  const { formattedDate, formattedTime, dayName, greeting } = getLocalDateTime(DEFAULT_TIMEZONE);
 
   try {
     const openai = new OpenAI({ apiKey });
@@ -88,8 +144,15 @@ Contact Information:
 - Name: ${contact.name || "Unknown"}
 - Phone: ${contact.phoneNumber || "Unknown"}
 
+Current Date and Time (Indonesia timezone - WIB):
+- Date: ${formattedDate}
+- Time: ${formattedTime}
+- Day: ${dayName}
+- Appropriate greeting: ${greeting}
+
 IMPORTANT: 
 - Keep your response natural, friendly and conversational
+- Use appropriate time-based greetings (${greeting}) when starting a conversation
 - Do not include any greetings like "Hi" or "Hello" if they already said hello
 - Respond appropriately to their message
 - Be helpful and professional`;

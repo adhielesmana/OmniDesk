@@ -8,6 +8,49 @@ let workerInterval: NodeJS.Timeout | null = null;
 // Track next allowed send time for each campaign to enforce randomized intervals
 const campaignNextSendTime: Map<string, number> = new Map();
 
+// Default timezone for Indonesia (WIB)
+const DEFAULT_TIMEZONE = "Asia/Jakarta";
+
+// Get current date/time info in the configured timezone
+function getLocalDateTime(timezone: string = DEFAULT_TIMEZONE): { 
+  hour: number; 
+  formattedDate: string; 
+  formattedTime: string;
+  dayName: string;
+} {
+  const now = new Date();
+  
+  // Get hour in the specified timezone
+  const hourString = now.toLocaleString("en-US", { 
+    timeZone: timezone, 
+    hour: "numeric", 
+    hour12: false 
+  });
+  const hour = parseInt(hourString, 10);
+  
+  // Get formatted date and time for AI context
+  const formattedDate = now.toLocaleDateString("id-ID", {
+    timeZone: timezone,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  
+  const formattedTime = now.toLocaleTimeString("id-ID", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  
+  const dayName = now.toLocaleDateString("en-US", {
+    timeZone: timezone,
+    weekday: "long",
+  });
+  
+  return { hour, formattedDate, formattedTime, dayName };
+}
+
 async function getOpenAIKey(): Promise<string | null> {
   const setting = await storage.getAppSetting("openai_api_key");
   return setting?.value || process.env.OPENAI_API_KEY || null;
@@ -16,6 +59,9 @@ async function getOpenAIKey(): Promise<string | null> {
 async function generatePersonalizedMessage(apiKey: string, prompt: string, contact: Contact): Promise<string> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
+  
+  // Get current date/time context for the AI
+  const { formattedDate, formattedTime, dayName } = getLocalDateTime(DEFAULT_TIMEZONE);
 
   try {
     const systemPrompt = `You are a helpful assistant that generates personalized WhatsApp messages. 
@@ -23,7 +69,14 @@ Generate a unique, natural-sounding message based on the user's prompt.
 Make the message feel personal and human, avoiding robotic or templated language.
 Keep the message concise and appropriate for WhatsApp.
 Do not include any greeting like "Hi" or the contact's name at the start - just the message content.
-Vary your writing style, sentence structure, and vocabulary to make each message unique.`;
+Vary your writing style, sentence structure, and vocabulary to make each message unique.
+
+Current date and time context (Indonesia timezone - WIB):
+- Date: ${formattedDate}
+- Time: ${formattedTime}
+- Day: ${dayName}
+
+Use appropriate greetings based on the time of day if relevant (e.g., "Selamat pagi" for morning, "Selamat siang" for afternoon, "Selamat sore" for evening).`;
 
     const userPrompt = `Generate a personalized message for this contact:
 Name: ${contact.name || "Unknown"}
@@ -271,11 +324,10 @@ async function checkCampaignCompletion(campaignId: string): Promise<void> {
   }
 }
 
-// Check if current time is within allowed sending hours (7 AM - 9 PM local time)
+// Check if current time is within allowed sending hours (7 AM - 9 PM in configured timezone)
 function isWithinSendingHours(): boolean {
-  const now = new Date();
-  const hour = now.getHours();
-  // Allow sending between 7 AM (7) and 9 PM (21)
+  const { hour } = getLocalDateTime(DEFAULT_TIMEZONE);
+  // Allow sending between 7 AM (7) and 9 PM (21) in local timezone
   return hour >= 7 && hour < 21;
 }
 
