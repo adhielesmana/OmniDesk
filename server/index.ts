@@ -1,6 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import cors from "cors";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -10,6 +11,8 @@ import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 
 const app = express();
+
+app.use(compression());
 const httpServer = createServer(app);
 
 // Trust proxy for proper cookie handling behind nginx/reverse proxy
