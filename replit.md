@@ -10,7 +10,8 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **Production Update Fix**: Fixed "Run Update" feature for Docker containers that don't have a .git directory. Now automatically initializes git repository if missing and handles fresh installations.
+- **Production Update Fix**: Fixed "Run Update" feature for Docker containers that don't have a .git directory. Now automatically initializes git repository if missing and handles fresh installations. Also cleans up legacy `.whatsapp-auth` files that conflict with git checkout (session data is now stored in database).
+- **API Message Queue View**: Added "API Queue" tab in Admin panel showing all queued external API messages with status filters (Queued, Processing, Sending, Sent, Failed), message details, and ability to cancel/delete queued or failed messages. Auto-refreshes every 10 seconds.
 - **Blast Campaign Prompt Editing**: Added ability to edit AI prompts for existing blast campaigns via dialog in campaign detail view.
 - **WhatsApp Ban Prevention Improvements**: Comprehensive anti-ban protections:
   - Conservative rate limits: 10 messages/minute, 100/hour, 500/day (Jakarta timezone)

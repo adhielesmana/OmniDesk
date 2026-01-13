@@ -1059,6 +1059,21 @@ export async function registerRoutes(
         // Fresh repo - fetch and reset to origin/main
         updateStatus.updateLog.push("Fresh install - fetching from remote...");
         await execAsync("git fetch origin", { cwd: process.cwd() });
+        
+        // Clean up legacy WhatsApp auth files that conflict with checkout
+        // Session data is now stored in database, these are obsolete
+        const whatsappAuthPath = path.join(process.cwd(), ".whatsapp-auth");
+        if (fs.existsSync(whatsappAuthPath)) {
+          updateStatus.updateLog.push("Cleaning up legacy .whatsapp-auth files...");
+          fs.rmSync(whatsappAuthPath, { recursive: true, force: true });
+        }
+        
+        // Also clean .dockerignore if it exists and conflicts
+        const dockerignorePath = path.join(process.cwd(), ".dockerignore");
+        if (fs.existsSync(dockerignorePath)) {
+          fs.unlinkSync(dockerignorePath);
+        }
+        
         await execAsync("git checkout -b main origin/main", { cwd: process.cwd() });
         updateStatus.updateLog.push("Checked out main branch from remote");
       }
