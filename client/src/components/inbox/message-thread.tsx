@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User } from "lucide-react";
+import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -21,6 +21,7 @@ interface MessageThreadProps {
   onSendMessage: (content: string, mediaUrl?: string) => void;
   isSending: boolean;
   isLoading: boolean;
+  onBack?: () => void;
 }
 
 function MessageStatusIcon({ status }: { status: MessageStatus | null }) {
@@ -70,6 +71,7 @@ export function MessageThread({
   onSendMessage,
   isSending,
   isLoading,
+  onBack,
 }: MessageThreadProps) {
   const [, setLocation] = useLocation();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -88,13 +90,16 @@ export function MessageThread({
   if (isLoading) {
     return (
       <div className="flex flex-col h-full bg-background">
-        <div className="h-16 border-b border-border p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
-            <div className="space-y-2">
-              <div className="h-4 w-24 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-16 bg-muted rounded animate-pulse" />
-            </div>
+        <div className="h-14 border-b border-border px-3 flex items-center gap-3">
+          {onBack && (
+            <Button variant="ghost" size="icon" className="md:hidden" onClick={onBack}>
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+          <div className="h-10 w-10 rounded-full bg-muted animate-pulse" />
+          <div className="space-y-2">
+            <div className="h-4 w-24 bg-muted rounded animate-pulse" />
+            <div className="h-3 w-16 bg-muted rounded animate-pulse" />
           </div>
         </div>
         <div className="flex-1 p-4 space-y-4">
@@ -129,7 +134,7 @@ export function MessageThread({
           </div>
           <h2 className="text-xl font-semibold text-foreground mb-2">Select a conversation</h2>
           <p className="text-muted-foreground max-w-sm">
-            Choose a conversation from the list to start messaging. Your conversations from WhatsApp, Instagram, and Facebook will appear here.
+            Choose a conversation from the list to start messaging
           </p>
         </div>
       </div>
@@ -150,40 +155,46 @@ export function MessageThread({
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Avatar className="h-10 w-10">
+      {/* Header - Mobile friendly with back button */}
+      <div className="flex items-center justify-between px-2 md:px-4 h-14 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/60 shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          {onBack && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="md:hidden shrink-0" 
+              onClick={onBack}
+              data-testid="button-back-to-list"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+          <div className="relative shrink-0">
+            <Avatar className="h-9 w-9">
               <AvatarImage src={contact.profilePictureUrl || undefined} />
-              <AvatarFallback className="bg-muted text-muted-foreground">
+              <AvatarFallback className="bg-muted text-muted-foreground text-sm">
                 {getInitials(contact.name)}
               </AvatarFallback>
             </Avatar>
-            <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-0.5">
-              <PlatformIcon platform={platform} className="h-3.5 w-3.5" />
+            <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
+              <PlatformIcon platform={platform} className="h-3 w-3" />
             </div>
           </div>
-          <div>
-            <h2 className="font-semibold text-foreground">
+          <div className="min-w-0">
+            <h2 className="font-semibold text-foreground text-sm truncate">
               {contact.name || contact.phoneNumber || "Unknown"}
             </h2>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <span>{getPlatformName(platform)}</span>
-              {contact.phoneNumber && (
-                <>
-                  <span className="text-border">•</span>
-                  <span>{contact.phoneNumber}</span>
-                </>
-              )}
+            <p className="text-xs text-muted-foreground truncate">
+              {getPlatformName(platform)}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" data-testid="button-call">
+        <div className="flex items-center shrink-0">
+          <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-call">
             <Phone className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" data-testid="button-video">
+          <Button variant="ghost" size="icon" className="hidden sm:inline-flex" data-testid="button-video">
             <Video className="h-4 w-4" />
           </Button>
           <DropdownMenu>
@@ -195,7 +206,11 @@ export function MessageThread({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleViewContactInfo} data-testid="menu-view-contact">
                 <User className="h-4 w-4 mr-2" />
-                View Contact Info
+                View Contact
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Phone className="h-4 w-4 mr-2 sm:hidden" />
+                Call
               </DropdownMenuItem>
               <DropdownMenuItem>Mark as Unread</DropdownMenuItem>
               <DropdownMenuItem>Block Contact</DropdownMenuItem>
@@ -204,11 +219,12 @@ export function MessageThread({
         </div>
       </div>
 
-      <ScrollArea className="flex-1 px-4" ref={scrollRef}>
-        <div className="py-4 space-y-4">
+      {/* Messages */}
+      <ScrollArea className="flex-1 px-3 md:px-4" ref={scrollRef}>
+        <div className="py-4 space-y-3">
           {messages.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 No messages yet. Send a message to start the conversation.
               </p>
             </div>
@@ -233,7 +249,7 @@ export function MessageThread({
                     data-testid={`message-${message.id}`}
                   >
                     <div
-                      className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+                      className={`max-w-[85%] md:max-w-[70%] rounded-2xl px-3 py-2 ${
                         isOutbound
                           ? "bg-primary text-primary-foreground rounded-br-md"
                           : "bg-card border border-card-border rounded-bl-md"
@@ -253,7 +269,7 @@ export function MessageThread({
                           isOutbound ? "text-primary-foreground/70" : "text-muted-foreground"
                         }`}
                       >
-                        <span className="text-xs">{formatMessageTime(message.timestamp)}</span>
+                        <span className="text-[10px]">{formatMessageTime(message.timestamp)}</span>
                         {isOutbound && <MessageStatusIcon status={message.status} />}
                       </div>
                     </div>
@@ -266,6 +282,7 @@ export function MessageThread({
         </div>
       </ScrollArea>
 
+      {/* Message Composer */}
       <MessageComposer
         onSendMessage={onSendMessage}
         isSending={isSending}

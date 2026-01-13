@@ -70,11 +70,11 @@ export function ConversationList({
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full border-r border-border bg-background">
-        <div className="p-4 border-b border-border space-y-3">
-          <div className="h-9 bg-muted rounded-md animate-pulse" />
+      <div className="flex flex-col h-full bg-background">
+        <div className="p-3 border-b border-border space-y-3">
+          <div className="h-10 bg-muted rounded-lg animate-pulse" />
         </div>
-        <div className="flex-1 p-2 space-y-2">
+        <div className="flex-1 p-2 space-y-1">
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="p-3 rounded-lg">
               <div className="flex items-center gap-3">
@@ -92,40 +92,42 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex flex-col h-full border-r border-border bg-background">
-      <div className="p-4 border-b border-border space-y-3">
+    <div className="flex flex-col h-full bg-background">
+      {/* Search Bar */}
+      <div className="p-3 border-b border-border space-y-2">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search conversations..."
+            placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
+            className="pl-9 h-10 bg-muted/50 border-0 focus-visible:ring-1"
             data-testid="input-search-conversations"
           />
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">
-            {filteredConversations.length} conversation{filteredConversations.length !== 1 ? "s" : ""}
+        <div className="flex items-center justify-between px-1">
+          <span className="text-xs text-muted-foreground">
+            {filteredConversations.length} chat{filteredConversations.length !== 1 ? "s" : ""}
           </span>
-          <Button variant="ghost" size="icon" data-testid="button-filter">
-            <Filter className="h-4 w-4" />
+          <Button variant="ghost" size="sm" className="h-7 px-2" data-testid="button-filter">
+            <Filter className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
 
+      {/* Conversation List */}
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+        <div className="p-1.5 space-y-0.5">
           {filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <Search className="h-8 w-8 text-muted-foreground" />
+              <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mb-4">
+                <Search className="h-7 w-7 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground font-medium">No conversations found</p>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="text-muted-foreground font-medium text-sm">No chats found</p>
+              <p className="text-xs text-muted-foreground mt-1">
                 {searchQuery
                   ? "Try adjusting your search"
-                  : "Messages will appear here when you receive them"}
+                  : "Messages will appear here"}
               </p>
             </div>
           ) : (
@@ -135,60 +137,61 @@ export function ConversationList({
               return (
                 <div
                   key={conv.id}
-                  className={`group relative p-3 rounded-lg cursor-pointer transition-colors hover-elevate ${
-                    isSelected ? "bg-accent" : ""
+                  className={`group relative p-2.5 rounded-xl cursor-pointer transition-all active:scale-[0.98] ${
+                    isSelected 
+                      ? "bg-primary/10 border border-primary/20" 
+                      : "hover:bg-muted/50 active:bg-muted"
                   }`}
                   onClick={() => onSelectConversation(conv.id)}
                   data-testid={`conversation-item-${conv.id}`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="relative">
+                  <div className="flex items-center gap-3">
+                    <div className="relative shrink-0">
                       <Avatar className="h-12 w-12">
                         <AvatarImage src={conv.contact.profilePictureUrl || undefined} />
                         <AvatarFallback className="bg-muted text-muted-foreground">
                           {getInitials(conv.contact.name)}
                         </AvatarFallback>
                       </Avatar>
-                      <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-0.5">
-                        <PlatformIcon platform={conv.platform} className="h-4 w-4" />
+                      <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5 border border-background">
+                        <PlatformIcon platform={conv.platform} className="h-3.5 w-3.5" />
                       </div>
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-foreground truncate">
+                        <span className="font-medium text-foreground text-sm truncate">
                           {conv.contact.name || conv.contact.phoneNumber || "Unknown"}
                         </span>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
                           {formatTime(conv.lastMessageAt)}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 mt-1">
-                        <p className="text-sm text-muted-foreground truncate">
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground truncate">
                           {conv.lastMessagePreview || "No messages yet"}
                         </p>
-                        {conv.unreadCount && conv.unreadCount > 0 && (
-                          <Badge variant="default" className="min-w-[20px] h-5 justify-center">
-                            {conv.unreadCount}
-                          </Badge>
-                        )}
-                      </div>
-
-                      {conv.isPinned && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <Pin className="h-3 w-3 text-primary" />
-                          <span className="text-xs text-primary">Pinned</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {conv.isPinned && (
+                            <Pin className="h-3 w-3 text-primary" />
+                          )}
+                          {conv.unreadCount && conv.unreadCount > 0 && (
+                            <Badge variant="default" className="min-w-[18px] h-[18px] text-[10px] justify-center px-1">
+                              {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                            </Badge>
+                          )}
                         </div>
-                      )}
+                      </div>
                     </div>
 
+                    {/* More menu - visible on hover (desktop) */}
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity hidden md:flex shrink-0"
                           onClick={(e) => e.stopPropagation()}
                           data-testid={`button-conversation-menu-${conv.id}`}
                         >
