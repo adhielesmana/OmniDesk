@@ -1931,17 +1931,32 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
             <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
   "request_id": "unique-id-123",
   "phone_number": "628123456789",
+  "recipient_name": "John Doe",
   "message": "Hello from my app!",
-  "priority": 0
+  "priority": 0,
+  "scheduled_at": "2024-01-15T10:00:00Z",
+  "metadata": { "order_id": "12345" }
 }`}</pre>
+            <div className="mt-2 text-xs text-muted-foreground">
+              <p className="font-medium">Fields:</p>
+              <ul className="list-disc list-inside ml-2 space-y-1">
+                <li><code className="bg-muted px-1 rounded">request_id</code> (required): Unique ID to prevent duplicates</li>
+                <li><code className="bg-muted px-1 rounded">phone_number</code> (required): Recipient phone number</li>
+                <li><code className="bg-muted px-1 rounded">recipient_name</code> (optional): Name for AI personalization</li>
+                <li><code className="bg-muted px-1 rounded">message</code> (required): Message content</li>
+                <li><code className="bg-muted px-1 rounded">priority</code> (optional): 0-100, higher = sent first</li>
+                <li><code className="bg-muted px-1 rounded">scheduled_at</code> (optional): ISO datetime to schedule</li>
+                <li><code className="bg-muted px-1 rounded">metadata</code> (optional): Custom JSON data</li>
+              </ul>
+            </div>
           </div>
           <div>
             <p className="font-medium mb-2">Send Bulk Messages:</p>
             <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages/bulk</code>
             <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
   "messages": [
-    { "request_id": "msg-1", "phone_number": "628123456789", "message": "Hello 1" },
-    { "request_id": "msg-2", "phone_number": "628987654321", "message": "Hello 2" }
+    { "request_id": "msg-1", "phone_number": "628123456789", "recipient_name": "Alice", "message": "Hello Alice!" },
+    { "request_id": "msg-2", "phone_number": "628987654321", "recipient_name": "Bob", "message": "Hello Bob!" }
   ]
 }`}</pre>
           </div>
@@ -1954,6 +1969,15 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
             <code className="block bg-muted p-2 rounded text-xs">GET /api/external/status</code>
           </div>
           <Separator />
+          <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-md mb-3">
+            <p className="font-medium text-blue-600 dark:text-blue-400">AI Personalization:</p>
+            <ul className="list-disc list-inside text-muted-foreground space-y-1 mt-2">
+              <li>Each API client can have a custom AI prompt for message personalization</li>
+              <li>Include <code className="bg-muted px-1 rounded">recipient_name</code> in your API request</li>
+              <li>Use <code className="bg-muted px-1 rounded">{"{{recipient_name}}"}</code> in your AI prompt to reference the name</li>
+              <li>The AI will use the client's prompt to personalize messages automatically</li>
+            </ul>
+          </div>
           <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
             <p className="font-medium text-yellow-600 dark:text-yellow-500">Important Notes:</p>
             <ul className="list-disc list-inside text-muted-foreground space-y-1 mt-2">
