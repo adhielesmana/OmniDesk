@@ -14,6 +14,46 @@ declare global {
 
 const HMAC_TIMESTAMP_TOLERANCE_MS = 5 * 60 * 1000;
 
+// In-memory sliding window rate limiter for per-minute rate limiting
+const rateLimitWindows: Map<string, { count: number; resetAt: number }> = new Map();
+
+function checkRateLimitPerMinute(clientId: string, limit: number): { allowed: boolean; remaining: number; resetAt: Date } {
+  const now = Date.now();
+  const windowKey = clientId;
+  const window = rateLimitWindows.get(windowKey);
+  
+  if (!window || now >= window.resetAt) {
+    // Create new window
+    rateLimitWindows.set(windowKey, { count: 1, resetAt: now + 60000 });
+    return { allowed: true, remaining: limit - 1, resetAt: new Date(now + 60000) };
+  }
+  
+  if (window.count >= limit) {
+    return { allowed: false, remaining: 0, resetAt: new Date(window.resetAt) };
+  }
+  
+  window.count++;
+  return { allowed: true, remaining: limit - window.count, resetAt: new Date(window.resetAt) };
+}
+
+// Clean up expired rate limit windows periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, window] of rateLimitWindows.entries()) {
+    if (now >= window.resetAt) {
+      rateLimitWindows.delete(key);
+    }
+  }
+}, 60000);
+
+function getEncryptionKey(): Buffer {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret) {
+    throw new Error("SESSION_SECRET required for API secret encryption");
+  }
+  return crypto.createHash("sha256").update(secret).digest();
+}
+
 function generateClientId(): string {
   return `odk_${crypto.randomBytes(12).toString("hex")}`;
 }
@@ -22,8 +62,25 @@ function generateSecretKey(): string {
   return crypto.randomBytes(32).toString("base64url");
 }
 
-function hashSecret(secret: string): string {
-  return crypto.createHash("sha256").update(secret).digest("hex");
+function encryptSecret(secret: string): string {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
+}
+
+function decryptSecret(encryptedSecret: string): string {
+  const key = getEncryptionKey();
+  const data = Buffer.from(encryptedSecret, "base64");
+  const iv = data.subarray(0, 16);
+  const authTag = data.subarray(16, 32);
+  const encrypted = data.subarray(32);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(authTag);
+  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  return decrypted.toString("utf8");
 }
 
 function verifyHmacSignature(
@@ -31,17 +88,35 @@ function verifyHmacSignature(
   timestamp: string,
   body: string,
   signature: string,
-  secretHash: string
+  encryptedSecret: string
 ): boolean {
-  const message = `${clientId}.${timestamp}.${body}`;
-  const expectedSignature = crypto
-    .createHmac("sha256", secretHash)
-    .update(message)
-    .digest("hex");
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  try {
+    const secret = decryptSecret(encryptedSecret);
+    const message = `${clientId}.${timestamp}.${body}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(message)
+      .digest("hex");
+    
+    // Both signature and expectedSignature are hex strings
+    // Compare them as hex-encoded buffers for proper timing-safe comparison
+    // Handle length mismatch to avoid timingSafeEqual throwing
+    if (signature.length !== expectedSignature.length) {
+      return false;
+    }
+    
+    // Normalize to lowercase for case-insensitive hex comparison
+    const normalizedSig = signature.toLowerCase();
+    const normalizedExpected = expectedSignature.toLowerCase();
+    
+    return crypto.timingSafeEqual(
+      Buffer.from(normalizedSig, "hex"),
+      Buffer.from(normalizedExpected, "hex")
+    );
+  } catch (error) {
+    console.error("HMAC verification error:", error);
+    return false;
+  }
 }
 
 export async function apiAuthMiddleware(
@@ -84,11 +159,17 @@ export async function apiAuthMiddleware(
   }
 
   if (client.ipWhitelist && client.ipWhitelist.length > 0) {
-    const clientIp = req.ip || req.socket.remoteAddress || "";
+    // Use Cloudflare's CF-Connecting-IP header first (most reliable behind Cloudflare)
+    // Fall back to X-Real-IP, then X-Forwarded-For, then socket IP
+    const cfConnectingIp = req.headers["cf-connecting-ip"] as string | undefined;
+    const xRealIp = req.headers["x-real-ip"] as string | undefined;
     const forwardedFor = req.headers["x-forwarded-for"];
-    const realIp = Array.isArray(forwardedFor)
-      ? forwardedFor[0]
-      : forwardedFor?.split(",")[0]?.trim() || clientIp;
+    const socketIp = req.ip || req.socket.remoteAddress || "";
+    
+    const realIp = cfConnectingIp 
+      || xRealIp 
+      || (Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor?.split(",")[0]?.trim()) 
+      || socketIp;
 
     if (!client.ipWhitelist.includes(realIp)) {
       return res.status(403).json({
@@ -98,7 +179,20 @@ export async function apiAuthMiddleware(
     }
   }
 
-  const bodyString = JSON.stringify(req.body || {});
+  // HMAC signature verification using raw request body
+  // The raw body is captured before JSON parsing, so clients sign the exact payload they send
+  // For GET requests (no body), use empty string to match what clients sign
+  const rawBody = (req as any).rawBody;
+  let bodyString: string;
+  if (rawBody instanceof Buffer) {
+    bodyString = rawBody.toString('utf8');
+  } else if (req.method === 'GET' || Object.keys(req.body || {}).length === 0) {
+    // GET requests and empty bodies should use empty string for signature
+    bodyString = '';
+  } else {
+    // Fallback for non-empty POST bodies without raw capture (shouldn't happen normally)
+    bodyString = JSON.stringify(req.body);
+  }
   const isValid = verifyHmacSignature(
     clientId,
     timestamp,
@@ -111,6 +205,26 @@ export async function apiAuthMiddleware(
     return res.status(401).json({ error: "Invalid signature" });
   }
 
+  // Per-minute rate limiting (sliding window)
+  if (client.rateLimitPerMinute && client.rateLimitPerMinute > 0) {
+    const rateCheck = checkRateLimitPerMinute(clientId, client.rateLimitPerMinute);
+    
+    // Set rate limit headers
+    res.setHeader("X-RateLimit-Limit", client.rateLimitPerMinute);
+    res.setHeader("X-RateLimit-Remaining", rateCheck.remaining);
+    res.setHeader("X-RateLimit-Reset", Math.floor(rateCheck.resetAt.getTime() / 1000));
+    
+    if (!rateCheck.allowed) {
+      return res.status(429).json({
+        error: "Rate limit exceeded",
+        limit: client.rateLimitPerMinute,
+        remaining: 0,
+        reset_at: rateCheck.resetAt.toISOString(),
+      });
+    }
+  }
+
+  // Daily quota check
   const lastReset = client.lastResetAt ? new Date(client.lastResetAt) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -122,9 +236,9 @@ export async function apiAuthMiddleware(
 
   if (client.rateLimitPerDay && (client.requestCountToday || 0) >= client.rateLimitPerDay) {
     return res.status(429).json({
-      error: "Daily rate limit exceeded",
+      error: "Daily quota exceeded",
       limit: client.rateLimitPerDay,
-      resetAt: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+      reset_at: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
     });
   }
 
@@ -355,4 +469,4 @@ externalApiRouter.get("/status", async (req: Request, res: Response) => {
   }
 });
 
-export { generateClientId, generateSecretKey, hashSecret };
+export { generateClientId, generateSecretKey, encryptSecret };

@@ -25,6 +25,14 @@ Preferred communication style: Simple, everyday language.
 - **Superadmin Seeding**: Hardcoded superadmin (username: adhielesmana, password: admin123) created on startup, non-deletable
 - **Admin Panel**: New admin page for managing users and departments
 - **OpenAI API Key Management**: Added Settings modal tab for managing OpenAI API key with validation, save/delete functionality
+- **External API for WhatsApp Messaging**: Secure API for external applications to send WhatsApp messages through OmniDesk. Features include:
+  - HMAC-SHA256 authentication with AES-256-GCM encrypted secrets
+  - Per-minute sliding window rate limiting with X-RateLimit headers
+  - Daily quota enforcement with automatic reset
+  - IP whitelisting supporting Cloudflare's CF-Connecting-IP header
+  - Message queue with 2-3 minute throttling and 7AM-9PM Jakarta time restrictions
+  - Request ID deduplication to prevent duplicate sends
+  - Full admin UI for API client management in Admin panel
 
 ## System Architecture
 
@@ -54,6 +62,7 @@ Preferred communication style: Simple, everyday language.
 - `server/whatsapp.ts` - Unofficial WhatsApp integration using Baileys library
 - `server/blast-worker.ts` - Background worker for blast message campaigns with time-of-day restrictions
 - `server/autoreply.ts` - Auto-reply system for conversations inactive > 24 hours
+- `server/external-api.ts` - External API for third-party WhatsApp messaging with HMAC auth
 
 ### Data Layer
 - **ORM**: Drizzle ORM with PostgreSQL dialect
@@ -71,6 +80,9 @@ Preferred communication style: Simple, everyday language.
 - `quickReplies` - Saved quick reply templates
 - `appSettings` - Application-wide settings including OpenAI API key with validation status
 - `whatsappAuthState` - Database-backed WhatsApp authentication credentials for session persistence
+- `apiClients` - External API clients with HMAC credentials, rate limits, and IP whitelist
+- `apiMessageQueue` - Queue for external API messages awaiting delivery
+- `apiRequestLogs` - Audit logs for external API requests
 
 **Key Server Files**:
 - `server/whatsapp-db-auth.ts` - Database-backed authentication state for Baileys library

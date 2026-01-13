@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, Key, Copy, Eye, EyeOff } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
@@ -78,6 +78,10 @@ export default function AdminPage() {
               <MessageSquare className="h-4 w-4 mr-2" />
               Platforms
             </TabsTrigger>
+            <TabsTrigger value="api-clients" data-testid="tab-api-clients">
+              <Key className="h-4 w-4 mr-2" />
+              API Clients
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -109,6 +113,10 @@ export default function AdminPage() {
 
           <TabsContent value="platforms" className="space-y-4">
             <PlatformsTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="api-clients" className="space-y-4">
+            <ApiClientsTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1556,6 +1564,520 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
             >
               {saveMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+interface ApiClient {
+  id: string;
+  name: string;
+  clientId: string;
+  isActive: boolean;
+  ipWhitelist: string[] | null;
+  rateLimitPerMinute: number;
+  rateLimitPerDay: number;
+  createdAt: Date;
+  lastRequestAt: Date | null;
+  requestCountToday: number;
+}
+
+interface ApiClientWithSecret extends ApiClient {
+  secretKey?: string;
+}
+
+function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingClient, setEditingClient] = useState<ApiClient | null>(null);
+  const [newSecret, setNewSecret] = useState<{ clientId: string; secret: string } | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    name: "",
+    ipWhitelist: "",
+    rateLimitPerMinute: 60,
+    rateLimitPerDay: 1000,
+    isActive: true,
+  });
+
+  const { data: apiClients = [], isLoading } = useQuery<ApiClient[]>({
+    queryKey: ["/api/admin/api-clients"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { name: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+      const res = await apiRequest("POST", "/api/admin/api-clients", data);
+      return res.json();
+    },
+    onSuccess: (data: ApiClientWithSecret) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setShowCreateDialog(false);
+      setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
+      setFormData({ name: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
+      toast({ title: "API client created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create API client", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setEditingClient(null);
+      toast({ title: "API client updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update API client", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/api-clients/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      toast({ title: "API client deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete API client", variant: "destructive" });
+    },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/api-clients/${id}/regenerate-secret`);
+      return res.json();
+    },
+    onSuccess: (data: { clientId: string; secretKey: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setNewSecret({ clientId: data.clientId, secret: data.secretKey });
+      toast({ title: "API secret regenerated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to regenerate secret", variant: "destructive" });
+    },
+  });
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copied to clipboard` });
+  };
+
+  const handleCreate = () => {
+    const ipWhitelist = formData.ipWhitelist.trim()
+      ? formData.ipWhitelist.split(",").map(ip => ip.trim()).filter(ip => ip)
+      : undefined;
+    createMutation.mutate({
+      name: formData.name,
+      ipWhitelist,
+      rateLimitPerMinute: formData.rateLimitPerMinute,
+      rateLimitPerDay: formData.rateLimitPerDay,
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editingClient) return;
+    const ipWhitelist = formData.ipWhitelist.trim()
+      ? formData.ipWhitelist.split(",").map(ip => ip.trim()).filter(ip => ip)
+      : null;
+    updateMutation.mutate({
+      id: editingClient.id,
+      name: formData.name,
+      ipWhitelist,
+      rateLimitPerMinute: formData.rateLimitPerMinute,
+      rateLimitPerDay: formData.rateLimitPerDay,
+      isActive: formData.isActive,
+    });
+  };
+
+  const openEditDialog = (client: ApiClient) => {
+    setFormData({
+      name: client.name,
+      ipWhitelist: client.ipWhitelist?.join(", ") || "",
+      rateLimitPerMinute: client.rateLimitPerMinute,
+      rateLimitPerDay: client.rateLimitPerDay,
+      isActive: client.isActive,
+    });
+    setEditingClient(client);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle>External API Clients</CardTitle>
+              <CardDescription>Manage API keys for external applications to send WhatsApp messages through OmniDesk</CardDescription>
+            </div>
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-create-api-client">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create API Client
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create API Client</DialogTitle>
+                  <DialogDescription>Create a new API client for external applications</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Client Name *</Label>
+                    <Input
+                      id="name"
+                      placeholder="e.g. My CRM System"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      data-testid="input-api-client-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated, leave empty for any)</Label>
+                    <Input
+                      id="ipWhitelist"
+                      placeholder="e.g. 192.168.1.1, 10.0.0.1"
+                      value={formData.ipWhitelist}
+                      onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                      data-testid="input-api-allowed-ips"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="rateLimitPerMinute">Rate Limit (per minute)</Label>
+                      <Input
+                        id="rateLimitPerMinute"
+                        type="number"
+                        min={1}
+                        value={formData.rateLimitPerMinute}
+                        onChange={(e) => setFormData({ ...formData, rateLimitPerMinute: parseInt(e.target.value) || 60 })}
+                        data-testid="input-api-rate-limit"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="rateLimitPerDay">Daily Limit</Label>
+                      <Input
+                        id="rateLimitPerDay"
+                        type="number"
+                        min={1}
+                        value={formData.rateLimitPerDay}
+                        onChange={(e) => setFormData({ ...formData, rateLimitPerDay: parseInt(e.target.value) || 1000 })}
+                        data-testid="input-api-daily-limit"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+                  <Button onClick={handleCreate} disabled={createMutation.isPending || !formData.name.trim()} data-testid="button-confirm-create-api-client">
+                    {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : apiClients.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No API clients configured</p>
+              <p className="text-sm">Create an API client to allow external applications to send messages</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {apiClients.map((client) => (
+                <Card key={client.id} className={!client.isActive ? "opacity-60" : ""}>
+                  <CardContent className="pt-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold">{client.name}</h3>
+                          {client.isActive ? (
+                            <Badge variant="default" className="bg-green-600">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary">Inactive</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">{client.clientId}</code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => copyToClipboard(client.clientId, "Client ID")}
+                            data-testid={`button-copy-client-id-${client.id}`}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p>Rate limit: {client.rateLimitPerMinute}/min | Daily: {client.rateLimitPerDay}</p>
+                          <p>Today: {client.requestCountToday} requests</p>
+                          {client.ipWhitelist && client.ipWhitelist.length > 0 && (
+                            <p>Allowed IPs: {client.ipWhitelist.join(", ")}</p>
+                          )}
+                          {client.lastRequestAt && (
+                            <p>Last used: {new Date(client.lastRequestAt).toLocaleString()}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm("Regenerating the secret will invalidate the current one. Continue?")) {
+                              regenerateMutation.mutate(client.id);
+                            }
+                          }}
+                          disabled={regenerateMutation.isPending}
+                          data-testid={`button-regenerate-secret-${client.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Regenerate Secret
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(client)}
+                          data-testid={`button-edit-api-client-${client.id}`}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Delete API client "${client.name}"?`)) {
+                              deleteMutation.mutate(client.id);
+                            }
+                          }}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-api-client-${client.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">API Documentation</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <p className="font-medium mb-2">Authentication:</p>
+            <p className="text-muted-foreground mb-2">All requests must include HMAC signature headers:</p>
+            <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
+              <li><code className="bg-muted px-1 rounded">X-Client-Id</code>: Your client ID</li>
+              <li><code className="bg-muted px-1 rounded">X-Timestamp</code>: Unix timestamp in milliseconds</li>
+              <li><code className="bg-muted px-1 rounded">X-Signature</code>: HMAC-SHA256 signature (hex)</li>
+            </ul>
+            <div className="mt-3 p-2 bg-muted rounded text-xs">
+              <p className="font-medium mb-1">Signature Calculation:</p>
+              <code>message = clientId + "." + timestamp + "." + requestBody</code><br/>
+              <code>signature = HMAC-SHA256(message, secretKey).toHex()</code>
+              <p className="mt-2 text-muted-foreground">Note: For POST requests, sign the exact raw JSON body you send. For GET requests (no body), use an empty string for requestBody.</p>
+            </div>
+          </div>
+          <Separator />
+          <div>
+            <p className="font-medium mb-2">Send Single Message:</p>
+            <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages</code>
+            <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
+  "request_id": "unique-id-123",
+  "phone_number": "628123456789",
+  "message": "Hello from my app!",
+  "priority": 0
+}`}</pre>
+          </div>
+          <div>
+            <p className="font-medium mb-2">Send Bulk Messages:</p>
+            <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages/bulk</code>
+            <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
+  "messages": [
+    { "request_id": "msg-1", "phone_number": "628123456789", "message": "Hello 1" },
+    { "request_id": "msg-2", "phone_number": "628987654321", "message": "Hello 2" }
+  ]
+}`}</pre>
+          </div>
+          <div>
+            <p className="font-medium mb-2">Check Message Status:</p>
+            <code className="block bg-muted p-2 rounded text-xs">GET /api/external/messages/:message_id</code>
+          </div>
+          <div>
+            <p className="font-medium mb-2">Get Client Status:</p>
+            <code className="block bg-muted p-2 rounded text-xs">GET /api/external/status</code>
+          </div>
+          <Separator />
+          <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
+            <p className="font-medium text-yellow-600 dark:text-yellow-500">Important Notes:</p>
+            <ul className="list-disc list-inside text-muted-foreground space-y-1 mt-2">
+              <li>Messages are queued and sent with 2-3 minute delays to avoid WhatsApp bans</li>
+              <li>Messages are only sent between 7 AM - 9 PM (Jakarta time)</li>
+              <li>Duplicate request_ids are rejected to prevent double-sends</li>
+              <li>IP whitelist uses Cloudflare's CF-Connecting-IP header</li>
+              <li>Rate limit headers (X-RateLimit-*) are included in responses</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Dialog open={editingClient !== null} onOpenChange={(open) => !open && setEditingClient(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit API Client</DialogTitle>
+            <DialogDescription>Update API client settings</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editName">Client Name *</Label>
+              <Input
+                id="editName"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                data-testid="input-edit-api-client-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editIpWhitelist">Allowed IP Addresses</Label>
+              <Input
+                id="editIpWhitelist"
+                placeholder="e.g. 192.168.1.1, 10.0.0.1"
+                value={formData.ipWhitelist}
+                onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                data-testid="input-edit-api-allowed-ips"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editRateLimitPerMinute">Rate Limit (per minute)</Label>
+                <Input
+                  id="editRateLimitPerMinute"
+                  type="number"
+                  min={1}
+                  value={formData.rateLimitPerMinute}
+                  onChange={(e) => setFormData({ ...formData, rateLimitPerMinute: parseInt(e.target.value) || 60 })}
+                  data-testid="input-edit-api-rate-limit"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editRateLimitPerDay">Daily Limit</Label>
+                <Input
+                  id="editRateLimitPerDay"
+                  type="number"
+                  min={1}
+                  value={formData.rateLimitPerDay}
+                  onChange={(e) => setFormData({ ...formData, rateLimitPerDay: parseInt(e.target.value) || 1000 })}
+                  data-testid="input-edit-api-daily-limit"
+                />
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="isActive"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+                data-testid="switch-api-client-active"
+              />
+              <Label htmlFor="isActive">Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingClient(null)}>Cancel</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending || !formData.name.trim()} data-testid="button-confirm-edit-api-client">
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={newSecret !== null} onOpenChange={(open) => !open && setNewSecret(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-green-500" />
+              API Credentials
+            </DialogTitle>
+            <DialogDescription>
+              Save these credentials now. The secret key will not be shown again.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Client ID</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted p-2 rounded font-mono text-sm break-all">{newSecret?.clientId}</code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(newSecret?.clientId || "", "Client ID")}
+                  data-testid="button-copy-new-client-id"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Secret Key</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted p-2 rounded font-mono text-sm break-all">
+                  {showSecret ? newSecret?.secret : "••••••••••••••••••••••••••••••••"}
+                </code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowSecret(!showSecret)}
+                  data-testid="button-toggle-secret-visibility"
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(newSecret?.secret || "", "Secret Key")}
+                  data-testid="button-copy-new-secret"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
+              <p className="text-sm text-yellow-600 dark:text-yellow-500">
+                Store the secret key securely. It cannot be retrieved after closing this dialog.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { setNewSecret(null); setShowSecret(false); }} data-testid="button-close-credentials">
+              I've saved these credentials
             </Button>
           </DialogFooter>
         </DialogContent>

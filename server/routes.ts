@@ -15,7 +15,7 @@ import { updateContactSchema, type Platform, type User, insertUserSchema, insert
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
 import { clearCampaignTiming, triggerImmediateGeneration, generateCampaignMessageBatch } from "./blast-worker";
 import { isAutoReplyEnabled, getAutoReplyPrompt, setAutoReplyEnabled, setAutoReplyPrompt, deleteAutoReplyPrompt, handleAutoReply, hasValidOpenAIKey } from "./autoreply";
-import { externalApiRouter, generateClientId, generateSecretKey, hashSecret } from "./external-api";
+import { externalApiRouter, generateClientId, generateSecretKey, encryptSecret } from "./external-api";
 import type { Contact } from "@shared/schema";
 
 const execAsync = promisify(exec);
@@ -470,7 +470,7 @@ export async function registerRoutes(
 
       const clientId = generateClientId();
       const secretKey = generateSecretKey();
-      const secretHash = hashSecret(secretKey);
+      const secretHash = encryptSecret(secretKey);
 
       const newClient = await storage.createApiClient({
         name: name.trim(),
@@ -535,7 +535,7 @@ export async function registerRoutes(
       }
 
       const newSecretKey = generateSecretKey();
-      const newSecretHash = hashSecret(newSecretKey);
+      const newSecretHash = encryptSecret(newSecretKey);
 
       await storage.updateApiClient(id, { secretHash: newSecretHash } as any);
 
