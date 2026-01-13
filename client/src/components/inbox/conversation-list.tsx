@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Search, Filter, MoreVertical, Pin, Archive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlatformIcon, getPlatformName } from "@/components/platform-icons";
+import { PlatformIcon } from "@/components/platform-icons";
 import type { ConversationWithContact, Platform } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 
@@ -36,37 +36,35 @@ export function ConversationList({
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredConversations = conversations.filter((conv) => {
-    const matchesSearch =
-      !searchQuery ||
-      conv.contact.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      conv.contact.phoneNumber?.includes(searchQuery) ||
-      conv.lastMessagePreview?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredConversations = useMemo(() => {
+    const query = searchQuery.toLowerCase();
+    return conversations.filter((conv) => {
+      const matchesSearch =
+        !query ||
+        conv.contact.name?.toLowerCase().includes(query) ||
+        conv.contact.phoneNumber?.includes(searchQuery) ||
+        conv.lastMessagePreview?.toLowerCase().includes(query);
 
-    const matchesPlatform =
-      selectedPlatform === "all" || conv.platform === selectedPlatform;
+      const matchesPlatform =
+        selectedPlatform === "all" || conv.platform === selectedPlatform;
 
-    return matchesSearch && matchesPlatform;
-  });
+      return matchesSearch && matchesPlatform;
+    });
+  }, [conversations, searchQuery, selectedPlatform]);
 
-  const getInitials = (name: string | null | undefined) => {
+  const getInitials = useCallback((name: string | null | undefined) => {
     if (!name) return "?";
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-  };
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  }, []);
 
-  const formatTime = (date: Date | null | undefined) => {
+  const formatTime = useCallback((date: Date | null | undefined) => {
     if (!date) return "";
     try {
       return formatDistanceToNow(new Date(date), { addSuffix: false });
     } catch {
       return "";
     }
-  };
+  }, []);
 
   if (isLoading) {
     return (

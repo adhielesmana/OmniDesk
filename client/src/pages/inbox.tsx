@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
@@ -34,14 +34,28 @@ function InboxContent({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [showConversationList, setShowConversationList] = useState(true);
 
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingInvalidationsRef = useRef<Set<string>>(new Set());
+
   const handleWebSocketMessage = useCallback((data: { type: string; conversationId?: string }) => {
     if (data.type === "new_message" || data.type === "conversation_updated" || data.type === "chats_synced") {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      pendingInvalidationsRef.current.add("conversations");
       if (data.conversationId && data.conversationId === selectedConversationId) {
-        queryClient.invalidateQueries({
-          queryKey: ["/api/conversations", selectedConversationId],
-        });
+        pendingInvalidationsRef.current.add("selected");
       }
+      
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        if (pendingInvalidationsRef.current.has("conversations")) {
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+        }
+        if (pendingInvalidationsRef.current.has("selected") && selectedConversationId) {
+          queryClient.invalidateQueries({
+            queryKey: ["/api/conversations", selectedConversationId],
+          });
+        }
+        pendingInvalidationsRef.current.clear();
+      }, 500);
     }
   }, [selectedConversationId]);
 
@@ -167,38 +181,38 @@ function InboxContent({
     // Keep selectedConversationId to maintain highlight in list (WhatsApp-like behavior)
   };
 
-  const calculateUnreadCounts = (): Record<Platform | "all", number> => {
+  const unreadCounts = useMemo(() => {
     const counts: Record<Platform | "all", number> = {
       all: 0,
       whatsapp: 0,
       instagram: 0,
       facebook: 0,
     };
-
     conversations.forEach((conv) => {
       if (conv.unreadCount && conv.unreadCount > 0) {
         counts[conv.platform] += conv.unreadCount;
         counts.all += conv.unreadCount;
       }
     });
-
     return counts;
-  };
+  }, [conversations]);
 
-  const sortedConversations = [...conversations].sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
-    const aDate = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
-    const bDate = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
-    return bDate - aDate;
-  });
+  const sortedConversations = useMemo(() => {
+    return [...conversations].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const aDate = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const bDate = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return bDate - aDate;
+    });
+  }, [conversations]);
 
   return (
     <>
       <AppSidebar
         selectedPlatform={selectedPlatform}
         onSelectPlatform={setSelectedPlatform}
-        unreadCounts={calculateUnreadCounts()}
+        unreadCounts={unreadCounts}
         onSettingsClick={() => setShowSettings(true)}
       />
 

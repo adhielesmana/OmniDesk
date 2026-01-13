@@ -1,16 +1,18 @@
 import { Switch, Route, Redirect } from "wouter";
+import { lazy, Suspense } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import InboxPage from "@/pages/inbox";
-import ContactsPage from "@/pages/contacts";
-import LoginPage from "@/pages/login";
-import AdminPage from "@/pages/admin";
-import BlastPage from "@/pages/blast";
-import NotFound from "@/pages/not-found";
 import { Loader2 } from "lucide-react";
+
+const InboxPage = lazy(() => import("@/pages/inbox"));
+const ContactsPage = lazy(() => import("@/pages/contacts"));
+const LoginPage = lazy(() => import("@/pages/login"));
+const AdminPage = lazy(() => import("@/pages/admin"));
+const BlastPage = lazy(() => import("@/pages/blast"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType; adminOnly?: boolean }) {
   const { isAuthenticated, isLoading, isAdmin } = useAuth();
@@ -75,13 +77,23 @@ function Router() {
   );
 }
 
+function PageLoader() {
+  return (
+    <div className="h-screen flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
-          <Router />
+          <Suspense fallback={<PageLoader />}>
+            <Router />
+          </Suspense>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
