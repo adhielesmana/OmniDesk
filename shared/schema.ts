@@ -429,3 +429,13 @@ export type BlastCampaignWithStats = BlastCampaign & {
   queuedCount: number;
   sendingCount: number;
 };
+
+// WhatsApp auth state storage for session persistence
+export const whatsappAuthState = pgTable("whatsapp_auth_state", {
+  key: varchar("key", { length: 255 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type WhatsAppAuthState = typeof whatsappAuthState.$inferSelect;
+export type InsertWhatsAppAuthState = typeof whatsappAuthState.$inferInsert;
