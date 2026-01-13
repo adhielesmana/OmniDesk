@@ -50,8 +50,9 @@ export class MetaApiService {
         }
         break;
       case "instagram":
-        if (!this.config.businessId) {
-          return { valid: false, error: "Business ID is required for Instagram" };
+        // Instagram can use either businessId or pageId (when same Page is connected to Instagram)
+        if (!this.config.businessId && !this.config.pageId) {
+          return { valid: false, error: "Instagram Business Account ID or Page ID is required for Instagram" };
         }
         break;
       case "facebook":
@@ -90,11 +91,18 @@ export class MetaApiService {
           break;
 
         case "instagram":
-          url = `${GRAPH_API_BASE}/${this.config.businessId}/messages`;
+          // Instagram uses Page ID or Instagram Business Account ID
+          // Fall back to pageId if businessId is not set (common when using same Page for both)
+          const instagramAccountId = this.config.businessId || this.config.pageId;
+          if (!instagramAccountId) {
+            return { success: false, error: "Instagram Business Account ID or Page ID is required" };
+          }
+          url = `${GRAPH_API_BASE}/${instagramAccountId}/messages`;
           payload = {
             recipient: { id: recipientId },
             message: { text: content },
           };
+          console.log(`Sending Instagram message to ${recipientId} via account ${instagramAccountId}`);
           break;
 
         case "facebook":

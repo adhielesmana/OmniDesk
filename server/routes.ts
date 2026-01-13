@@ -1130,7 +1130,15 @@ export async function registerRoutes(
         }
       } else {
         // Use Meta API for Instagram/Facebook
-        const settings = await storage.getPlatformSetting(conversation.platform);
+        let settings = await storage.getPlatformSetting(conversation.platform);
+        
+        // Fallback: If Instagram settings not found, try using Facebook settings
+        // (Instagram messages often use the same Page access token as Facebook)
+        if (!settings?.accessToken && conversation.platform === "instagram") {
+          console.log("Instagram settings not found, falling back to Facebook settings");
+          settings = await storage.getPlatformSetting("facebook");
+        }
+        
         if (settings?.isConnected && settings.accessToken) {
           const metaApi = new MetaApiService(conversation.platform, {
             accessToken: settings.accessToken,
@@ -1140,6 +1148,12 @@ export async function registerRoutes(
           });
           const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
           result = { success: metaResult.success, messageId: metaResult.messageId };
+          
+          if (!metaResult.success) {
+            console.error(`Failed to send ${conversation.platform} message:`, metaResult.error);
+          }
+        } else {
+          console.error(`Cannot send ${conversation.platform} message: platform not configured or not connected`);
         }
       }
 
@@ -1629,7 +1643,14 @@ export async function registerRoutes(
 
         // Handle auto-reply for Facebook and Instagram (not for echo messages)
         if (!isEcho && webhookMessage.content && ["facebook", "instagram"].includes(webhookMessage.platform)) {
-          const settings = await storage.getPlatformSetting(webhookMessage.platform);
+          let settings = await storage.getPlatformSetting(webhookMessage.platform);
+          
+          // Fallback: If Instagram settings not found, try using Facebook settings
+          if (!settings?.accessToken && webhookMessage.platform === "instagram") {
+            console.log("Instagram settings not found for auto-reply, falling back to Facebook settings");
+            settings = await storage.getPlatformSetting("facebook");
+          }
+          
           if (settings?.accessToken) {
             const metaApi = new MetaApiService(webhookMessage.platform, {
               accessToken: settings.accessToken,
