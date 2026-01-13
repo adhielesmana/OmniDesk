@@ -487,6 +487,7 @@ export const apiMessageQueue = pgTable("api_message_queue", {
   requestId: text("request_id").notNull().unique(), // Unique request ID from external app
   clientId: varchar("client_id").notNull().references(() => apiClients.id),
   phoneNumber: text("phone_number").notNull(), // Destination phone number
+  recipientName: text("recipient_name"), // Optional recipient name for AI personalization
   message: text("message").notNull(), // Message content
   status: apiMessageStatusEnum("status").notNull().default("queued"),
   priority: integer("priority").default(0), // Higher = processed first

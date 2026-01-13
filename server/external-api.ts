@@ -269,6 +269,7 @@ export async function apiAuthMiddleware(
 const sendMessageSchema = z.object({
   request_id: z.string().min(1).max(255),
   phone_number: z.string().min(10).max(20),
+  recipient_name: z.string().max(255).optional(), // Optional name for AI personalization
   message: z.string().min(1).max(4096),
   priority: z.number().int().min(0).max(100).optional().default(0),
   scheduled_at: z.string().datetime().optional(),
@@ -293,7 +294,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       });
     }
 
-    const { request_id, phone_number, message, priority, scheduled_at, metadata } = validation.data;
+    const { request_id, phone_number, recipient_name, message, priority, scheduled_at, metadata } = validation.data;
 
     const existing = await storage.getApiMessageByRequestId(request_id);
     if (existing) {
@@ -308,6 +309,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       requestId: request_id,
       clientId: req.apiClient!.id,
       phoneNumber: phone_number.replace(/\D/g, ""),
+      recipientName: recipient_name || null,
       message,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
@@ -361,6 +363,7 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           requestId: msg.request_id,
           clientId: req.apiClient!.id,
           phoneNumber: msg.phone_number.replace(/\D/g, ""),
+          recipientName: msg.recipient_name || null,
           message: msg.message,
           priority: msg.priority || 0,
           scheduledAt: msg.scheduled_at ? new Date(msg.scheduled_at) : null,
