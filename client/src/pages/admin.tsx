@@ -1241,6 +1241,28 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
     },
   });
 
+  const syncMutation = useMutation({
+    mutationFn: async (platform: string) => {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}/sync`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/platform-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      if (data.success) {
+        toast({ 
+          title: "Sync Complete", 
+          description: `Synced ${data.syncedConversations} conversations and ${data.syncedMessages} messages.` 
+        });
+      } else {
+        toast({ title: "Sync Failed", description: data.error, variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: error.message || "Failed to sync messages", variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       accessToken: "",
@@ -1352,6 +1374,16 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                         <Unlink className="h-4 w-4 mr-1" />
                         Disconnect
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => syncMutation.mutate("facebook")}
+                        disabled={syncMutation.isPending || !facebookSettings?.isConnected}
+                        data-testid="button-sync-facebook"
+                      >
+                        {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
+                        Sync
+                      </Button>
                     </div>
                   </>
                 ) : (
@@ -1432,6 +1464,16 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                       >
                         <Unlink className="h-4 w-4 mr-1" />
                         Disconnect
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => syncMutation.mutate("instagram")}
+                        disabled={syncMutation.isPending || !instagramSettings?.isConnected}
+                        data-testid="button-sync-instagram"
+                      >
+                        {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
+                        Sync
                       </Button>
                     </div>
                   </>

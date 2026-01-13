@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, MessageCircle, Loader2, Download } from "lucide-react";
-import { SiWhatsapp, SiFacebook, SiInstagram, SiOpenai } from "react-icons/si";
+import { X, Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, MessageCircle, Loader2 } from "lucide-react";
+import { SiWhatsapp, SiOpenai } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,7 +53,6 @@ export function SettingsModal({
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<SettingsTab>("whatsapp");
   const [isTesting, setIsTesting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [openaiKey, setOpenaiKey] = useState("");
 
   const [whatsappSettings, setWhatsappSettings] = useState({
@@ -63,17 +62,6 @@ export function SettingsModal({
     webhookVerifyToken: "",
   });
 
-  const [instagramSettings, setInstagramSettings] = useState({
-    accessToken: "",
-    businessId: "",
-    webhookVerifyToken: "",
-  });
-
-  const [facebookSettings, setFacebookSettings] = useState({
-    accessToken: "",
-    pageId: "",
-    webhookVerifyToken: "",
-  });
 
   const [autoReplyPrompt, setAutoReplyPrompt] = useState("");
   const [autoReplyEnabled, setAutoReplyEnabledState] = useState(false);
@@ -95,24 +83,8 @@ export function SettingsModal({
     }
   }, [autoReplySettings]);
 
-  // Load existing platform settings into form state (excluding masked access tokens)
+  // Load existing WhatsApp platform settings into form state
   useEffect(() => {
-    const instagram = platformSettings.find(s => s.platform === "instagram");
-    if (instagram) {
-      setInstagramSettings({
-        accessToken: "", // Don't load masked token - user must re-enter
-        businessId: instagram.businessId || "",
-        webhookVerifyToken: instagram.webhookVerifyToken || "",
-      });
-    }
-    const facebook = platformSettings.find(s => s.platform === "facebook");
-    if (facebook) {
-      setFacebookSettings({
-        accessToken: "", // Don't load masked token - user must re-enter
-        pageId: facebook.pageId || "",
-        webhookVerifyToken: facebook.webhookVerifyToken || "",
-      });
-    }
     const whatsapp = platformSettings.find(s => s.platform === "whatsapp");
     if (whatsapp) {
       setWhatsappSettings({
@@ -242,38 +214,6 @@ export function SettingsModal({
     }
   };
 
-  const handleSyncMessages = async (platform: Platform) => {
-    if (platform !== "facebook" && platform !== "instagram") return;
-    
-    setIsSyncing(true);
-    try {
-      const res = await apiRequest("POST", `/api/platform-settings/${platform}/sync`);
-      const data = await res.json();
-      
-      if (data.success) {
-        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
-        toast({
-          title: "Sync Complete",
-          description: `Synced ${data.syncedConversations} conversations and ${data.syncedMessages} messages from ${platform.charAt(0).toUpperCase() + platform.slice(1)}.`,
-        });
-      } else {
-        toast({
-          title: "Sync Failed",
-          description: data.error || "Failed to sync messages.",
-          variant: "destructive",
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Sync Error",
-        description: "Failed to sync messages. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleSaveWhatsApp = () => {
     onSaveSettings("whatsapp", {
       accessToken: whatsappSettings.accessToken,
@@ -284,30 +224,6 @@ export function SettingsModal({
     toast({
       title: "Settings Saved",
       description: "WhatsApp settings have been saved successfully.",
-    });
-  };
-
-  const handleSaveInstagram = () => {
-    onSaveSettings("instagram", {
-      accessToken: instagramSettings.accessToken,
-      businessId: instagramSettings.businessId,
-      webhookVerifyToken: instagramSettings.webhookVerifyToken,
-    });
-    toast({
-      title: "Settings Saved",
-      description: "Instagram settings have been saved successfully.",
-    });
-  };
-
-  const handleSaveFacebook = () => {
-    onSaveSettings("facebook", {
-      accessToken: facebookSettings.accessToken,
-      pageId: facebookSettings.pageId,
-      webhookVerifyToken: facebookSettings.webhookVerifyToken,
-    });
-    toast({
-      title: "Settings Saved",
-      description: "Facebook settings have been saved successfully.",
     });
   };
 
@@ -333,18 +249,10 @@ export function SettingsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="whatsapp" className="gap-2" data-testid="tab-whatsapp">
               <SiWhatsapp className="h-4 w-4 text-[#25D366]" />
               WhatsApp
-            </TabsTrigger>
-            <TabsTrigger value="instagram" className="gap-2" data-testid="tab-instagram">
-              <SiInstagram className="h-4 w-4 text-[#E4405F]" />
-              Instagram
-            </TabsTrigger>
-            <TabsTrigger value="facebook" className="gap-2" data-testid="tab-facebook">
-              <SiFacebook className="h-4 w-4 text-[#1877F2]" />
-              Facebook
             </TabsTrigger>
             <TabsTrigger value="openai" className="gap-2" data-testid="tab-openai">
               <SiOpenai className="h-4 w-4" />
@@ -468,268 +376,6 @@ export function SettingsModal({
                     className="text-sm text-primary hover:underline inline-flex items-center gap-1"
                   >
                     View WhatsApp API Documentation
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="instagram" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <SiInstagram className="h-5 w-5 text-[#E4405F]" />
-                      Instagram Messaging API
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      Connect your Instagram Business account to manage DMs
-                    </CardDescription>
-                  </div>
-                  <Badge variant={getConnectionStatus("instagram") ? "default" : "secondary"}>
-                    {getConnectionStatus("instagram") ? (
-                      <>
-                        <Check className="h-3 w-3 mr-1" />
-                        Connected
-                      </>
-                    ) : (
-                      "Not Connected"
-                    )}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="ig-token">Access Token</Label>
-                  <Input
-                    id="ig-token"
-                    type="text"
-                    placeholder="Enter new token (leave empty to keep existing)"
-                    value={instagramSettings.accessToken}
-                    onChange={(e) =>
-                      setInstagramSettings({ ...instagramSettings, accessToken: e.target.value })
-                    }
-                    data-testid="input-instagram-token"
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty to keep the existing token
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="ig-business">Instagram Business Account ID</Label>
-                  <Input
-                    id="ig-business"
-                    placeholder="Enter your Instagram Business Account ID"
-                    value={instagramSettings.businessId}
-                    onChange={(e) =>
-                      setInstagramSettings({ ...instagramSettings, businessId: e.target.value })
-                    }
-                    data-testid="input-instagram-business"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="ig-webhook">Webhook Verify Token</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="ig-webhook"
-                      placeholder="Enter or generate a verify token"
-                      value={instagramSettings.webhookVerifyToken}
-                      onChange={(e) =>
-                        setInstagramSettings({ ...instagramSettings, webhookVerifyToken: e.target.value })
-                      }
-                      data-testid="input-instagram-webhook"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setInstagramSettings({ ...instagramSettings, webhookVerifyToken: generateRandomToken() })}
-                      data-testid="button-generate-instagram-token"
-                    >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Generate
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Use this token when configuring webhooks in Meta Developer Portal
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <Button onClick={handleSaveInstagram} data-testid="button-save-instagram">
-                    Save Settings
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleTestConnection("instagram")}
-                    disabled={isTesting}
-                    data-testid="button-test-instagram"
-                  >
-                    {isTesting ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Test Connection
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSyncMessages("instagram")}
-                    disabled={isSyncing || !getConnectionStatus("instagram")}
-                    data-testid="button-sync-instagram"
-                  >
-                    {isSyncing ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-2" />
-                    )}
-                    Sync Messages
-                  </Button>
-                </div>
-
-                <div className="pt-4 border-t border-border">
-                  <a
-                    href="https://developers.facebook.com/docs/instagram-api/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                  >
-                    View Instagram API Documentation
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="facebook" className="space-y-4 mt-4">
-            <Card>
-              <CardHeader className="pb-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <SiFacebook className="h-5 w-5 text-[#1877F2]" />
-                      Facebook Messenger API
-                    </CardTitle>
-                    <CardDescription className="mt-1">
-                      Connect your Facebook Page to manage Messenger conversations
-                    </CardDescription>
-                  </div>
-                  <Badge variant={getConnectionStatus("facebook") ? "default" : "secondary"}>
-                    {getConnectionStatus("facebook") ? (
-                      <>
-                        <Check className="h-3 w-3 mr-1" />
-                        Connected
-                      </>
-                    ) : (
-                      "Not Connected"
-                    )}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fb-token">Page Access Token</Label>
-                  <Input
-                    id="fb-token"
-                    type="text"
-                    placeholder="Enter new token (leave empty to keep existing)"
-                    value={facebookSettings.accessToken}
-                    onChange={(e) =>
-                      setFacebookSettings({ ...facebookSettings, accessToken: e.target.value })
-                    }
-                    data-testid="input-facebook-token"
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave empty to keep the existing token
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="fb-page">Facebook Page ID</Label>
-                  <Input
-                    id="fb-page"
-                    placeholder="Enter your Facebook Page ID"
-                    value={facebookSettings.pageId}
-                    onChange={(e) =>
-                      setFacebookSettings({ ...facebookSettings, pageId: e.target.value })
-                    }
-                    data-testid="input-facebook-page"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="fb-webhook">Webhook Verify Token</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="fb-webhook"
-                      placeholder="Enter or generate a verify token"
-                      value={facebookSettings.webhookVerifyToken}
-                      onChange={(e) =>
-                        setFacebookSettings({ ...facebookSettings, webhookVerifyToken: e.target.value })
-                      }
-                      data-testid="input-facebook-webhook"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => setFacebookSettings({ ...facebookSettings, webhookVerifyToken: generateRandomToken() })}
-                      data-testid="button-generate-facebook-token"
-                    >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      Generate
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Use this token when configuring webhooks in Meta Developer Portal
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 pt-2">
-                  <Button onClick={handleSaveFacebook} data-testid="button-save-facebook">
-                    Save Settings
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleTestConnection("facebook")}
-                    disabled={isTesting}
-                    data-testid="button-test-facebook"
-                  >
-                    {isTesting ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Test Connection
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleSyncMessages("facebook")}
-                    disabled={isSyncing || !getConnectionStatus("facebook")}
-                    data-testid="button-sync-facebook"
-                  >
-                    {isSyncing ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-2" />
-                    )}
-                    Sync Messages
-                  </Button>
-                </div>
-
-                <div className="pt-4 border-t border-border">
-                  <a
-                    href="https://developers.facebook.com/docs/messenger-platform/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
-                  >
-                    View Messenger API Documentation
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </div>
