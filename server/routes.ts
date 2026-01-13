@@ -805,10 +805,7 @@ export async function registerRoutes(
       return res.status(409).json({ error: "Update operation already in progress" });
     }
 
-    if (!updateStatus.hasUpdate) {
-      return res.status(400).json({ error: "No updates available" });
-    }
-
+    // Skip check requirement - just pull directly
     updateStatus.isUpdating = true;
     updateStatus.error = null;
     updateStatus.updateLog = ["Starting update process..."];
@@ -816,7 +813,7 @@ export async function registerRoutes(
     res.json({ message: "Update started", status: updateStatus });
 
     try {
-      updateStatus.updateLog.push("Pulling latest changes...");
+      updateStatus.updateLog.push("Pulling latest changes (git pull)...");
       const { stdout: pullOutput } = await execAsync("git pull origin main", { cwd: process.cwd() });
       updateStatus.updateLog.push(pullOutput.trim());
 
