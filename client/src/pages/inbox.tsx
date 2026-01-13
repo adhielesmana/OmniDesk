@@ -209,9 +209,9 @@ function InboxContent({
           {/* Conversation List Panel */}
           <div
             className={`
-              flex flex-col h-full
+              flex-col h-full
               md:w-80 lg:w-96 md:flex-shrink-0 md:border-r md:border-border
-              ${showConversationList ? "w-full" : "hidden md:flex"}
+              ${showConversationList ? "flex w-full md:w-80 lg:w-96" : "hidden md:flex"}
             `}
           >
             {/* Mobile Header for Conversation List */}
@@ -249,8 +249,8 @@ function InboxContent({
           {/* Message Thread Panel */}
           <div
             className={`
-              flex-1 min-w-0 flex flex-col h-full
-              ${!showConversationList ? "w-full" : "hidden md:flex"}
+              flex-1 min-w-0 flex-col h-full
+              ${!showConversationList ? "flex w-full md:w-auto" : "hidden md:flex"}
             `}
           >
             <MessageThread
