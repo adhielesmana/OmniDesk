@@ -68,8 +68,8 @@ export function ConversationList({
 
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full bg-background">
-        <div className="p-3 border-b border-border space-y-3">
+      <div className="flex flex-col h-full bg-background overflow-hidden">
+        <div className="p-3 border-b border-border space-y-3 shrink-0 bg-background">
           <div className="h-10 bg-muted rounded-lg animate-pulse" />
         </div>
         <div className="flex-1 p-2 space-y-1">
@@ -90,9 +90,9 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex flex-col h-full bg-background">
-      {/* Search Bar */}
-      <div className="p-3 border-b border-border space-y-2">
+    <div className="flex flex-col h-full bg-background overflow-hidden">
+      {/* Search Bar - Fixed at top */}
+      <div className="p-3 border-b border-border space-y-2 shrink-0 bg-background">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
