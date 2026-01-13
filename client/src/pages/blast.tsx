@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -381,11 +381,13 @@ function CreateCampaignDialog({
 }) {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [minInterval, setMinInterval] = useState("600");
   const [maxInterval, setMaxInterval] = useState("1800");
+  const [contactSearch, setContactSearch] = useState("");
+  const [displayLimit, setDisplayLimit] = useState(50);
 
-  const { data: contactsData } = useQuery<{ contacts: Contact[]; total: number }>({
+  const { data: contactsData, isLoading: contactsLoading } = useQuery<{ contacts: Contact[]; total: number }>({
     queryKey: ["/api/contacts", { limit: 50000 }],
     queryFn: async () => {
       const res = await fetch("/api/contacts?limit=50000", { credentials: "include" });
@@ -396,13 +398,26 @@ function CreateCampaignDialog({
   });
 
   const contacts = contactsData?.contacts || [];
+  
+  const filteredContacts = useMemo(() => {
+    if (!contactSearch) return contacts;
+    const search = contactSearch.toLowerCase();
+    return contacts.filter(c => 
+      c.name?.toLowerCase().includes(search) || 
+      c.phoneNumber?.includes(search)
+    );
+  }, [contacts, contactSearch]);
+  
+  const displayedContacts = useMemo(() => {
+    return filteredContacts.slice(0, displayLimit);
+  }, [filteredContacts, displayLimit]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/blast-campaigns", {
         name,
         prompt,
-        contactIds: selectedContacts,
+        contactIds: Array.from(selectedContacts),
         minIntervalSeconds: parseInt(minInterval),
         maxIntervalSeconds: parseInt(maxInterval),
       });
@@ -413,7 +428,9 @@ function CreateCampaignDialog({
       onOpenChange(false);
       setName("");
       setPrompt("");
-      setSelectedContacts([]);
+      setSelectedContacts(new Set());
+      setContactSearch("");
+      setDisplayLimit(50);
       toast({ title: "Campaign created successfully" });
     },
     onError: () => {
@@ -421,20 +438,36 @@ function CreateCampaignDialog({
     },
   });
 
-  const toggleContact = (contactId: string) => {
-    setSelectedContacts((prev) =>
-      prev.includes(contactId)
-        ? prev.filter((id) => id !== contactId)
-        : [...prev, contactId]
-    );
-  };
+  const toggleContact = useCallback((contactId: string) => {
+    setSelectedContacts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(contactId)) {
+        newSet.delete(contactId);
+      } else {
+        newSet.add(contactId);
+      }
+      return newSet;
+    });
+  }, []);
 
   const selectAllContacts = () => {
-    if (selectedContacts.length === contacts.length) {
-      setSelectedContacts([]);
+    if (selectedContacts.size === contacts.length) {
+      setSelectedContacts(new Set());
     } else {
-      setSelectedContacts(contacts.map((c) => c.id));
+      setSelectedContacts(new Set(contacts.map((c) => c.id)));
     }
+  };
+  
+  const selectFilteredContacts = () => {
+    setSelectedContacts((prev) => {
+      const newSet = new Set(prev);
+      filteredContacts.forEach(c => newSet.add(c.id));
+      return newSet;
+    });
+  };
+  
+  const loadMore = () => {
+    setDisplayLimit(prev => prev + 100);
   };
 
   return (
@@ -503,25 +536,56 @@ function CreateCampaignDialog({
           </p>
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Select Recipients ({selectedContacts.length} selected)</Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={selectAllContacts}
-                data-testid="button-select-all-contacts"
-              >
-                {selectedContacts.length === contacts.length ? "Deselect All" : "Select All"}
-              </Button>
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <Label>Select Recipients ({selectedContacts.size} selected)</Label>
+              <div className="flex gap-2">
+                {contactSearch && filteredContacts.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={selectFilteredContacts}
+                    data-testid="button-select-filtered"
+                  >
+                    Select {filteredContacts.length} filtered
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={selectAllContacts}
+                  data-testid="button-select-all-contacts"
+                >
+                  {selectedContacts.size === contacts.length ? "Deselect All" : "Select All"}
+                </Button>
+              </div>
             </div>
+            <Input
+              placeholder="Search contacts..."
+              value={contactSearch}
+              onChange={(e) => {
+                setContactSearch(e.target.value);
+                setDisplayLimit(50);
+              }}
+              className="mb-2"
+              data-testid="input-contact-search"
+            />
             <ScrollArea className="h-48 border rounded-md p-2">
-              {contacts.length === 0 ? (
+              {contactsLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading contacts...</span>
+                </div>
+              ) : contacts.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
                   No contacts available
                 </p>
+              ) : filteredContacts.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No contacts match your search
+                </p>
               ) : (
-                <div className="space-y-2">
-                  {contacts.map((contact) => (
+                <div className="space-y-1">
+                  {displayedContacts.map((contact) => (
                     <div
                       key={contact.id}
                       className="flex items-center gap-2 p-2 rounded hover-elevate cursor-pointer"
@@ -529,20 +593,34 @@ function CreateCampaignDialog({
                       data-testid={`contact-checkbox-${contact.id}`}
                     >
                       <Checkbox
-                        checked={selectedContacts.includes(contact.id)}
+                        checked={selectedContacts.has(contact.id)}
                         onCheckedChange={() => toggleContact(contact.id)}
                       />
-                      <span className="flex-1 text-sm">
+                      <span className="flex-1 text-sm truncate">
                         {contact.name || contact.phoneNumber || "Unknown"}
                       </span>
-                      <Badge variant="outline" className="text-xs">
+                      <Badge variant="outline" className="text-xs shrink-0">
                         {contact.platform}
                       </Badge>
                     </div>
                   ))}
+                  {displayLimit < filteredContacts.length && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full mt-2"
+                      onClick={loadMore}
+                      data-testid="button-load-more"
+                    >
+                      Load more ({filteredContacts.length - displayLimit} remaining)
+                    </Button>
+                  )}
                 </div>
               )}
             </ScrollArea>
+            <p className="text-xs text-muted-foreground">
+              Total: {contacts.length} contacts | Showing: {displayedContacts.length} | Filtered: {filteredContacts.length}
+            </p>
           </div>
         </div>
 
@@ -552,7 +630,7 @@ function CreateCampaignDialog({
           </Button>
           <Button
             onClick={() => createMutation.mutate()}
-            disabled={!name || !prompt || selectedContacts.length === 0 || createMutation.isPending}
+            disabled={!name || !prompt || selectedContacts.size === 0 || createMutation.isPending}
             data-testid="button-confirm-create"
           >
             {createMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
