@@ -500,16 +500,22 @@ export class DatabaseStorage implements IStorage {
     let whereClause = eq(conversations.isArchived, false);
 
     if (departmentIds !== undefined) {
+      // If user has departments assigned, show their department's conversations + unassigned ones
+      // If user has NO departments assigned, only show unassigned conversations (NULL department)
       if (departmentIds.length === 0) {
-        return [];
-      }
-      whereClause = and(
-        eq(conversations.isArchived, false),
-        or(
-          inArray(conversations.departmentId, departmentIds),
+        whereClause = and(
+          eq(conversations.isArchived, false),
           sql`${conversations.departmentId} IS NULL`
-        )
-      )!;
+        )!;
+      } else {
+        whereClause = and(
+          eq(conversations.isArchived, false),
+          or(
+            inArray(conversations.departmentId, departmentIds),
+            sql`${conversations.departmentId} IS NULL`
+          )
+        )!;
+      }
     }
 
     const result = await db
