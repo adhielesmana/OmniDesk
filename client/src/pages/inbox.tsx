@@ -8,9 +8,12 @@ import { MessageThread } from "@/components/inbox/message-thread";
 import { SettingsModal } from "@/components/inbox/settings-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ArrowLeft, MessageCircle, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/hooks/use-websocket";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { PlatformIcon } from "@/components/platform-icons";
 import type {
   Platform,
   ConversationWithContact,
@@ -32,7 +35,6 @@ function InboxContent({
   const { toast } = useToast();
   const { setOpenMobile } = useSidebar();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [showConversationList, setShowConversationList] = useState(true);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
   const pendingInvalidationsRef = useRef<Set<string>>(new Set());
@@ -171,15 +173,21 @@ function InboxContent({
     }
   };
 
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
-    setShowConversationList(false);
+    setMobileSheetOpen(true);
   };
 
-  const handleBackToList = () => {
-    setShowConversationList(true);
-    // Keep selectedConversationId to maintain highlight in list (WhatsApp-like behavior)
+  const handleCloseSheet = () => {
+    setMobileSheetOpen(false);
   };
+
+  const getInitials = useCallback((name: string | null | undefined) => {
+    if (!name) return "?";
+    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  }, []);
 
   const unreadCounts = useMemo(() => {
     const counts: Record<Platform | "all", number> = {
@@ -220,65 +228,90 @@ function InboxContent({
         {/* Mobile: Conditional render - show one panel at a time */}
         {/* Desktop: Show both side by side */}
         <div className="flex flex-1 min-h-0 h-full">
-          {/* Mobile View - Conditional Rendering */}
+          {/* Mobile View - List always visible, conversation opens as Sheet overlay */}
           <div className="md:hidden flex flex-col h-full w-full overflow-hidden">
-            {/* Fixed Mobile Header - Always visible */}
+            {/* Fixed Mobile Header */}
             <header className="flex items-center justify-between h-14 px-3 border-b border-border bg-card shrink-0">
               <div className="flex items-center gap-2 min-w-0">
-                {!showConversationList ? (
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
-                    className="shrink-0" 
-                    onClick={handleBackToList}
-                    data-testid="button-back-to-list-mobile"
-                  >
-                    <ArrowLeft className="h-5 w-5" />
-                  </Button>
-                ) : (
-                  <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
-                )}
+                <SidebarTrigger data-testid="button-sidebar-toggle-mobile" />
                 <div className="flex items-center gap-2 min-w-0">
-                  {showConversationList ? (
-                    <>
-                      <MessageCircle className="h-5 w-5 text-primary shrink-0" />
-                      <span className="font-semibold">Chats</span>
-                    </>
-                  ) : selectedConversation ? (
-                    <span className="font-semibold truncate">
-                      {selectedConversation.contact.name || selectedConversation.contact.phoneNumber || "Unknown"}
-                    </span>
-                  ) : (
-                    <span className="font-semibold">Conversation</span>
-                  )}
+                  <MessageCircle className="h-5 w-5 text-primary shrink-0" />
+                  <span className="font-semibold">Chats</span>
                 </div>
               </div>
               <ThemeToggle />
             </header>
 
-            {/* Content area - switches between list and thread */}
+            {/* Conversation List - Always visible */}
             <div className="flex-1 min-h-0 overflow-hidden">
-              {showConversationList ? (
-                <ConversationList
-                  conversations={sortedConversations}
-                  selectedConversationId={selectedConversationId}
-                  onSelectConversation={handleSelectConversation}
-                  onArchive={(id) => archiveMutation.mutate(id)}
-                  onPin={(id) => pinMutation.mutate(id)}
-                  isLoading={isLoadingConversations}
-                  selectedPlatform={selectedPlatform}
-                />
-              ) : (
-                <MessageThread
-                  conversation={selectedConversation || null}
-                  onSendMessage={handleSendMessage}
-                  isSending={sendMessageMutation.isPending}
-                  isLoading={isLoadingConversation}
-                  onBack={handleBackToList}
-                  hideHeader
-                />
-              )}
+              <ConversationList
+                conversations={sortedConversations}
+                selectedConversationId={selectedConversationId}
+                onSelectConversation={handleSelectConversation}
+                onArchive={(id) => archiveMutation.mutate(id)}
+                onPin={(id) => pinMutation.mutate(id)}
+                isLoading={isLoadingConversations}
+                selectedPlatform={selectedPlatform}
+              />
             </div>
+
+            {/* Conversation Sheet - Slides up from bottom */}
+            <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+              <SheetContent 
+                side="bottom" 
+                className="h-[95vh] p-0 flex flex-col rounded-t-xl"
+                data-testid="mobile-conversation-sheet"
+              >
+                {/* Sheet Header */}
+                <div className="flex items-center justify-between px-3 h-14 border-b border-border bg-card shrink-0 rounded-t-xl">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={handleCloseSheet}
+                      data-testid="button-close-sheet"
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </Button>
+                    {selectedConversation && (
+                      <>
+                        <div className="relative shrink-0">
+                          <Avatar className="h-9 w-9">
+                            <AvatarImage src={selectedConversation.contact.profilePictureUrl || undefined} />
+                            <AvatarFallback className="bg-muted text-muted-foreground text-sm">
+                              {getInitials(selectedConversation.contact.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="absolute -bottom-0.5 -right-0.5 bg-background rounded-full p-0.5">
+                            <PlatformIcon platform={selectedConversation.platform} className="h-3 w-3" />
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <h2 className="font-semibold text-foreground text-sm truncate">
+                            {selectedConversation.contact.name || selectedConversation.contact.phoneNumber || "Unknown"}
+                          </h2>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {selectedConversation.platform === "whatsapp" ? "WhatsApp" : 
+                             selectedConversation.platform === "instagram" ? "Instagram" : "Facebook"}
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Message Thread */}
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <MessageThread
+                    conversation={selectedConversation || null}
+                    onSendMessage={handleSendMessage}
+                    isSending={sendMessageMutation.isPending}
+                    isLoading={isLoadingConversation}
+                    hideHeader
+                  />
+                </div>
+              </SheetContent>
+            </Sheet>
           </div>
 
           {/* Desktop View - Both panels visible */}
@@ -307,7 +340,6 @@ function InboxContent({
               onSendMessage={handleSendMessage}
               isSending={sendMessageMutation.isPending}
               isLoading={isLoadingConversation}
-              onBack={handleBackToList}
             />
           </div>
         </div>
