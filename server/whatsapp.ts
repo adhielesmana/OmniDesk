@@ -71,11 +71,21 @@ class WhatsAppService {
   private readonly QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   private clearCredsFunc: (() => Promise<void>) | null = null; // Store clearCreds function
   
-  // Rate limiting to prevent WhatsApp bans
+  // Rate limiting to prevent WhatsApp bans - CONSERVATIVE limits
   private messageSendTimes: number[] = []; // Timestamps of recent sends
-  private readonly MAX_MESSAGES_PER_MINUTE = 20; // Max 20 messages per minute
-  private readonly MAX_MESSAGES_PER_HOUR = 200; // Max 200 messages per hour
+  private readonly MAX_MESSAGES_PER_MINUTE = 10; // Max 10 messages per minute (reduced from 20)
+  private readonly MAX_MESSAGES_PER_HOUR = 100; // Max 100 messages per hour (reduced from 200)
+  private readonly MAX_MESSAGES_PER_DAY = 500; // Max 500 messages per day
   private rateLimitWarningShown = false;
+  private dailyMessageCount = 0;
+  private lastDailyResetJakarta: { year: number; month: number; day: number } = { year: 0, month: 0, day: 0 };
+  
+  // Per-conversation spacing to prevent rapid automated messages
+  private lastMessagePerContact: Map<string, number> = new Map();
+  private readonly MIN_MESSAGE_INTERVAL_MS = 5000; // Min 5 seconds between messages to same contact
+  
+  // Session fingerprint - randomized to avoid detection
+  private sessionFingerprint: { browser: string; version: string } | null = null;
 
   constructor() {
     // Ensure media folder exists
@@ -91,12 +101,97 @@ class WhatsAppService {
     return Math.floor(baseDelay + jitter);
   }
 
-  // Check if we can send a message (rate limiting)
-  private canSendMessage(): { allowed: boolean; waitMs?: number; reason?: string } {
+  // Generate randomized browser fingerprint for session
+  private generateFingerprint(): { browser: string; version: string } {
+    const browsers = ["Chrome", "Firefox", "Safari", "Edge"];
+    const chromeVersions = ["120.0.0", "121.0.0", "122.0.0", "123.0.0", "124.0.0"];
+    const firefoxVersions = ["120.0", "121.0", "122.0", "123.0"];
+    const safariVersions = ["17.0", "17.1", "17.2", "17.3"];
+    const edgeVersions = ["120.0.0", "121.0.0", "122.0.0"];
+    
+    const browser = browsers[Math.floor(Math.random() * browsers.length)];
+    let version: string;
+    
+    switch (browser) {
+      case "Firefox":
+        version = firefoxVersions[Math.floor(Math.random() * firefoxVersions.length)];
+        break;
+      case "Safari":
+        version = safariVersions[Math.floor(Math.random() * safariVersions.length)];
+        break;
+      case "Edge":
+        version = edgeVersions[Math.floor(Math.random() * edgeVersions.length)];
+        break;
+      default:
+        version = chromeVersions[Math.floor(Math.random() * chromeVersions.length)];
+    }
+    
+    return { browser, version };
+  }
+
+  // Get current date in Jakarta timezone (Asia/Jakarta, UTC+7)
+  private getJakartaDate(): { year: number; month: number; day: number } {
+    const now = new Date();
+    const jakartaStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }); // YYYY-MM-DD format
+    const [year, month, day] = jakartaStr.split("-").map(Number);
+    return { year, month, day };
+  }
+
+  // Reset daily counter if new day in Jakarta timezone
+  private checkDailyReset(): void {
+    const jakartaNow = this.getJakartaDate();
+    const jakartaLast = this.lastDailyResetJakarta;
+    
+    if (jakartaNow.year !== jakartaLast.year || 
+        jakartaNow.month !== jakartaLast.month ||
+        jakartaNow.day !== jakartaLast.day) {
+      this.dailyMessageCount = 0;
+      this.lastDailyResetJakarta = jakartaNow;
+      console.log(`WhatsApp daily message counter reset (Jakarta: ${jakartaNow.year}-${jakartaNow.month}-${jakartaNow.day})`);
+    }
+  }
+
+  // Check if we can send a message (rate limiting with per-contact spacing)
+  private canSendMessage(contactJid?: string): { allowed: boolean; waitMs?: number; reason?: string } {
     const now = Date.now();
+    
+    // Check daily reset
+    this.checkDailyReset();
+    
+    // Check daily limit first
+    if (this.dailyMessageCount >= this.MAX_MESSAGES_PER_DAY) {
+      const msUntilMidnight = this.getMsUntilMidnight();
+      return { 
+        allowed: false, 
+        waitMs: msUntilMidnight,
+        reason: `Rate limit: ${this.MAX_MESSAGES_PER_DAY} messages/day exceeded. Resets at midnight.` 
+      };
+    }
+    
+    // Check per-contact spacing (prevent rapid messages to same person)
+    if (contactJid) {
+      const lastSent = this.lastMessagePerContact.get(contactJid);
+      if (lastSent && (now - lastSent) < this.MIN_MESSAGE_INTERVAL_MS) {
+        const waitMs = this.MIN_MESSAGE_INTERVAL_MS - (now - lastSent) + 500;
+        return { 
+          allowed: false, 
+          waitMs,
+          reason: `Per-contact spacing: wait ${Math.ceil(waitMs / 1000)}s before messaging this contact again` 
+        };
+      }
+    }
     
     // Clean up old timestamps (older than 1 hour)
     this.messageSendTimes = this.messageSendTimes.filter(t => now - t < 3600000);
+    
+    // Clean up old per-contact timestamps (older than 1 hour)
+    const entriesToDelete: string[] = [];
+    this.lastMessagePerContact.forEach((timestamp, jid) => {
+      if (now - timestamp > 3600000) {
+        entriesToDelete.push(jid);
+      }
+    });
+    entriesToDelete.forEach(jid => this.lastMessagePerContact.delete(jid));
     
     // Check per-minute limit
     const lastMinute = this.messageSendTimes.filter(t => now - t < 60000);
@@ -123,10 +218,34 @@ class WhatsAppService {
     
     return { allowed: true };
   }
+  
+  // Get milliseconds until midnight (Jakarta time / UTC+7)
+  private getMsUntilMidnight(): number {
+    const now = Date.now();
+    const jakartaOffsetMs = 7 * 60 * 60 * 1000; // UTC+7 in milliseconds
+    
+    // Current time in Jakarta (as UTC timestamp adjusted for Jakarta)
+    const jakartaNow = now + jakartaOffsetMs;
+    
+    // Milliseconds since midnight Jakarta = jakartaNow % 86400000 (ms per day)
+    const msSinceMidnightJakarta = jakartaNow % 86400000;
+    
+    // Milliseconds until next midnight Jakarta
+    const msUntilMidnight = 86400000 - msSinceMidnightJakarta;
+    
+    return msUntilMidnight;
+  }
 
   // Record a message send for rate limiting
-  private recordMessageSend(): void {
-    this.messageSendTimes.push(Date.now());
+  private recordMessageSend(contactJid?: string): void {
+    const now = Date.now();
+    this.messageSendTimes.push(now);
+    this.dailyMessageCount++;
+    
+    // Track per-contact last message time
+    if (contactJid) {
+      this.lastMessagePerContact.set(contactJid, now);
+    }
   }
 
   // Mark session as successfully connected in database (for auto-reconnect on restart)
@@ -356,11 +475,17 @@ class WhatsAppService {
 
       const logger = pino({ level: "silent" });
 
+      // Generate or reuse session fingerprint for consistent device identity
+      if (!this.sessionFingerprint) {
+        this.sessionFingerprint = this.generateFingerprint();
+        console.log(`WhatsApp session fingerprint: ${this.sessionFingerprint.browser} ${this.sessionFingerprint.version}`);
+      }
+      
       this.socket = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger,
-        browser: ["OmniDesk", "Chrome", "1.0.0"],
+        browser: ["OmniDesk", this.sessionFingerprint.browser, this.sessionFingerprint.version],
         syncFullHistory: true,
       });
 
@@ -749,9 +874,11 @@ class WhatsAppService {
       return { messageId: "", success: false };
     }
 
+    const jid = to.includes("@") ? to : `${to}@s.whatsapp.net`;
+
     // Check rate limit (unless bypassed for system messages)
     if (!options?.bypassRateLimit) {
-      const rateCheck = this.canSendMessage();
+      const rateCheck = this.canSendMessage(jid);
       if (!rateCheck.allowed) {
         if (!this.rateLimitWarningShown) {
           console.warn(`WhatsApp rate limit active: ${rateCheck.reason}. Wait ${Math.round((rateCheck.waitMs || 0) / 1000)}s`);
@@ -767,11 +894,10 @@ class WhatsAppService {
     }
 
     try {
-      const jid = to.includes("@") ? to : `${to}@s.whatsapp.net`;
       const result = await this.socket.sendMessage(jid, { text: content });
       
-      // Record send for rate limiting
-      this.recordMessageSend();
+      // Record send for rate limiting (with contact JID for per-contact spacing)
+      this.recordMessageSend(jid);
       
       // Reset rate limit warning flag after successful send
       this.rateLimitWarningShown = false;
@@ -787,12 +913,29 @@ class WhatsAppService {
   }
 
   // Get current rate limit status for monitoring
-  getRateLimitStatus(): { messagesLastMinute: number; messagesLastHour: number; canSend: boolean } {
+  getRateLimitStatus(): { 
+    messagesLastMinute: number; 
+    messagesLastHour: number; 
+    messagesLastDay: number;
+    dailyLimit: number;
+    minuteLimit: number;
+    hourLimit: number;
+    canSend: boolean;
+  } {
     const now = Date.now();
+    this.checkDailyReset();
     const messagesLastMinute = this.messageSendTimes.filter(t => now - t < 60000).length;
     const messagesLastHour = this.messageSendTimes.filter(t => now - t < 3600000).length;
     const canSend = this.canSendMessage().allowed;
-    return { messagesLastMinute, messagesLastHour, canSend };
+    return { 
+      messagesLastMinute, 
+      messagesLastHour, 
+      messagesLastDay: this.dailyMessageCount,
+      dailyLimit: this.MAX_MESSAGES_PER_DAY,
+      minuteLimit: this.MAX_MESSAGES_PER_MINUTE,
+      hourLimit: this.MAX_MESSAGES_PER_HOUR,
+      canSend 
+    };
   }
 
   async getProfilePicture(jid: string): Promise<string | null> {
