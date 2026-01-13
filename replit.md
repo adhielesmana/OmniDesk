@@ -136,6 +136,18 @@ Preferred communication style: Simple, everyday language.
 - `zod` / `drizzle-zod`: Schema validation
 - Radix UI primitives: Accessible UI component foundations
 
+## Maintenance Notes
+
+### Baileys WhatsApp Library Updates
+- **Keep Updated**: The Baileys library (@whiskeysockets/baileys) must be kept up-to-date as WhatsApp frequently updates their protocol. Outdated versions may stop working.
+- **Update Command**: Run `npm update @whiskeysockets/baileys` or use Admin panel "Run Update" for production
+- **Session Persistence**: WhatsApp authentication is stored in the database (whatsapp_auth_state table), so sessions survive library updates without needing to re-scan QR code
+- **Update Best Practices**:
+  - Schedule updates during low-traffic periods
+  - Pause blast campaigns before updating
+  - Verify WhatsApp connection after update
+  - Check server logs for any protocol warnings
+
 ## Known Issues
 
 - **Profile Pictures**: WhatsApp profile picture URLs are temporary and expire. Users can click refresh button to update profile pictures, but they may become unavailable after some time.
