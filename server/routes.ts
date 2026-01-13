@@ -1122,42 +1122,60 @@ export async function registerRoutes(
 
       let result: { success: boolean; messageId: string | undefined } = { success: false, messageId: undefined };
 
-      // Use unofficial WhatsApp for WhatsApp messages
+      // Route message based on conversation platform - NEVER fall back to a different platform
       if (conversation.platform === "whatsapp") {
-        if (whatsappService.isConnected()) {
-          const waResult = await whatsappService.sendMessage(
-            conversation.contact.platformId,
-            content
-          );
-          result = { success: waResult.success, messageId: waResult.messageId || undefined };
+        // Use unofficial WhatsApp (Baileys) for WhatsApp messages
+        if (!whatsappService.isConnected()) {
+          return res.status(400).json({ 
+            error: "WhatsApp is not connected. Please scan the QR code to connect first." 
+          });
         }
-      } else {
-        // Use Meta API for Instagram/Facebook
+        const waResult = await whatsappService.sendMessage(
+          conversation.contact.platformId,
+          content
+        );
+        result = { success: waResult.success, messageId: waResult.messageId || undefined };
+      } else if (conversation.platform === "instagram" || conversation.platform === "facebook") {
+        // Use Meta API for Instagram/Facebook - MUST use correct platform settings
         let settings = await storage.getPlatformSetting(conversation.platform);
         
-        // Fallback: If Instagram settings not found, try using Facebook settings
-        // (Instagram messages often use the same Page access token as Facebook)
+        // For Instagram: Fall back to Facebook settings ONLY if they share the same Page access token
+        // This is valid because Instagram Business accounts are linked to Facebook Pages
         if (!settings?.accessToken && conversation.platform === "instagram") {
-          console.log("Instagram settings not found, falling back to Facebook settings");
+          console.log("Instagram settings not found, checking Facebook settings for shared Page token");
           settings = await storage.getPlatformSetting("facebook");
         }
         
-        if (settings?.isConnected && settings.accessToken) {
-          const metaApi = new MetaApiService(conversation.platform, {
-            accessToken: settings.accessToken,
-            phoneNumberId: settings.phoneNumberId || undefined,
-            pageId: settings.pageId || undefined,
-            businessId: settings.businessId || undefined,
+        if (!settings?.accessToken) {
+          return res.status(400).json({ 
+            error: `${conversation.platform.charAt(0).toUpperCase() + conversation.platform.slice(1)} is not configured. Please set up the platform in Admin Panel > Platforms.` 
           });
-          const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
-          result = { success: metaResult.success, messageId: metaResult.messageId };
-          
-          if (!metaResult.success) {
-            console.error(`Failed to send ${conversation.platform} message:`, metaResult.error);
-          }
-        } else {
-          console.error(`Cannot send ${conversation.platform} message: platform not configured or not connected`);
         }
+        
+        if (!settings.isConnected) {
+          return res.status(400).json({ 
+            error: `${conversation.platform.charAt(0).toUpperCase() + conversation.platform.slice(1)} is not connected. Please test the connection in Admin Panel > Platforms.` 
+          });
+        }
+        
+        // Create Meta API service with the CORRECT platform to ensure proper routing
+        const metaApi = new MetaApiService(conversation.platform, {
+          accessToken: settings.accessToken,
+          phoneNumberId: settings.phoneNumberId || undefined,
+          pageId: settings.pageId || undefined,
+          businessId: settings.businessId || undefined,
+        });
+        
+        console.log(`Sending ${conversation.platform} message to ${conversation.contact.platformId}`);
+        const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
+        result = { success: metaResult.success, messageId: metaResult.messageId };
+        
+        if (!metaResult.success) {
+          console.error(`Failed to send ${conversation.platform} message:`, metaResult.error);
+          return res.status(400).json({ error: metaResult.error || "Failed to send message" });
+        }
+      } else {
+        return res.status(400).json({ error: `Unsupported platform: ${conversation.platform}` });
       }
 
       // Create message in database
