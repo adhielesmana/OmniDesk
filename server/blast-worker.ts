@@ -214,9 +214,9 @@ async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
   // Check if message is already generated (pre-generation flow)
   const fullRecipient = await storage.getBlastRecipient(recipient.id);
   if (fullRecipient?.generatedMessage) {
-    // Message already generated, just mark as queued
+    // Message already generated, mark as approved for sending
     await storage.updateBlastRecipient(recipient.id, {
-      status: "queued",
+      status: "approved",
       scheduledAt: new Date(),
     });
     return true;
@@ -239,8 +239,9 @@ async function processNextRecipient(campaign: BlastCampaign): Promise<boolean> {
     // Use duplicate-checked message generation
     const message = await generateUniqueMessage(apiKey, campaign.prompt, contact, campaign.id);
     
+    // Mark as approved (ready to send)
     await storage.updateBlastRecipient(recipient.id, {
-      status: "queued",
+      status: "approved",
       generatedMessage: message,
       scheduledAt: new Date(),
     });
@@ -286,7 +287,23 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
 
     const jid = phoneNumber.includes("@") ? phoneNumber : `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
     
-    await whatsappService.sendMessage(jid, messageToSend);
+    const sendResult = await whatsappService.sendMessage(jid, messageToSend);
+
+    // Check for rate limiting - set back to approved to retry (message already generated)
+    if (sendResult.rateLimited) {
+      console.log(`Blast message rate limited for ${recipient.contact.name || phoneNumber}. Will retry later...`);
+      await storage.updateBlastRecipient(recipient.id, {
+        status: "approved", // Keep as approved so getApprovedRecipients picks it up again
+        errorMessage: "Rate limited - will retry later",
+        scheduledAt: new Date(Date.now() + (sendResult.waitMs || 60000)),
+      });
+      return;
+    }
+
+    // Check for failure
+    if (!sendResult.success) {
+      throw new Error("WhatsApp send failed");
+    }
 
     await storage.updateBlastRecipient(recipient.id, {
       status: "sent",
@@ -307,8 +324,9 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
       });
       await storage.incrementBlastCampaignFailedCount(recipient.campaignId);
     } else {
+      // Set back to approved to retry later
       await storage.updateBlastRecipient(recipient.id, {
-        status: "queued",
+        status: "approved",
         errorMessage,
         retryCount,
         scheduledAt: new Date(Date.now() + 60000 * retryCount),
@@ -638,8 +656,21 @@ async function processApiMessageQueue(): Promise<void> {
       const formattedNumber = message.phoneNumber + "@s.whatsapp.net";
       const result = await whatsappService.sendMessage(formattedNumber, message.message);
       
+      // Check for rate limiting - requeue the message
+      if (result.rateLimited) {
+        console.log(`API queue: Rate limited for ${message.phoneNumber}. Requeuing...`);
+        await storage.updateApiMessage(message.id, {
+          status: "queued",
+          errorMessage: "Rate limited - will retry later",
+        });
+        // Set next send time based on rate limit wait time
+        apiQueueNextSendTime = Date.now() + (result.waitMs || 60000);
+        isApiQueueProcessing = false;
+        return;
+      }
+      
       if (!result.success) {
-        throw new Error(result.error || "Failed to send WhatsApp message");
+        throw new Error("Failed to send WhatsApp message");
       }
 
       // Update message as sent

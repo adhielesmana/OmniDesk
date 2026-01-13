@@ -1134,6 +1134,15 @@ export async function registerRoutes(
           conversation.contact.platformId,
           content
         );
+        
+        // Check for rate limiting
+        if (waResult.rateLimited) {
+          return res.status(429).json({ 
+            error: "Message sending rate limited. Please wait before sending more messages.",
+            retryAfterMs: waResult.waitMs
+          });
+        }
+        
         result = { success: waResult.success, messageId: waResult.messageId || undefined };
       } else if (conversation.platform === "instagram" || conversation.platform === "facebook") {
         // Use Meta API for Instagram/Facebook - MUST use correct platform settings

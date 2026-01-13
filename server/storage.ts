@@ -46,7 +46,7 @@ import {
   apiRequestLogs,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, ilike, sql, asc, inArray } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, asc, inArray, isNull, lte } from "drizzle-orm";
 
 // Helper to extract canonical phone number from WhatsApp JID
 function getCanonicalPhoneNumber(id: string): string {
@@ -992,15 +992,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getApprovedRecipients(campaignId: string, limit: number): Promise<(BlastRecipient & { contact: Contact })[]> {
+    const now = new Date();
     const result = await db
       .select()
       .from(blastRecipients)
       .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
       .where(and(
         eq(blastRecipients.campaignId, campaignId),
-        eq(blastRecipients.status, "approved")
+        eq(blastRecipients.status, "approved"),
+        // Only get recipients whose scheduledAt is null or in the past (respects rate limit delays)
+        or(
+          isNull(blastRecipients.scheduledAt),
+          lte(blastRecipients.scheduledAt, now)
+        )
       ))
-      .orderBy(asc(blastRecipients.approvedAt))
+      // Order by scheduledAt first (soonest first), then approvedAt for tie-breaking
+      .orderBy(asc(blastRecipients.scheduledAt), asc(blastRecipients.approvedAt))
       .limit(limit);
 
     return result.map((row) => ({
@@ -1037,8 +1044,11 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(contacts, eq(blastRecipients.contactId, contacts.id))
       .innerJoin(blastCampaigns, eq(blastRecipients.campaignId, blastCampaigns.id))
       .where(and(
-        eq(blastRecipients.status, "queued"),
-        sql`${blastRecipients.scheduledAt} <= ${now}`,
+        eq(blastRecipients.status, "approved"),
+        or(
+          isNull(blastRecipients.scheduledAt),
+          lte(blastRecipients.scheduledAt, now)
+        ),
         eq(blastCampaigns.status, "running")
       ))
       .orderBy(asc(blastRecipients.scheduledAt))

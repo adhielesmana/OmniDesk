@@ -7,10 +7,29 @@ const AUTOREPLY_PROMPT_KEY = "autoreply_prompt";
 const AUTOREPLY_COOLDOWN_HOURS = 24;
 
 // Platform-specific send message function type
-export type SendMessageFn = (recipientId: string, message: string) => Promise<void>;
+// WhatsApp returns object with success/rateLimited, Meta API returns void (throws on error)
+export type SendMessageFn = (recipientId: string, message: string) => Promise<void | { success?: boolean; rateLimited?: boolean; waitMs?: number }>;
 
 // Default timezone for Indonesia (WIB)
 const DEFAULT_TIMEZONE = "Asia/Jakarta";
+
+// Quiet hours - don't send auto-replies outside business hours (reduces ban risk)
+const QUIET_HOURS_START = 21; // 9 PM
+const QUIET_HOURS_END = 7;    // 7 AM
+
+// Check if we're in quiet hours (don't send auto-replies)
+function isQuietHours(timezone: string = DEFAULT_TIMEZONE): boolean {
+  const now = new Date();
+  const hourString = now.toLocaleString("en-US", { 
+    timeZone: timezone, 
+    hour: "numeric", 
+    hour12: false 
+  });
+  const hour = parseInt(hourString, 10);
+  
+  // Quiet hours: 9PM (21:00) to 7AM (07:00)
+  return hour >= QUIET_HOURS_START || hour < QUIET_HOURS_END;
+}
 
 // Get current date/time info in the configured timezone
 function getLocalDateTime(timezone: string = DEFAULT_TIMEZONE): { 
@@ -195,6 +214,12 @@ export async function handleAutoReply(
   const enabled = await isAutoReplyEnabled();
   if (!enabled) return false;
 
+  // SAFETY: Check quiet hours to reduce ban risk (9PM-7AM Jakarta time)
+  if (isQuietHours()) {
+    console.log("Auto-reply: Quiet hours active (9PM-7AM Jakarta), skipping to reduce ban risk");
+    return false;
+  }
+
   // Check for valid OpenAI key first
   const hasKey = await hasValidOpenAIKey();
   if (!hasKey) {
@@ -212,6 +237,12 @@ export async function handleAutoReply(
   // Check if we should send auto-reply (cooldown check)
   if (!shouldSendAutoReply(conversation)) {
     console.log("Auto-reply: Already sent auto-reply within 24 hours, skipping");
+    return false;
+  }
+
+  // SAFETY: Check if contact is blocked to avoid replying to spam/problematic contacts
+  if (contact.isBlocked) {
+    console.log("Auto-reply: Contact is blocked, skipping");
     return false;
   }
 
@@ -238,7 +269,23 @@ export async function handleAutoReply(
     // For WhatsApp, normalize to JID format; for others, use platformId directly
     const targetId = platform === "whatsapp" ? normalizePhoneToJid(recipientId) : recipientId;
     
-    await sendMessage(targetId, reply);
+    // Send message and check for rate limiting / failure
+    const sendResult = await sendMessage(targetId, reply);
+    
+    // For WhatsApp, sendMessage returns an object with success/rateLimited flags
+    // For Meta API (Instagram/Facebook), it throws on error
+    if (typeof sendResult === 'object' && sendResult !== null) {
+      const result = sendResult as { success?: boolean; rateLimited?: boolean; waitMs?: number };
+      if (result.rateLimited) {
+        console.log(`Auto-reply (${platformName}): Rate limited, will retry later. Wait ${Math.round((result.waitMs || 0) / 1000)}s`);
+        return false; // Don't record message, will be retried next time
+      }
+      if (result.success === false) {
+        console.log(`Auto-reply (${platformName}): Send failed, not recording message`);
+        return false;
+      }
+    }
+    
     console.log(`Auto-reply (${platformName}) sent to ${contact.name || recipientId}`);
 
     // Create the auto-reply message in database

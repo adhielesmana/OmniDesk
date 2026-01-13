@@ -61,20 +61,72 @@ class WhatsAppService {
   private eventHandlers: WhatsAppEventHandlers | null = null;
   private mediaFolder = path.join(process.cwd(), "media", "whatsapp");
   private reconnectAttempts = 0;
-  private reconnectDelay = 3000; // Start with 3 seconds
-  private maxReconnectDelay = 60000; // Max 60 seconds between retries
+  private reconnectDelay = 5000; // Start with 5 seconds (increased from 3s)
+  private maxReconnectDelay = 120000; // Max 2 minutes between retries (increased from 60s)
+  private maxReconnectAttempts = 10; // Max 10 reconnect attempts before requiring manual intervention
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private stopReconnect = false; // Flag to stop auto-reconnection
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private qrTimeout: NodeJS.Timeout | null = null; // 5-minute timeout for QR scanning
   private readonly QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
   private clearCredsFunc: (() => Promise<void>) | null = null; // Store clearCreds function
+  
+  // Rate limiting to prevent WhatsApp bans
+  private messageSendTimes: number[] = []; // Timestamps of recent sends
+  private readonly MAX_MESSAGES_PER_MINUTE = 20; // Max 20 messages per minute
+  private readonly MAX_MESSAGES_PER_HOUR = 200; // Max 200 messages per hour
+  private rateLimitWarningShown = false;
 
   constructor() {
     // Ensure media folder exists
     if (!fs.existsSync(this.mediaFolder)) {
       fs.mkdirSync(this.mediaFolder, { recursive: true });
     }
+  }
+
+  // Add jitter to delay to prevent thundering herd and look more human
+  private addJitter(baseDelay: number): number {
+    // Add 0-50% random jitter
+    const jitter = Math.random() * 0.5 * baseDelay;
+    return Math.floor(baseDelay + jitter);
+  }
+
+  // Check if we can send a message (rate limiting)
+  private canSendMessage(): { allowed: boolean; waitMs?: number; reason?: string } {
+    const now = Date.now();
+    
+    // Clean up old timestamps (older than 1 hour)
+    this.messageSendTimes = this.messageSendTimes.filter(t => now - t < 3600000);
+    
+    // Check per-minute limit
+    const lastMinute = this.messageSendTimes.filter(t => now - t < 60000);
+    if (lastMinute.length >= this.MAX_MESSAGES_PER_MINUTE) {
+      const oldestInMinute = Math.min(...lastMinute);
+      const waitMs = 60000 - (now - oldestInMinute) + 1000; // Wait until a slot opens + 1s buffer
+      return { 
+        allowed: false, 
+        waitMs,
+        reason: `Rate limit: ${this.MAX_MESSAGES_PER_MINUTE} messages/minute exceeded` 
+      };
+    }
+    
+    // Check per-hour limit
+    if (this.messageSendTimes.length >= this.MAX_MESSAGES_PER_HOUR) {
+      const oldestInHour = Math.min(...this.messageSendTimes);
+      const waitMs = 3600000 - (now - oldestInHour) + 1000;
+      return { 
+        allowed: false, 
+        waitMs,
+        reason: `Rate limit: ${this.MAX_MESSAGES_PER_HOUR} messages/hour exceeded` 
+      };
+    }
+    
+    return { allowed: true };
+  }
+
+  // Record a message send for rate limiting
+  private recordMessageSend(): void {
+    this.messageSendTimes.push(Date.now());
   }
 
   // Mark session as successfully connected in database (for auto-reconnect on restart)
@@ -330,26 +382,43 @@ class WhatsAppService {
 
         if (connection === "close") {
           const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
-          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          const errorMessage = (lastDisconnect?.error as Boom)?.message || "Unknown error";
+          
+          // Determine if we should clear credentials based on error type
+          const isFatalAuthError = statusCode === DisconnectReason.loggedOut || 
+                                   statusCode === 401 || 
+                                   statusCode === 403;
 
           this.connectionState = "disconnected";
           this.eventHandlers?.onConnectionUpdate("disconnected");
           this.stopHealthCheck();
 
-          if (statusCode === DisconnectReason.loggedOut) {
-            console.log("WhatsApp logged out, clearing auth data");
+          if (isFatalAuthError) {
+            // Fatal auth errors - clear credentials and require manual re-login
+            console.log(`WhatsApp fatal auth error (${statusCode}: ${errorMessage}), clearing auth data`);
             this.reconnectAttempts = 0;
-            this.reconnectDelay = 3000;
+            this.reconnectDelay = 5000;
             this.stopReconnect = true;
             this.clearConnectedFlag();
             await this.clearAuthData();
-          } else if (shouldReconnect && !this.stopReconnect) {
+          } else if (!this.stopReconnect) {
             this.reconnectAttempts++;
-            // Exponential backoff: 3s, 6s, 12s, 24s, 48s, max 60s
-            const delay = Math.min(this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1), this.maxReconnectDelay);
-            console.log(`WhatsApp disconnected. Reconnecting in ${Math.round(delay / 1000)}s... (attempt ${this.reconnectAttempts})`);
-            this.reconnectTimeout = setTimeout(() => this.connect(), delay);
-          } else if (this.stopReconnect) {
+            
+            // Check if we've exceeded max attempts
+            if (this.reconnectAttempts > this.maxReconnectAttempts) {
+              console.log(`WhatsApp: Max reconnect attempts (${this.maxReconnectAttempts}) exceeded. Manual intervention required.`);
+              this.stopReconnect = true;
+              this.clearConnectedFlag(); // Don't auto-reconnect on restart
+              return;
+            }
+            
+            // Exponential backoff with jitter: 5s, 10s, 20s, 40s, 80s, max 120s
+            const baseDelay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), this.maxReconnectDelay);
+            const delayWithJitter = this.addJitter(baseDelay);
+            
+            console.log(`WhatsApp disconnected (${statusCode}: ${errorMessage}). Reconnecting in ${Math.round(delayWithJitter / 1000)}s... (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+            this.reconnectTimeout = setTimeout(() => this.connect(), delayWithJitter);
+          } else {
             console.log("WhatsApp disconnected. Auto-reconnect disabled.");
           }
         } else if (connection === "open") {
@@ -358,7 +427,8 @@ class WhatsAppService {
           
           this.connectionState = "connected";
           this.reconnectAttempts = 0;
-          this.reconnectDelay = 3000;
+          this.reconnectDelay = 5000;
+          this.rateLimitWarningShown = false;
           this.eventHandlers?.onConnectionUpdate("connected");
           console.log("WhatsApp connected successfully");
           
@@ -674,14 +744,37 @@ class WhatsAppService {
     }
   }
 
-  async sendMessage(to: string, content: string): Promise<{ messageId: string; success: boolean }> {
+  async sendMessage(to: string, content: string, options?: { bypassRateLimit?: boolean }): Promise<{ messageId: string; success: boolean; rateLimited?: boolean; waitMs?: number }> {
     if (!this.socket || this.connectionState !== "connected") {
       return { messageId: "", success: false };
+    }
+
+    // Check rate limit (unless bypassed for system messages)
+    if (!options?.bypassRateLimit) {
+      const rateCheck = this.canSendMessage();
+      if (!rateCheck.allowed) {
+        if (!this.rateLimitWarningShown) {
+          console.warn(`WhatsApp rate limit active: ${rateCheck.reason}. Wait ${Math.round((rateCheck.waitMs || 0) / 1000)}s`);
+          this.rateLimitWarningShown = true;
+        }
+        return { 
+          messageId: "", 
+          success: false, 
+          rateLimited: true, 
+          waitMs: rateCheck.waitMs 
+        };
+      }
     }
 
     try {
       const jid = to.includes("@") ? to : `${to}@s.whatsapp.net`;
       const result = await this.socket.sendMessage(jid, { text: content });
+      
+      // Record send for rate limiting
+      this.recordMessageSend();
+      
+      // Reset rate limit warning flag after successful send
+      this.rateLimitWarningShown = false;
       
       return {
         messageId: result?.key?.id || "",
@@ -691,6 +784,15 @@ class WhatsAppService {
       console.error("Error sending WhatsApp message:", error);
       return { messageId: "", success: false };
     }
+  }
+
+  // Get current rate limit status for monitoring
+  getRateLimitStatus(): { messagesLastMinute: number; messagesLastHour: number; canSend: boolean } {
+    const now = Date.now();
+    const messagesLastMinute = this.messageSendTimes.filter(t => now - t < 60000).length;
+    const messagesLastHour = this.messageSendTimes.filter(t => now - t < 3600000).length;
+    const canSend = this.canSendMessage().allowed;
+    return { messagesLastMinute, messagesLastHour, canSend };
   }
 
   async getProfilePicture(jid: string): Promise<string | null> {
