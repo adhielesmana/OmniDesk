@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Paperclip, Smile, Mic, Image as ImageIcon, X } from "lucide-react";
+import { Send, Paperclip, Smile, Mic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -53,23 +52,25 @@ export function MessageComposer({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
     }
   }, [message]);
 
+  const hasContent = message.trim() || attachmentPreview;
+
   return (
-    <div className="border-t border-border bg-card p-4">
+    <div className="border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-3">
       {attachmentPreview && (
         <div className="mb-3 relative inline-block">
           <img
             src={attachmentPreview}
             alt="Attachment preview"
-            className="h-20 rounded-lg border border-border"
+            className="h-20 rounded-lg border border-border object-cover"
           />
           <Button
             variant="secondary"
             size="icon"
-            className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
+            className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow-md"
             onClick={() => setAttachmentPreview(null)}
             data-testid="button-remove-attachment"
           >
@@ -79,7 +80,7 @@ export function MessageComposer({
       )}
 
       <div className="flex items-end gap-2">
-        <div className="flex gap-1">
+        <div className="flex-1 flex items-end gap-2 bg-muted/50 rounded-2xl border border-border/50 px-3 py-2 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
           <input
             type="file"
             ref={fileInputRef}
@@ -88,87 +89,82 @@ export function MessageComposer({
             onChange={handleFileSelect}
             data-testid="input-file-upload"
           />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                data-testid="button-attach-file"
-              >
-                <Paperclip className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Attach file</TooltipContent>
-          </Tooltip>
+          
+          <div className="flex items-center gap-1 pb-0.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-attach-file"
+                >
+                  <Paperclip className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Attach file</TooltipContent>
+            </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => fileInputRef.current?.click()}
-                data-testid="button-attach-image"
-              >
-                <ImageIcon className="h-5 w-5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Send image</TooltipContent>
-          </Tooltip>
-        </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="button-emoji"
+                >
+                  <Smile className="h-5 w-5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Add emoji</TooltipContent>
+            </Tooltip>
+          </div>
 
-        <div className="flex-1 relative">
-          <Textarea
+          <textarea
             ref={textareaRef}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
-            className="min-h-[44px] max-h-[200px] resize-none pr-10"
+            className="flex-1 bg-transparent border-0 resize-none min-h-[24px] max-h-[120px] py-1 px-1 text-sm focus:outline-none focus:ring-0 placeholder:text-muted-foreground/70"
             rows={1}
             data-testid="input-message"
           />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-1 bottom-1 h-8 w-8"
-            data-testid="button-emoji"
-          >
-            <Smile className="h-5 w-5" />
-          </Button>
+
+          <span className="text-[10px] text-muted-foreground/60 pb-1 tabular-nums">
+            {message.length > 0 && `${message.length}/4096`}
+          </span>
         </div>
 
-        <div className="flex gap-1">
-          {!message.trim() && !attachmentPreview ? (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" data-testid="button-voice">
-                  <Mic className="h-5 w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Send voice message</TooltipContent>
-            </Tooltip>
-          ) : (
-            <Button
-              onClick={handleSubmit}
-              disabled={isSending || (!message.trim() && !attachmentPreview)}
-              data-testid="button-send"
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Send
-            </Button>
-          )}
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {hasContent ? (
+              <Button
+                size="icon"
+                onClick={handleSubmit}
+                disabled={isSending}
+                className="h-10 w-10 rounded-full shrink-0 bg-primary hover:bg-primary/90"
+                data-testid="button-send"
+              >
+                <Send className="h-5 w-5" />
+              </Button>
+            ) : (
+              <Button
+                size="icon"
+                variant="secondary"
+                className="h-10 w-10 rounded-full shrink-0"
+                data-testid="button-voice"
+              >
+                <Mic className="h-5 w-5" />
+              </Button>
+            )}
+          </TooltipTrigger>
+          <TooltipContent>{hasContent ? "Send message" : "Voice message"}</TooltipContent>
+        </Tooltip>
       </div>
 
-      <div className="mt-2 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Press Enter to send, Shift+Enter for new line
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {message.length}/4096
-        </p>
-      </div>
+      <p className="text-[10px] text-muted-foreground/50 mt-2 text-center">
+        Press Enter to send, Shift+Enter for new line
+      </p>
     </div>
   );
 }
