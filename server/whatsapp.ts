@@ -1,6 +1,5 @@
 import makeWASocket, {
   DisconnectReason,
-  useMultiFileAuthState,
   WASocket,
   BaileysEventMap,
   proto,
@@ -13,6 +12,10 @@ import pino from "pino";
 import path from "path";
 import fs from "fs";
 import { Readable } from "stream";
+import { useDbAuthState, hasDbAuthCreds, clearDbAuthCreds } from "./whatsapp-db-auth";
+import { db } from "./db";
+import { whatsappAuthState } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export type WhatsAppConnectionState = "disconnected" | "connecting" | "qr" | "connected";
 
@@ -56,9 +59,7 @@ class WhatsAppService {
   private socket: WASocket | null = null;
   private connectionState: WhatsAppConnectionState = "disconnected";
   private eventHandlers: WhatsAppEventHandlers | null = null;
-  private authFolder = path.join(process.cwd(), ".whatsapp-auth");
   private mediaFolder = path.join(process.cwd(), "media", "whatsapp");
-  private connectedFlagFile = path.join(process.cwd(), ".whatsapp-auth", ".connected");
   private reconnectAttempts = 0;
   private reconnectDelay = 3000; // Start with 3 seconds
   private maxReconnectDelay = 60000; // Max 60 seconds between retries
@@ -67,6 +68,7 @@ class WhatsAppService {
   private reconnectTimeout: NodeJS.Timeout | null = null;
   private qrTimeout: NodeJS.Timeout | null = null; // 5-minute timeout for QR scanning
   private readonly QR_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  private clearCredsFunc: (() => Promise<void>) | null = null; // Store clearCreds function
 
   constructor() {
     // Ensure media folder exists
@@ -75,33 +77,37 @@ class WhatsAppService {
     }
   }
 
-  // Mark session as successfully connected (for auto-reconnect on restart)
-  private setConnectedFlag(): void {
+  // Mark session as successfully connected in database (for auto-reconnect on restart)
+  private async setConnectedFlag(): Promise<void> {
     try {
-      if (!fs.existsSync(this.authFolder)) {
-        fs.mkdirSync(this.authFolder, { recursive: true });
-      }
-      fs.writeFileSync(this.connectedFlagFile, new Date().toISOString());
+      await db.insert(whatsappAuthState)
+        .values({ key: "_connected", value: new Date().toISOString(), updatedAt: new Date() })
+        .onConflictDoUpdate({
+          target: whatsappAuthState.key,
+          set: { value: new Date().toISOString(), updatedAt: new Date() }
+        });
     } catch (error) {
       console.error("Failed to set connected flag:", error);
     }
   }
 
-  // Clear connected flag (on logout or manual disconnect)
-  private clearConnectedFlag(): void {
+  // Clear connected flag from database (on logout or manual disconnect)
+  private async clearConnectedFlag(): Promise<void> {
     try {
-      if (fs.existsSync(this.connectedFlagFile)) {
-        fs.unlinkSync(this.connectedFlagFile);
-      }
+      await db.delete(whatsappAuthState).where(eq(whatsappAuthState.key, "_connected"));
     } catch (error) {
       console.error("Failed to clear connected flag:", error);
     }
   }
 
   // Check if session was previously connected (should auto-reconnect)
-  private wasConnected(): boolean {
+  private async wasConnected(): Promise<boolean> {
     try {
-      return fs.existsSync(this.connectedFlagFile);
+      const result = await db.select()
+        .from(whatsappAuthState)
+        .where(eq(whatsappAuthState.key, "_connected"))
+        .limit(1);
+      return result.length > 0;
     } catch {
       return false;
     }
@@ -246,10 +252,9 @@ class WhatsAppService {
     return match ? match[1] : null;
   }
 
-  hasExistingAuth(): boolean {
+  async hasExistingAuth(): Promise<boolean> {
     try {
-      const credsPath = path.join(this.authFolder, "creds.json");
-      return fs.existsSync(credsPath);
+      return await hasDbAuthCreds();
     } catch {
       return false;
     }
@@ -257,8 +262,11 @@ class WhatsAppService {
 
   // Auto-connect if session was previously connected (called on server startup)
   async autoConnect(): Promise<boolean> {
-    if (this.hasExistingAuth() && this.wasConnected()) {
-      console.log("Found existing WhatsApp session that was connected, auto-reconnecting...");
+    const hasAuth = await this.hasExistingAuth();
+    const wasConn = await this.wasConnected();
+    
+    if (hasAuth && wasConn) {
+      console.log("Found existing WhatsApp session in database, auto-reconnecting...");
       try {
         await this.connect();
         return true;
@@ -267,10 +275,10 @@ class WhatsAppService {
         return false;
       }
     }
-    if (this.hasExistingAuth() && !this.wasConnected()) {
-      console.log("Found WhatsApp auth files but session was logged out, skipping auto-connect");
+    if (hasAuth && !wasConn) {
+      console.log("Found WhatsApp auth in database but session was logged out, skipping auto-connect");
     } else {
-      console.log("No existing WhatsApp session found, skipping auto-connect");
+      console.log("No existing WhatsApp session found in database, skipping auto-connect");
     }
     return false;
   }
@@ -290,11 +298,9 @@ class WhatsAppService {
     this.eventHandlers?.onConnectionUpdate("connecting");
 
     try {
-      if (!fs.existsSync(this.authFolder)) {
-        fs.mkdirSync(this.authFolder, { recursive: true });
-      }
-
-      const { state, saveCreds } = await useMultiFileAuthState(this.authFolder);
+      // Use database-backed auth state for persistence across restarts
+      const { state, saveCreds, clearCreds } = await useDbAuthState();
+      this.clearCredsFunc = clearCreds;
 
       const logger = pino({ level: "silent" });
 
@@ -656,8 +662,12 @@ class WhatsAppService {
 
   private async clearAuthData(): Promise<void> {
     try {
-      if (fs.existsSync(this.authFolder)) {
-        fs.rmSync(this.authFolder, { recursive: true, force: true });
+      // Use the database-backed clear function if available
+      if (this.clearCredsFunc) {
+        await this.clearCredsFunc();
+      } else {
+        // Fallback to direct database clear
+        await clearDbAuthCreds();
       }
     } catch (error) {
       console.error("Error clearing auth data:", error);
