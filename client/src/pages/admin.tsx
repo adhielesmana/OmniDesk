@@ -1488,10 +1488,11 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
               <Label htmlFor="accessToken">Page Access Token *</Label>
               <Input
                 id="accessToken"
-                type="password"
+                type="text"
                 placeholder="Your page access token"
                 value={formData.accessToken}
                 onChange={(e) => setFormData({ ...formData, accessToken: e.target.value })}
+                className="font-mono text-sm"
                 data-testid="input-access-token"
               />
             </div>
