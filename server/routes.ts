@@ -446,6 +446,7 @@ export async function registerRoutes(
         name: client.name,
         clientId: client.clientId,
         isActive: client.isActive,
+        aiPrompt: client.aiPrompt,
         rateLimitPerMinute: client.rateLimitPerMinute,
         rateLimitPerDay: client.rateLimitPerDay,
         requestCountToday: client.requestCountToday,
@@ -462,7 +463,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/api-clients", requireSuperadmin, async (req, res) => {
     try {
-      const { name, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      const { name, aiPrompt, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Name is required" });
@@ -477,6 +478,7 @@ export async function registerRoutes(
         clientId,
         secretHash,
         isActive: true,
+        aiPrompt: aiPrompt?.trim() || null,
         rateLimitPerMinute: rateLimitPerMinute || 60,
         rateLimitPerDay: rateLimitPerDay || 1000,
         ipWhitelist: ipWhitelist || null,
@@ -503,7 +505,7 @@ export async function registerRoutes(
   app.patch("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      const { name, aiPrompt, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
 
       const client = await storage.getApiClient(id);
       if (!client) {
@@ -512,6 +514,7 @@ export async function registerRoutes(
 
       const updateData: Record<string, any> = {};
       if (name !== undefined) updateData.name = name;
+      if (aiPrompt !== undefined) updateData.aiPrompt = aiPrompt;
       if (isActive !== undefined) updateData.isActive = isActive;
       if (rateLimitPerMinute !== undefined) updateData.rateLimitPerMinute = rateLimitPerMinute;
       if (rateLimitPerDay !== undefined) updateData.rateLimitPerDay = rateLimitPerDay;

@@ -458,6 +458,7 @@ export const apiClients = pgTable("api_clients", {
   clientId: text("client_id").notNull().unique(), // Public client ID for X-Client-Id header
   secretHash: text("secret_hash").notNull(), // Hashed secret key (never store plain)
   isActive: boolean("is_active").default(true),
+  aiPrompt: text("ai_prompt"), // Custom AI prompt for this client's message personalization
   rateLimitPerMinute: integer("rate_limit_per_minute").default(60),
   rateLimitPerDay: integer("rate_limit_per_day").default(1000),
   requestCountToday: integer("request_count_today").default(0),
