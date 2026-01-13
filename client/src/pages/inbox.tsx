@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
@@ -35,7 +34,6 @@ function InboxContent({
 }) {
   const { toast } = useToast();
   const { setOpenMobile } = useSidebar();
-  const isMobile = useIsMobile();
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -179,8 +177,8 @@ function InboxContent({
 
   const handleSelectConversation = (id: string) => {
     setSelectedConversationId(id);
-    // Only open sheet overlay on mobile
-    if (isMobile) {
+    // Only open sheet overlay on mobile (check window width directly for reliability)
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
       setMobileSheetOpen(true);
     }
   };
@@ -189,12 +187,16 @@ function InboxContent({
     setMobileSheetOpen(false);
   };
 
-  // Close sheet when switching to desktop mode
+  // Close sheet when resizing to desktop mode
   useEffect(() => {
-    if (!isMobile) {
-      setMobileSheetOpen(false);
-    }
-  }, [isMobile]);
+    const handleResize = () => {
+      if (window.innerWidth >= 768) {
+        setMobileSheetOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const getInitials = useCallback((name: string | null | undefined) => {
     if (!name) return "?";
