@@ -15,6 +15,7 @@ import { updateContactSchema, type Platform, type User, insertUserSchema, insert
 import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./auth";
 import { clearCampaignTiming, triggerImmediateGeneration, generateCampaignMessageBatch } from "./blast-worker";
 import { isAutoReplyEnabled, getAutoReplyPrompt, setAutoReplyEnabled, setAutoReplyPrompt, deleteAutoReplyPrompt, handleAutoReply, hasValidOpenAIKey } from "./autoreply";
+import { externalApiRouter, generateClientId, generateSecretKey, hashSecret } from "./external-api";
 import type { Contact } from "@shared/schema";
 
 const execAsync = promisify(exec);
@@ -431,6 +432,168 @@ export async function registerRoutes(
       displayName: user.displayName,
       departments: user.role === "superadmin" ? "all" : departments,
     });
+  });
+
+  // ============= EXTERNAL API ROUTES =============
+  app.use("/api/external", externalApiRouter);
+
+  // ============= ADMIN API CLIENTS MANAGEMENT =============
+  app.get("/api/admin/api-clients", requireSuperadmin, async (req, res) => {
+    try {
+      const clients = await storage.getApiClients();
+      const clientsWithStats = clients.map((client) => ({
+        id: client.id,
+        name: client.name,
+        clientId: client.clientId,
+        isActive: client.isActive,
+        rateLimitPerMinute: client.rateLimitPerMinute,
+        rateLimitPerDay: client.rateLimitPerDay,
+        requestCountToday: client.requestCountToday,
+        lastRequestAt: client.lastRequestAt,
+        ipWhitelist: client.ipWhitelist,
+        createdAt: client.createdAt,
+      }));
+      res.json(clientsWithStats);
+    } catch (error) {
+      console.error("Error fetching API clients:", error);
+      res.status(500).json({ error: "Failed to fetch API clients" });
+    }
+  });
+
+  app.post("/api/admin/api-clients", requireSuperadmin, async (req, res) => {
+    try {
+      const { name, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+
+      const clientId = generateClientId();
+      const secretKey = generateSecretKey();
+      const secretHash = hashSecret(secretKey);
+
+      const newClient = await storage.createApiClient({
+        name: name.trim(),
+        clientId,
+        secretHash,
+        isActive: true,
+        rateLimitPerMinute: rateLimitPerMinute || 60,
+        rateLimitPerDay: rateLimitPerDay || 1000,
+        ipWhitelist: ipWhitelist || null,
+        createdBy: req.session.userId!,
+      });
+
+      res.status(201).json({
+        id: newClient.id,
+        name: newClient.name,
+        clientId: newClient.clientId,
+        secretKey,
+        isActive: newClient.isActive,
+        rateLimitPerMinute: newClient.rateLimitPerMinute,
+        rateLimitPerDay: newClient.rateLimitPerDay,
+        createdAt: newClient.createdAt,
+        warning: "Save the secret key now. It cannot be retrieved later.",
+      });
+    } catch (error) {
+      console.error("Error creating API client:", error);
+      res.status(500).json({ error: "Failed to create API client" });
+    }
+  });
+
+  app.patch("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+
+      const client = await storage.getApiClient(id);
+      if (!client) {
+        return res.status(404).json({ error: "API client not found" });
+      }
+
+      const updateData: Record<string, any> = {};
+      if (name !== undefined) updateData.name = name;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      if (rateLimitPerMinute !== undefined) updateData.rateLimitPerMinute = rateLimitPerMinute;
+      if (rateLimitPerDay !== undefined) updateData.rateLimitPerDay = rateLimitPerDay;
+      if (ipWhitelist !== undefined) updateData.ipWhitelist = ipWhitelist;
+
+      const updated = await storage.updateApiClient(id, updateData);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating API client:", error);
+      res.status(500).json({ error: "Failed to update API client" });
+    }
+  });
+
+  app.post("/api/admin/api-clients/:id/regenerate-secret", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const client = await storage.getApiClient(id);
+      if (!client) {
+        return res.status(404).json({ error: "API client not found" });
+      }
+
+      const newSecretKey = generateSecretKey();
+      const newSecretHash = hashSecret(newSecretKey);
+
+      await storage.updateApiClient(id, { secretHash: newSecretHash } as any);
+
+      res.json({
+        clientId: client.clientId,
+        secretKey: newSecretKey,
+        warning: "Save the new secret key now. It cannot be retrieved later.",
+      });
+    } catch (error) {
+      console.error("Error regenerating secret:", error);
+      res.status(500).json({ error: "Failed to regenerate secret" });
+    }
+  });
+
+  app.delete("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const client = await storage.getApiClient(id);
+      if (!client) {
+        return res.status(404).json({ error: "API client not found" });
+      }
+
+      await storage.deleteApiClient(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting API client:", error);
+      res.status(500).json({ error: "Failed to delete API client" });
+    }
+  });
+
+  app.get("/api/admin/api-clients/:id/logs", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const limit = parseInt(req.query.limit as string) || 100;
+
+      const client = await storage.getApiClient(id);
+      if (!client) {
+        return res.status(404).json({ error: "API client not found" });
+      }
+
+      const logs = await storage.getApiRequestLogs(id, limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching API logs:", error);
+      res.status(500).json({ error: "Failed to fetch API logs" });
+    }
+  });
+
+  app.get("/api/admin/api-queue", requireSuperadmin, async (req, res) => {
+    try {
+      const clientId = req.query.clientId as string | undefined;
+      const messages = await storage.getApiMessageQueue(clientId);
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching API queue:", error);
+      res.status(500).json({ error: "Failed to fetch API queue" });
+    }
   });
 
   // ============= ADMIN USER MANAGEMENT =============
