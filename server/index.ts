@@ -83,6 +83,7 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: '50mb', // Increased limit for large blast campaigns (10000+ recipients)
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
