@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **WhatsApp Ban Prevention Improvements**: Comprehensive anti-ban protections:
+  - Conservative rate limits: 10 messages/minute, 100/hour, 500/day (Jakarta timezone)
+  - Per-contact spacing: 5 second minimum between messages to same contact
+  - Session fingerprint randomization: Browser type and version randomized per session
+  - Reconnection protection: Max 10 attempts with jittered exponential backoff (5s-120s)
+  - Quiet hours for auto-reply: 9PM-7AM Jakarta time
+  - Blast campaigns: 10-30 minute randomized intervals between sends
 - **Database-Backed WhatsApp Session**: WhatsApp authentication state is now stored in the PostgreSQL database (`whatsapp_auth_state` table) instead of filesystem. This allows sessions to persist across server restarts, backups, and deployments. Users can reconnect by clicking the login button without scanning the QR code again.
 - **Blast Message Time Restriction**: Blast campaigns now only send messages between 7 AM and 9 PM to avoid midnight blasting and reduce WhatsApp detection risk
 - **Auto-Reply Feature**: New auto-reply system that automatically responds to conversations inactive for more than 24 hours, treating them as new conversations. Configurable via Settings modal with enable/disable toggle and customizable AI prompt. Disabled when no prompt is saved.
