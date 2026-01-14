@@ -30,6 +30,9 @@ import {
   type InsertApiMessageQueue,
   type ApiMessageStatus,
   type ApiRequestLog,
+  shortenedUrls,
+  type ShortenedUrl,
+  type InsertShortenedUrl,
   users,
   contacts,
   conversations,
@@ -209,6 +212,11 @@ export interface IStorage {
   // API Request Logs
   createApiRequestLog(log: Omit<ApiRequestLog, "id" | "createdAt">): Promise<ApiRequestLog>;
   getApiRequestLogs(clientId: string, limit?: number): Promise<ApiRequestLog[]>;
+
+  // Shortened URLs
+  createShortenedUrl(url: InsertShortenedUrl): Promise<ShortenedUrl>;
+  getShortenedUrlByCode(shortCode: string): Promise<ShortenedUrl | undefined>;
+  incrementShortenedUrlClickCount(shortCode: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1647,6 +1655,27 @@ export class DatabaseStorage implements IStorage {
       .where(eq(apiRequestLogs.clientId, clientId))
       .orderBy(desc(apiRequestLogs.createdAt))
       .limit(limit);
+  }
+
+  // ============= SHORTENED URLS =============
+  async createShortenedUrl(url: InsertShortenedUrl): Promise<ShortenedUrl> {
+    const [newUrl] = await db.insert(shortenedUrls).values(url).returning();
+    return newUrl;
+  }
+
+  async getShortenedUrlByCode(shortCode: string): Promise<ShortenedUrl | undefined> {
+    const [url] = await db
+      .select()
+      .from(shortenedUrls)
+      .where(eq(shortenedUrls.shortCode, shortCode));
+    return url || undefined;
+  }
+
+  async incrementShortenedUrlClickCount(shortCode: string): Promise<void> {
+    await db
+      .update(shortenedUrls)
+      .set({ clickCount: sql`${shortenedUrls.clickCount} + 1` })
+      .where(eq(shortenedUrls.shortCode, shortCode));
   }
 }
 
