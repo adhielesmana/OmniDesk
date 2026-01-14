@@ -16,6 +16,7 @@ import { hashPassword, verifyPassword, isAdmin, getUserDepartmentIds } from "./a
 import { clearCampaignTiming, triggerImmediateGeneration, generateCampaignMessageBatch } from "./blast-worker";
 import { isAutoReplyEnabled, getAutoReplyPrompt, setAutoReplyEnabled, setAutoReplyPrompt, deleteAutoReplyPrompt, handleAutoReply, hasValidOpenAIKey } from "./autoreply";
 import { externalApiRouter, generateClientId, generateSecretKey, encryptSecret } from "./external-api";
+import { resolveShortUrl } from "./url-shortener";
 import type { Contact } from "@shared/schema";
 
 const execAsync = promisify(exec);
@@ -327,6 +328,23 @@ export async function registerRoutes(
       }
     });
   };
+
+  // ============= URL SHORTENER REDIRECT =============
+  app.get("/s/:shortCode", async (req, res) => {
+    try {
+      const { shortCode } = req.params;
+      const originalUrl = await resolveShortUrl(shortCode);
+      
+      if (!originalUrl) {
+        return res.status(404).send("Link not found or expired");
+      }
+      
+      res.redirect(301, originalUrl);
+    } catch (error) {
+      console.error("Error resolving short URL:", error);
+      res.status(500).send("Error processing link");
+    }
+  });
 
   // ============= AUTHENTICATION ROUTES =============
   app.post("/api/auth/login", async (req, res) => {
