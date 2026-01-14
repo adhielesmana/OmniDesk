@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -99,7 +99,7 @@ export function MessageThread({
   };
 
   // Combine older messages with current messages and dedupe by id
-  const allMessages = (() => {
+  const allMessages = useMemo(() => {
     const combined = [...olderMessages, ...(conversation?.messages || [])];
     const seen = new Set<string>();
     return combined.filter(msg => {
@@ -107,7 +107,7 @@ export function MessageThread({
       seen.add(msg.id);
       return true;
     });
-  })();
+  }, [olderMessages, conversation?.messages]);
 
   const loadOlderMessages = useCallback(async () => {
     if (!conversation?.id || isLoadingMore || allMessages.length === 0) return;

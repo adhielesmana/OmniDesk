@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, memo } from "react";
 import { Send, Paperclip, Smile, Mic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,7 @@ interface MessageComposerProps {
   platform: Platform;
 }
 
-export function MessageComposer({
+export const MessageComposer = memo(function MessageComposer({
   onSendMessage,
   isSending,
   platform,
@@ -167,4 +167,4 @@ export function MessageComposer({
       </p>
     </div>
   );
-}
+});

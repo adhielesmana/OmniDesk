@@ -175,14 +175,14 @@ function InboxContent({
     },
   });
 
-  const handleSendMessage = (content: string, mediaUrl?: string) => {
+  const handleSendMessage = useCallback((content: string, mediaUrl?: string) => {
     if (!selectedConversationId) return;
     sendMessageMutation.mutate({
       conversationId: selectedConversationId,
       content,
       mediaUrl,
     });
-  };
+  }, [selectedConversationId, sendMessageMutation]);
 
   const handleTestConnection = async (platform: Platform): Promise<boolean> => {
     try {
