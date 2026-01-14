@@ -1289,26 +1289,43 @@ export async function registerRoutes(
 
       // Route message based on conversation platform - NEVER fall back to a different platform
       if (conversation.platform === "whatsapp") {
-        // Use unofficial WhatsApp (Baileys) for WhatsApp messages
-        if (!whatsappService.isConnected()) {
+        // Try Twilio first (official API), then fall back to Baileys (unofficial)
+        const { isTwilioConfigured, sendWhatsAppMessage: twilioSend } = await import("./twilio");
+        const twilioAvailable = await isTwilioConfigured();
+        
+        if (twilioAvailable) {
+          // Use Twilio WhatsApp API
+          console.log("[Message] Using Twilio for WhatsApp message");
+          const phoneNumber = conversation.contact.phoneNumber || conversation.contact.platformId;
+          const twilioResult = await twilioSend(phoneNumber, content, mediaUrl);
+          result = { success: twilioResult.success, messageId: twilioResult.messageId };
+          
+          if (!twilioResult.success) {
+            console.error("[Twilio] Send failed:", twilioResult.error);
+            return res.status(400).json({ error: twilioResult.error || "Failed to send via Twilio" });
+          }
+        } else if (whatsappService.isConnected()) {
+          // Fall back to unofficial WhatsApp (Baileys)
+          console.log("[Message] Using Baileys for WhatsApp message");
+          const waResult = await whatsappService.sendMessage(
+            conversation.contact.platformId,
+            content
+          );
+          
+          // Check for rate limiting
+          if (waResult.rateLimited) {
+            return res.status(429).json({ 
+              error: "Message sending rate limited. Please wait before sending more messages.",
+              retryAfterMs: waResult.waitMs
+            });
+          }
+          
+          result = { success: waResult.success, messageId: waResult.messageId || undefined };
+        } else {
           return res.status(400).json({ 
-            error: "WhatsApp is not connected. Please scan the QR code to connect first." 
+            error: "WhatsApp is not connected. Please configure Twilio or scan the QR code for Baileys." 
           });
         }
-        const waResult = await whatsappService.sendMessage(
-          conversation.contact.platformId,
-          content
-        );
-        
-        // Check for rate limiting
-        if (waResult.rateLimited) {
-          return res.status(429).json({ 
-            error: "Message sending rate limited. Please wait before sending more messages.",
-            retryAfterMs: waResult.waitMs
-          });
-        }
-        
-        result = { success: waResult.success, messageId: waResult.messageId || undefined };
       } else if (conversation.platform === "instagram" || conversation.platform === "facebook") {
         // Use Meta API for Instagram/Facebook - MUST use correct platform settings
         let settings = await storage.getPlatformSetting(conversation.platform);
@@ -2759,6 +2776,80 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error sending WhatsApp message:", error);
       res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
+  // ============= TWILIO ROUTES =============
+  
+  // Check Twilio connection status
+  app.get("/api/twilio/status", requireAuth, async (req, res) => {
+    try {
+      const { isTwilioConfigured, getTwilioFromPhoneNumber } = await import("./twilio");
+      const isConfigured = await isTwilioConfigured();
+      let phoneNumber = null;
+      if (isConfigured) {
+        phoneNumber = await getTwilioFromPhoneNumber();
+      }
+      res.json({ connected: isConfigured, phoneNumber });
+    } catch (error) {
+      res.json({ connected: false, phoneNumber: null });
+    }
+  });
+  
+  // Send WhatsApp message via Twilio
+  app.post("/api/twilio/whatsapp/send", requireAuth, async (req, res) => {
+    try {
+      const { to, content, mediaUrl } = req.body;
+      const { sendWhatsAppMessage } = await import("./twilio");
+      const result = await sendWhatsAppMessage(to, content, mediaUrl);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error sending Twilio WhatsApp message:", error);
+      res.status(500).json({ error: error.message || "Failed to send message" });
+    }
+  });
+  
+  // Send SMS via Twilio
+  app.post("/api/twilio/sms/send", requireAuth, async (req, res) => {
+    try {
+      const { to, content } = req.body;
+      const { sendSMSMessage } = await import("./twilio");
+      const result = await sendSMSMessage(to, content);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error sending Twilio SMS:", error);
+      res.status(500).json({ error: error.message || "Failed to send SMS" });
+    }
+  });
+  
+  // Twilio webhook for incoming messages (WhatsApp and SMS)
+  app.post("/api/twilio/webhook", async (req, res) => {
+    try {
+      console.log("[Twilio] Webhook received:", JSON.stringify(req.body).substring(0, 200));
+      const { processIncomingMessage } = await import("./twilio");
+      await processIncomingMessage(req.body);
+      
+      // Broadcast new message event
+      broadcast({ type: "new_message" });
+      
+      // Twilio expects TwiML response
+      res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    } catch (error) {
+      console.error("[Twilio] Webhook error:", error);
+      res.type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    }
+  });
+  
+  // Twilio status callback for message delivery status
+  app.post("/api/twilio/status", async (req, res) => {
+    try {
+      console.log("[Twilio] Status callback:", JSON.stringify(req.body).substring(0, 200));
+      const { updateMessageStatus } = await import("./twilio");
+      await updateMessageStatus(req.body);
+      res.sendStatus(200);
+    } catch (error) {
+      console.error("[Twilio] Status callback error:", error);
+      res.sendStatus(200);
     }
   });
 

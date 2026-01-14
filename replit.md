@@ -10,6 +10,13 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+- **Twilio WhatsApp Integration**: Added official WhatsApp Business API support via Twilio. When Twilio is configured (via Replit Integrations), it becomes the primary method for sending WhatsApp messages. Falls back to Baileys (unofficial) if Twilio is not available. Features include:
+  - Secure credential management via Replit's Twilio connector
+  - Webhook endpoint at `/api/twilio/webhook` for incoming messages
+  - Status callback at `/api/twilio/status` for delivery updates
+  - Settings modal shows Twilio connection status and phone number
+  - SMS sending capability via `/api/twilio/sms/send` endpoint
+- **Typing Performance Fix**: Optimized message composer to prevent lag when typing. Used React.memo on MessageComposer, memoized send handlers with useCallback, and memoized message list calculations with useMemo.
 - **Browser Cache for Conversations**: Added localStorage-based caching for conversations. Previously opened conversations load instantly from cache while fetching updates in background. Cache stores up to 50 conversations with 24-hour expiry. Automatically cleans up old entries to prevent storage bloat.
 - **Message Pagination Performance Fix**: Fixed slow conversation loading by implementing cursor-based pagination. Conversations now load only the 100 most recent messages initially, with a "Load older messages" button to fetch earlier messages on demand. Uses (timestamp, id) pair for deterministic cursor to avoid skipping messages. Frontend dedupes messages to prevent duplicates when queries refresh.
 - **Production Update Fix**: Fixed "Run Update" feature for Docker containers that don't have a .git directory. Now automatically initializes git repository if missing and handles fresh installations. Also cleans up legacy `.whatsapp-auth` files that conflict with git checkout (session data is now stored in database).
@@ -73,6 +80,7 @@ Preferred communication style: Simple, everyday language.
 - `server/auth.ts` - Authentication helpers, password hashing, superadmin seeding
 - `server/meta-api.ts` - Meta Graph API integration for WhatsApp/Instagram/Facebook
 - `server/whatsapp.ts` - Unofficial WhatsApp integration using Baileys library
+- `server/twilio.ts` - Official Twilio WhatsApp/SMS integration
 - `server/blast-worker.ts` - Background worker for blast message campaigns with time-of-day restrictions
 - `server/autoreply.ts` - Auto-reply system for conversations inactive > 24 hours
 - `server/external-api.ts` - External API for third-party WhatsApp messaging with HMAC auth

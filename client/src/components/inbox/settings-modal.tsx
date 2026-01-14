@@ -68,6 +68,12 @@ export function SettingsModal({
     enabled: isOpen,
   });
 
+  // Check Twilio status
+  const { data: twilioStatus } = useQuery<{ connected: boolean; phoneNumber: string | null }>({
+    queryKey: ["/api/twilio/status"],
+    enabled: isOpen,
+  });
+
   // Load existing WhatsApp platform settings into form state
   useEffect(() => {
     const whatsapp = platformSettings.find(s => s.platform === "whatsapp");
@@ -225,16 +231,64 @@ export function SettingsModal({
           </TabsList>
 
           <TabsContent value="whatsapp" className="space-y-4 mt-4">
+            {/* Twilio Status Card */}
+            <Card className={twilioStatus?.connected ? "border-green-500/50" : ""}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <SiWhatsapp className="h-5 w-5 text-[#25D366]" />
+                      Twilio WhatsApp (Recommended)
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Official WhatsApp Business API via Twilio - reliable and compliant
+                    </CardDescription>
+                  </div>
+                  <Badge variant={twilioStatus?.connected ? "default" : "secondary"}>
+                    {twilioStatus?.connected ? (
+                      <>
+                        <Check className="h-3 w-3 mr-1" />
+                        Connected
+                      </>
+                    ) : (
+                      "Not Configured"
+                    )}
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {twilioStatus?.connected ? (
+                  <div className="text-sm text-muted-foreground">
+                    <p className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" />
+                      Twilio is configured and ready to send messages
+                    </p>
+                    {twilioStatus.phoneNumber && (
+                      <p className="mt-1">Phone: {twilioStatus.phoneNumber}</p>
+                    )}
+                    <p className="mt-2 text-xs">
+                      Webhook URL: <code className="bg-muted px-1 rounded">{window.location.origin}/api/twilio/webhook</code>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Configure Twilio in the Integrations tab to use official WhatsApp Business API.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Meta Direct API Card (legacy) */}
             <Card>
               <CardHeader className="pb-4">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <SiWhatsapp className="h-5 w-5 text-[#25D366]" />
-                      WhatsApp Business API
+                      Meta WhatsApp API (Direct)
                     </CardTitle>
                     <CardDescription className="mt-1">
-                      Connect your WhatsApp Business API account to send and receive messages
+                      Connect directly to Meta's WhatsApp Cloud API (alternative to Twilio)
                     </CardDescription>
                   </div>
                   <Badge variant={getConnectionStatus("whatsapp") ? "default" : "secondary"}>
