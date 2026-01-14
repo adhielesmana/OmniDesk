@@ -112,6 +112,7 @@ export class MetaApiService {
             messaging_type: "RESPONSE",
             message: { text: content },
           };
+          console.log(`[Meta API] Sending Facebook message to ${recipientId} via page ${this.config.pageId}`);
           break;
 
         default:
@@ -130,10 +131,23 @@ export class MetaApiService {
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("Meta API error:", data);
+        console.error(`[Meta API] Error sending ${this.platform} message:`, JSON.stringify(data, null, 2));
+        const errorCode = data.error?.code;
+        const errorSubcode = data.error?.error_subcode;
+        let errorMessage = data.error?.message || `API Error: ${response.status}`;
+        
+        // Add more helpful error context
+        if (errorCode === 10 || errorCode === 200) {
+          errorMessage = `Permission denied: ${errorMessage}. Check that your access token has the 'pages_messaging' permission.`;
+        } else if (errorCode === 190) {
+          errorMessage = `Access token expired or invalid. Please update your Facebook access token in Settings.`;
+        } else if (errorCode === 100 && errorSubcode === 2018109) {
+          errorMessage = `Cannot message this user: They haven't messaged your page recently or haven't opted in. Users must initiate contact first.`;
+        }
+        
         return {
           success: false,
-          error: data.error?.message || `API Error: ${response.status}`,
+          error: errorMessage,
         };
       }
 

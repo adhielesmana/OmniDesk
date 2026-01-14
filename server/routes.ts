@@ -1357,12 +1357,12 @@ export async function registerRoutes(
           businessId: settings.businessId || undefined,
         });
         
-        console.log(`Sending ${conversation.platform} message to ${conversation.contact.platformId}`);
+        console.log(`[Meta API] Sending ${conversation.platform} message to recipient: ${conversation.contact.platformId}, pageId: ${settings.pageId}, businessId: ${settings.businessId}`);
         const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
         result = { success: metaResult.success, messageId: metaResult.messageId };
         
         if (!metaResult.success) {
-          console.error(`Failed to send ${conversation.platform} message:`, metaResult.error);
+          console.error(`[Meta API] Failed to send ${conversation.platform} message to ${conversation.contact.platformId}:`, metaResult.error);
           return res.status(400).json({ error: metaResult.error || "Failed to send message" });
         }
       } else {
