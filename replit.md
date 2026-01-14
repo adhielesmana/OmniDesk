@@ -10,11 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
-- **Twilio WhatsApp Integration**: Added official WhatsApp Business API support via Twilio. When Twilio is configured (via Replit Integrations), it becomes the primary method for sending WhatsApp messages. Falls back to Baileys (unofficial) if Twilio is not available. Features include:
-  - Secure credential management via Replit's Twilio connector
+- **Twilio WhatsApp Integration**: Added official WhatsApp Business API support via Twilio. When Twilio is configured, it becomes the primary method for sending WhatsApp messages. Falls back to Baileys (unofficial) if Twilio is not available. Features include:
+  - **Admin Panel Configuration**: Twilio credentials (Account SID, Auth Token, Phone Number) can be configured directly in the Settings modal under the WhatsApp tab - no need for environment variables
+  - Supports both manual configuration (production) and Replit connector (development)
   - Webhook endpoint at `/api/twilio/webhook` for incoming messages
   - Status callback at `/api/twilio/status` for delivery updates
-  - Settings modal shows Twilio connection status and phone number
+  - Settings modal shows Twilio connection status, phone number, and credential source
   - SMS sending capability via `/api/twilio/sms/send` endpoint
 - **Typing Performance Fix**: Optimized message composer to prevent lag when typing. Used React.memo on MessageComposer, memoized send handlers with useCallback, and memoized message list calculations with useMemo.
 - **Browser Cache for Conversations**: Added localStorage-based caching for conversations. Previously opened conversations load instantly from cache while fetching updates in background. Cache stores up to 50 conversations with 24-hour expiry. Automatically cleans up old entries to prevent storage bloat.

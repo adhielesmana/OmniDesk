@@ -2784,15 +2784,69 @@ export async function registerRoutes(
   // Check Twilio connection status
   app.get("/api/twilio/status", requireAuth, async (req, res) => {
     try {
-      const { isTwilioConfigured, getTwilioFromPhoneNumber } = await import("./twilio");
-      const isConfigured = await isTwilioConfigured();
-      let phoneNumber = null;
-      if (isConfigured) {
-        phoneNumber = await getTwilioFromPhoneNumber();
-      }
-      res.json({ connected: isConfigured, phoneNumber });
+      const { getTwilioStatus } = await import("./twilio");
+      const status = await getTwilioStatus();
+      res.json(status);
     } catch (error) {
-      res.json({ connected: false, phoneNumber: null });
+      res.json({ connected: false, phoneNumber: null, source: null });
+    }
+  });
+  
+  // Get Twilio settings (masked for security)
+  app.get("/api/settings/twilio", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const accountSid = await storage.getAppSetting('twilio_account_sid');
+      const authToken = await storage.getAppSetting('twilio_auth_token');
+      const phoneNumber = await storage.getAppSetting('twilio_phone_number');
+      
+      res.json({
+        accountSid: accountSid?.value ? accountSid.value.substring(0, 8) + '...' : null,
+        authTokenSet: !!authToken?.value,
+        phoneNumber: phoneNumber?.value || null
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get Twilio settings" });
+    }
+  });
+  
+  // Save Twilio settings
+  app.post("/api/settings/twilio", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { accountSid, authToken, phoneNumber } = req.body;
+      
+      if (!accountSid || !authToken || !phoneNumber) {
+        return res.status(400).json({ error: "All fields are required" });
+      }
+      
+      // Save settings
+      await storage.setAppSetting('twilio_account_sid', accountSid);
+      await storage.setAppSetting('twilio_auth_token', authToken);
+      await storage.setAppSetting('twilio_phone_number', phoneNumber);
+      
+      // Clear cached client so it uses new credentials
+      const { clearTwilioClient } = await import("./twilio");
+      clearTwilioClient();
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save Twilio settings" });
+    }
+  });
+  
+  // Delete Twilio settings
+  app.delete("/api/settings/twilio", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAppSetting('twilio_account_sid');
+      await storage.deleteAppSetting('twilio_auth_token');
+      await storage.deleteAppSetting('twilio_phone_number');
+      
+      // Clear cached client
+      const { clearTwilioClient } = await import("./twilio");
+      clearTwilioClient();
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete Twilio settings" });
     }
   });
   

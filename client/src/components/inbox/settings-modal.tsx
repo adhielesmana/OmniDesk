@@ -63,15 +63,67 @@ export function SettingsModal({
     webhookVerifyToken: "",
   });
 
+  const [twilioSettings, setTwilioSettings] = useState({
+    accountSid: "",
+    authToken: "",
+    phoneNumber: "",
+  });
+
   const { data: openaiStatus, isLoading: openaiLoading } = useQuery<OpenAIStatus>({
     queryKey: ["/api/settings/openai"],
     enabled: isOpen,
   });
 
   // Check Twilio status
-  const { data: twilioStatus } = useQuery<{ connected: boolean; phoneNumber: string | null }>({
+  const { data: twilioStatus } = useQuery<{ connected: boolean; phoneNumber: string | null; source: string | null }>({
     queryKey: ["/api/twilio/status"],
     enabled: isOpen,
+  });
+
+  // Get Twilio settings (masked)
+  const { data: twilioSettingsData } = useQuery<{ accountSid: string | null; authTokenSet: boolean; phoneNumber: string | null }>({
+    queryKey: ["/api/settings/twilio"],
+    enabled: isOpen,
+  });
+
+  // Save Twilio settings mutation
+  const saveTwilioMutation = useMutation({
+    mutationFn: async (settings: { accountSid: string; authToken: string; phoneNumber: string }) => {
+      const res = await apiRequest("POST", "/api/settings/twilio", settings);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/twilio/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/twilio"] });
+      setTwilioSettings({ accountSid: "", authToken: "", phoneNumber: "" });
+      toast({
+        title: "Twilio Settings Saved",
+        description: "Your Twilio credentials have been saved successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save Twilio settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete Twilio settings mutation
+  const deleteTwilioMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/settings/twilio");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/twilio/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/twilio"] });
+      toast({
+        title: "Twilio Settings Deleted",
+        description: "Your Twilio credentials have been removed.",
+      });
+    },
   });
 
   // Load existing WhatsApp platform settings into form state
@@ -231,7 +283,7 @@ export function SettingsModal({
           </TabsList>
 
           <TabsContent value="whatsapp" className="space-y-4 mt-4">
-            {/* Twilio Status Card */}
+            {/* Twilio Settings Card */}
             <Card className={twilioStatus?.connected ? "border-green-500/50" : ""}>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-2">
@@ -248,7 +300,7 @@ export function SettingsModal({
                     {twilioStatus?.connected ? (
                       <>
                         <Check className="h-3 w-3 mr-1" />
-                        Connected
+                        Connected {twilioStatus.source === 'database' ? '(Manual)' : '(Replit)'}
                       </>
                     ) : (
                       "Not Configured"
@@ -256,9 +308,9 @@ export function SettingsModal({
                   </Badge>
                 </div>
               </CardHeader>
-              <CardContent>
-                {twilioStatus?.connected ? (
-                  <div className="text-sm text-muted-foreground">
+              <CardContent className="space-y-4">
+                {twilioStatus?.connected && (
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
                     <p className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-green-500" />
                       Twilio is configured and ready to send messages
@@ -266,15 +318,87 @@ export function SettingsModal({
                     {twilioStatus.phoneNumber && (
                       <p className="mt-1">Phone: {twilioStatus.phoneNumber}</p>
                     )}
+                    {twilioSettingsData?.accountSid && (
+                      <p className="mt-1">Account SID: {twilioSettingsData.accountSid}</p>
+                    )}
                     <p className="mt-2 text-xs">
                       Webhook URL: <code className="bg-muted px-1 rounded">{window.location.origin}/api/twilio/webhook</code>
                     </p>
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    Configure Twilio in the Integrations tab to use official WhatsApp Business API.
-                  </p>
                 )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="twilio-sid">Account SID</Label>
+                  <Input
+                    id="twilio-sid"
+                    placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    value={twilioSettings.accountSid}
+                    onChange={(e) => setTwilioSettings({ ...twilioSettings, accountSid: e.target.value })}
+                    data-testid="input-twilio-sid"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="twilio-token">Auth Token</Label>
+                  <Input
+                    id="twilio-token"
+                    type="password"
+                    placeholder="Enter your Twilio Auth Token"
+                    value={twilioSettings.authToken}
+                    onChange={(e) => setTwilioSettings({ ...twilioSettings, authToken: e.target.value })}
+                    data-testid="input-twilio-token"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="twilio-phone">Phone Number</Label>
+                  <Input
+                    id="twilio-phone"
+                    placeholder="+1234567890"
+                    value={twilioSettings.phoneNumber}
+                    onChange={(e) => setTwilioSettings({ ...twilioSettings, phoneNumber: e.target.value })}
+                    data-testid="input-twilio-phone"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Twilio WhatsApp-enabled phone number
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <Button 
+                    onClick={() => saveTwilioMutation.mutate(twilioSettings)}
+                    disabled={saveTwilioMutation.isPending || !twilioSettings.accountSid || !twilioSettings.authToken || !twilioSettings.phoneNumber}
+                    data-testid="button-save-twilio"
+                  >
+                    {saveTwilioMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
+                    Save Twilio Settings
+                  </Button>
+                  {twilioStatus?.connected && twilioStatus.source === 'database' && (
+                    <Button
+                      variant="destructive"
+                      onClick={() => deleteTwilioMutation.mutate()}
+                      disabled={deleteTwilioMutation.isPending}
+                      data-testid="button-delete-twilio"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t border-border">
+                  <a
+                    href="https://www.twilio.com/console"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                  >
+                    Open Twilio Console
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
               </CardContent>
             </Card>
 

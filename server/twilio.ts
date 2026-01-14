@@ -1,5 +1,5 @@
 // Twilio Integration for WhatsApp, SMS messaging
-// Uses Replit's Twilio connector for secure credential management
+// Supports both database-stored credentials (production) and Replit connector (development)
 
 import twilio from 'twilio';
 import type { Twilio } from 'twilio';
@@ -8,7 +8,37 @@ import { storage } from './storage';
 let twilioClient: Twilio | null = null;
 let twilioFromNumber: string | null = null;
 
-async function getCredentials() {
+// Get credentials from database (app_settings table)
+async function getCredentialsFromDatabase(): Promise<{
+  accountSid: string;
+  authToken: string;
+  phoneNumber: string;
+} | null> {
+  try {
+    const accountSid = await storage.getAppSetting('twilio_account_sid');
+    const authToken = await storage.getAppSetting('twilio_auth_token');
+    const phoneNumber = await storage.getAppSetting('twilio_phone_number');
+    
+    if (accountSid?.value && authToken?.value && phoneNumber?.value) {
+      return {
+        accountSid: accountSid.value,
+        authToken: authToken.value,
+        phoneNumber: phoneNumber.value
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Get credentials from Replit connector (development only)
+async function getCredentialsFromReplit(): Promise<{
+  accountSid: string;
+  apiKey: string;
+  apiKeySecret: string;
+  phoneNumber: string;
+} | null> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY 
     ? 'repl ' + process.env.REPL_IDENTITY 
@@ -16,55 +46,121 @@ async function getCredentials() {
     ? 'depl ' + process.env.WEB_REPL_RENEWAL 
     : null;
 
-  if (!xReplitToken) {
-    throw new Error('Twilio credentials not available - X_REPLIT_TOKEN not found');
+  if (!xReplitToken || !hostname) {
+    return null;
   }
 
-  const response = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=twilio',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
+  try {
+    const response = await fetch(
+      'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=twilio',
+      {
+        headers: {
+          'Accept': 'application/json',
+          'X_REPLIT_TOKEN': xReplitToken
+        }
       }
-    }
-  );
-  
-  const data = await response.json();
-  const connectionSettings = data.items?.[0];
+    );
+    
+    const data = await response.json();
+    const connectionSettings = data.items?.[0];
 
-  if (!connectionSettings || 
-      !connectionSettings.settings.account_sid || 
-      !connectionSettings.settings.api_key || 
-      !connectionSettings.settings.api_key_secret) {
-    throw new Error('Twilio not connected - please configure Twilio in Replit');
+    if (!connectionSettings || 
+        !connectionSettings.settings.account_sid || 
+        !connectionSettings.settings.api_key || 
+        !connectionSettings.settings.api_key_secret) {
+      return null;
+    }
+    
+    return {
+      accountSid: connectionSettings.settings.account_sid,
+      apiKey: connectionSettings.settings.api_key,
+      apiKeySecret: connectionSettings.settings.api_key_secret,
+      phoneNumber: connectionSettings.settings.phone_number
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Get credentials - tries database first, then Replit connector
+async function getCredentials(): Promise<{
+  accountSid: string;
+  authToken?: string;
+  apiKey?: string;
+  apiKeySecret?: string;
+  phoneNumber: string;
+  source: 'database' | 'replit';
+}> {
+  // First try database (works in production)
+  const dbCreds = await getCredentialsFromDatabase();
+  if (dbCreds) {
+    return { ...dbCreds, source: 'database' };
   }
   
-  return {
-    accountSid: connectionSettings.settings.account_sid,
-    apiKey: connectionSettings.settings.api_key,
-    apiKeySecret: connectionSettings.settings.api_key_secret,
-    phoneNumber: connectionSettings.settings.phone_number
-  };
+  // Then try Replit connector (works in development)
+  const replitCreds = await getCredentialsFromReplit();
+  if (replitCreds) {
+    return { ...replitCreds, source: 'replit' };
+  }
+  
+  throw new Error('Twilio credentials not configured - add them in Settings');
 }
 
 export async function getTwilioClient(): Promise<Twilio> {
   if (twilioClient) return twilioClient;
   
-  const { accountSid, apiKey, apiKeySecret, phoneNumber } = await getCredentials();
-  twilioClient = twilio(apiKey, apiKeySecret, { accountSid });
-  twilioFromNumber = phoneNumber;
+  const creds = await getCredentials();
   
-  console.log('[Twilio] Client initialized with phone:', phoneNumber);
+  // Database credentials use accountSid + authToken
+  // Replit credentials use apiKey + apiKeySecret  
+  if (creds.source === 'database' && creds.authToken) {
+    twilioClient = twilio(creds.accountSid, creds.authToken);
+  } else if (creds.apiKey && creds.apiKeySecret) {
+    twilioClient = twilio(creds.apiKey, creds.apiKeySecret, { accountSid: creds.accountSid });
+  } else {
+    throw new Error('Invalid Twilio credentials');
+  }
+  
+  twilioFromNumber = creds.phoneNumber;
+  
+  console.log(`[Twilio] Client initialized (${creds.source}) with phone:`, creds.phoneNumber);
   return twilioClient;
+}
+
+// Clear cached client (call after settings change)
+export function clearTwilioClient() {
+  twilioClient = null;
+  twilioFromNumber = null;
 }
 
 export async function getTwilioFromPhoneNumber(): Promise<string> {
   if (twilioFromNumber) return twilioFromNumber;
   
-  const { phoneNumber } = await getCredentials();
-  twilioFromNumber = phoneNumber;
-  return phoneNumber;
+  const creds = await getCredentials();
+  twilioFromNumber = creds.phoneNumber;
+  return creds.phoneNumber;
+}
+
+// Get Twilio status for frontend display
+export async function getTwilioStatus(): Promise<{
+  connected: boolean;
+  phoneNumber: string | null;
+  source: 'database' | 'replit' | null;
+}> {
+  try {
+    const creds = await getCredentials();
+    return {
+      connected: true,
+      phoneNumber: creds.phoneNumber,
+      source: creds.source
+    };
+  } catch {
+    return {
+      connected: false,
+      phoneNumber: null,
+      source: null
+    };
+  }
 }
 
 export async function isTwilioConfigured(): Promise<boolean> {
