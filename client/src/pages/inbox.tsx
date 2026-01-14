@@ -22,16 +22,22 @@ import type {
   PlatformSettings,
 } from "@shared/schema";
 
+type SettingsTab = "whatsapp" | "instagram" | "facebook" | "openai" | "autoreply";
+
 function InboxContent({
   selectedPlatform,
   setSelectedPlatform,
   showSettings,
   setShowSettings,
+  settingsInitialTab,
+  onOpenSettings,
 }: {
   selectedPlatform: Platform | "all";
   setSelectedPlatform: (platform: Platform | "all") => void;
   showSettings: boolean;
   setShowSettings: (show: boolean) => void;
+  settingsInitialTab: SettingsTab;
+  onOpenSettings: (tab?: SettingsTab) => void;
 }) {
   const { toast } = useToast();
   const { setOpenMobile } = useSidebar();
@@ -250,7 +256,8 @@ function InboxContent({
         selectedPlatform={selectedPlatform}
         onSelectPlatform={setSelectedPlatform}
         unreadCounts={unreadCounts}
-        onSettingsClick={() => setShowSettings(true)}
+        onSettingsClick={() => onOpenSettings("whatsapp")}
+        onAutoReplyClick={() => onOpenSettings("autoreply")}
       />
 
       <SidebarInset className="flex flex-col flex-1 min-w-0">
@@ -383,6 +390,7 @@ function InboxContent({
           saveSettingsMutation.mutate({ platform, settings })
         }
         onTestConnection={handleTestConnection}
+        initialTab={settingsInitialTab}
       />
     </>
   );
@@ -391,6 +399,12 @@ function InboxContent({
 export default function InboxPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | "all">("all");
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"whatsapp" | "instagram" | "facebook" | "openai" | "autoreply">("whatsapp");
+
+  const handleOpenSettings = (tab: "whatsapp" | "instagram" | "facebook" | "openai" | "autoreply" = "whatsapp") => {
+    setSettingsInitialTab(tab);
+    setShowSettings(true);
+  };
 
   const sidebarStyle = {
     "--sidebar-width": "16rem",
@@ -405,6 +419,8 @@ export default function InboxPage() {
           setSelectedPlatform={setSelectedPlatform}
           showSettings={showSettings}
           setShowSettings={setShowSettings}
+          settingsInitialTab={settingsInitialTab}
+          onOpenSettings={handleOpenSettings}
         />
       </div>
     </SidebarProvider>

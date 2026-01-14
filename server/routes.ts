@@ -803,7 +803,8 @@ export async function registerRoutes(
     fs.mkdirSync(brandingFolder, { recursive: true });
   }
 
-  app.get("/api/admin/branding", requireAuth, async (req, res) => {
+  // Public endpoint - no auth required so login page can show branding
+  app.get("/api/admin/branding", async (req, res) => {
     try {
       const logoSetting = await storage.getAppSetting("organization_logo");
       const nameSetting = await storage.getAppSetting("organization_name");

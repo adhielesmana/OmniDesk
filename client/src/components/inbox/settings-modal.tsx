@@ -28,6 +28,7 @@ interface SettingsModalProps {
   platformSettings: PlatformSettings[];
   onSaveSettings: (platform: Platform, settings: Partial<PlatformSettings>) => void;
   onTestConnection: (platform: Platform) => Promise<boolean>;
+  initialTab?: SettingsTab;
 }
 
 interface OpenAIStatus {
@@ -48,10 +49,17 @@ export function SettingsModal({
   platformSettings,
   onSaveSettings,
   onTestConnection,
+  initialTab = "whatsapp",
 }: SettingsModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<SettingsTab>("whatsapp");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+  
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
   const [isTesting, setIsTesting] = useState(false);
   const [openaiKey, setOpenaiKey] = useState("");
 
