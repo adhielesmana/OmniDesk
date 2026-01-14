@@ -1173,16 +1173,23 @@ export async function registerRoutes(
   app.get("/api/conversations", requireAuth, async (req, res) => {
     try {
       let departmentFilter: string[] | undefined;
+      
+      const userRole = req.session.user?.role;
+      console.log(`Fetching conversations for user ${req.session.userId} with role ${userRole}`);
 
       // Superadmin and admin can see all conversations, regular users only see their department's
-      if (req.session.user?.role !== "superadmin" && req.session.user?.role !== "admin") {
-        const userDepartmentIds = await getUserDepartmentIds(req.session.userId!, req.session.user!.role);
+      if (userRole !== "superadmin" && userRole !== "admin") {
+        const userDepartmentIds = await getUserDepartmentIds(req.session.userId!, userRole!);
         if (userDepartmentIds !== "all") {
           departmentFilter = userDepartmentIds;
         }
+        console.log(`User ${req.session.userId} has departments: ${JSON.stringify(departmentFilter)}`);
+      } else {
+        console.log(`User ${req.session.userId} is ${userRole}, showing all conversations`);
       }
 
       const conversations = await storage.getConversations(departmentFilter);
+      console.log(`Returning ${conversations.length} conversations`);
       res.json(conversations);
     } catch (error) {
       console.error("Error fetching conversations:", error);
@@ -1388,7 +1395,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid platform" });
       }
 
-      const { accessToken, pageId, businessId, webhookVerifyToken } = req.body;
+      const { accessToken, pageId, phoneNumberId, businessId, webhookVerifyToken } = req.body;
 
       // Get existing settings to check if we need a new token
       const existingSettings = await storage.getPlatformSetting(platform);
@@ -1405,14 +1412,20 @@ export async function registerRoutes(
       if (platform === "instagram" && !businessId) {
         return res.status(400).json({ error: "Business ID is required for Instagram" });
       }
+      
+      if (platform === "whatsapp" && !phoneNumberId && !existingSettings?.phoneNumberId) {
+        return res.status(400).json({ error: "Phone Number ID is required for WhatsApp Business API" });
+      }
 
       // Use new token if provided, otherwise keep existing
       const finalAccessToken = accessToken || existingSettings?.accessToken;
+      const finalPhoneNumberId = phoneNumberId || existingSettings?.phoneNumberId;
 
       const settings = await storage.upsertPlatformSettings({
         platform,
         accessToken: finalAccessToken,
         pageId: pageId || null,
+        phoneNumberId: finalPhoneNumberId || null,
         businessId: businessId || null,
         webhookVerifyToken: webhookVerifyToken || null,
         isConnected: false,
@@ -1432,7 +1445,7 @@ export async function registerRoutes(
   app.post("/api/platform-settings/:platform/test", requireAdmin, async (req, res) => {
     try {
       const platform = req.params.platform as Platform;
-      if (!["instagram", "facebook"].includes(platform)) {
+      if (!["whatsapp", "instagram", "facebook"].includes(platform)) {
         return res.status(400).json({ error: "Invalid platform" });
       }
 
@@ -1440,9 +1453,15 @@ export async function registerRoutes(
       if (!settings || !settings.accessToken) {
         return res.status(400).json({ error: "Platform not configured" });
       }
+      
+      // For WhatsApp Business API, also check phoneNumberId
+      if (platform === "whatsapp" && !settings.phoneNumberId) {
+        return res.status(400).json({ error: "Phone Number ID is required for WhatsApp Business API" });
+      }
 
       const metaApi = new MetaApiService(platform, {
         accessToken: settings.accessToken,
+        phoneNumberId: settings.phoneNumberId || undefined,
         pageId: settings.pageId || undefined,
         businessId: settings.businessId || undefined,
       });
