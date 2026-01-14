@@ -593,9 +593,9 @@ let apiQueueNextSendTime: number = 0;
 let apiQueueInterval: NodeJS.Timeout | null = null;
 let isApiQueueProcessing = false;
 
-// Configuration for API queue sending (same conservative approach as blast campaigns)
-const API_QUEUE_MIN_INTERVAL_SECONDS = 120; // 2 minutes minimum between messages
-const API_QUEUE_MAX_INTERVAL_SECONDS = 180; // 3 minutes maximum between messages
+// Configuration for API queue sending (randomized intervals to appear more human-like)
+const API_QUEUE_MIN_INTERVAL_SECONDS = 60; // 1 minute minimum between messages
+const API_QUEUE_MAX_INTERVAL_SECONDS = 300; // 5 minutes maximum between messages
 const API_QUEUE_BATCH_SIZE = 5; // Process up to 5 messages per batch
 
 async function processApiMessageQueue(): Promise<void> {
@@ -697,10 +697,12 @@ async function processApiMessageQueue(): Promise<void> {
 
       console.log(`API queue: Sent message to ${message.phoneNumber} (request: ${message.requestId})`);
 
-      // Set next allowed send time with randomized interval
+      // Set next allowed send time with randomized interval (1-5 minutes)
       const waitTime = getRandomInterval(API_QUEUE_MIN_INTERVAL_SECONDS, API_QUEUE_MAX_INTERVAL_SECONDS) * 1000;
       apiQueueNextSendTime = now + waitTime;
-      console.log(`API queue: Next message in ${Math.round(waitTime / 60000)} minutes`);
+      const waitMinutes = Math.floor(waitTime / 60000);
+      const waitSeconds = Math.round((waitTime % 60000) / 1000);
+      console.log(`API queue: Next message in ${waitMinutes}m ${waitSeconds}s (randomized delay)`);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
