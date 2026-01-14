@@ -600,3 +600,26 @@ export type ApiClientWithStats = ApiClient & {
   sentTodayCount: number;
   failedTodayCount: number;
 };
+
+// Shortened URLs table - for masking invoice URLs to avoid WhatsApp detection
+export const shortenedUrls = pgTable("shortened_urls", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  shortCode: varchar("short_code", { length: 10 }).notNull().unique(),
+  originalUrl: text("original_url").notNull(),
+  clickCount: integer("click_count").default(0),
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  clientId: varchar("client_id").references(() => apiClients.id),
+}, (table) => [
+  index("shortened_urls_short_code_idx").on(table.shortCode),
+  index("shortened_urls_client_id_idx").on(table.clientId),
+]);
+
+export const insertShortenedUrlSchema = createInsertSchema(shortenedUrls).omit({
+  id: true,
+  clickCount: true,
+  createdAt: true,
+});
+
+export type ShortenedUrl = typeof shortenedUrls.$inferSelect;
+export type InsertShortenedUrl = z.infer<typeof insertShortenedUrlSchema>;
