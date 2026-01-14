@@ -339,7 +339,21 @@ export async function registerRoutes(
         return res.status(404).send("Link not found or expired");
       }
       
-      res.redirect(301, originalUrl);
+      // Use JavaScript redirect instead of HTTP 301 to prevent WhatsApp preview from seeing final domain
+      // WhatsApp link preview only executes HTTP redirects, not JavaScript
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Redirecting...</title>
+  <script>window.location.replace("${originalUrl.replace(/"/g, '\\"')}");</script>
+</head>
+<body>
+  <p>Redirecting... <a href="${originalUrl.replace(/"/g, '&quot;')}">Click here</a> if not redirected.</p>
+</body>
+</html>`;
+      res.type('html').send(html);
     } catch (error) {
       console.error("Error resolving short URL:", error);
       res.status(500).send("Error processing link");

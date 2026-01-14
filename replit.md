@@ -45,6 +45,7 @@ Preferred communication style: Simple, everyday language.
   - Message queue with 2-3 minute throttling and 7AM-9PM Jakarta time restrictions
   - Request ID deduplication to prevent duplicate sends
   - Full admin UI for API client management in Admin panel
+- **URL Shortening for API Messages**: All URLs in API messages are automatically shortened to prevent WhatsApp detection/blocking. Uses JavaScript-based redirect (not HTTP 301) so WhatsApp's link preview cannot see the final domain. Short URLs use `/s/{code}` format and track click counts. URLs are stored in `shortened_urls` table.
 
 ## System Architecture
 
@@ -95,6 +96,7 @@ Preferred communication style: Simple, everyday language.
 - `apiClients` - External API clients with HMAC credentials, rate limits, and IP whitelist
 - `apiMessageQueue` - Queue for external API messages awaiting delivery
 - `apiRequestLogs` - Audit logs for external API requests
+- `shortened_urls` - URL shortening for API messages to prevent WhatsApp blocking
 
 **Key Server Files**:
 - `server/whatsapp-db-auth.ts` - Database-backed authentication state for Baileys library

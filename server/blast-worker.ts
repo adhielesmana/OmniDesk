@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { whatsappService } from "./whatsapp";
+import { shortenUrlsInText } from "./url-shortener";
 import type { BlastRecipient, BlastCampaign, Contact } from "@shared/schema";
 
 let isProcessing = false;
@@ -659,8 +660,14 @@ async function processApiMessageQueue(): Promise<void> {
       // Send the message via WhatsApp
       await storage.updateApiMessageStatus(message.id, "sending");
       
+      // Shorten any URLs in the message to avoid WhatsApp detection
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+        ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+        : process.env.APP_URL || "https://omnidesk.maxnetplus.id";
+      const shortenedMessage = await shortenUrlsInText(message.message, baseUrl, message.clientId);
+      
       const formattedNumber = message.phoneNumber + "@s.whatsapp.net";
-      const result = await whatsappService.sendMessage(formattedNumber, message.message);
+      const result = await whatsappService.sendMessage(formattedNumber, shortenedMessage);
       
       // Check for rate limiting - requeue the message
       if (result.rateLimited) {
