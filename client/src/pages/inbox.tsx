@@ -257,7 +257,6 @@ function InboxContent({
         onSelectPlatform={setSelectedPlatform}
         unreadCounts={unreadCounts}
         onSettingsClick={() => onOpenSettings("whatsapp")}
-        onAutoReplyClick={() => onOpenSettings("autoreply")}
       />
 
       <SidebarInset className="flex flex-col flex-1 min-w-0">

@@ -1,0 +1,833 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { 
+  Key, Plus, Copy, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff,
+  Send, Clock, CheckCircle2, XCircle, Phone, ArrowLeft, FileText
+} from "lucide-react";
+import { Link } from "wouter";
+
+interface ApiClient {
+  id: string;
+  name: string;
+  clientId: string;
+  isActive: boolean;
+  aiPrompt: string | null;
+  ipWhitelist: string[] | null;
+  rateLimitPerMinute: number;
+  rateLimitPerDay: number;
+  createdAt: Date;
+  lastRequestAt: Date | null;
+  requestCountToday: number;
+}
+
+interface ApiClientWithSecret extends ApiClient {
+  secretKey?: string;
+}
+
+interface ApiQueueMessage {
+  id: string;
+  requestId: string;
+  clientId: string;
+  clientName: string;
+  phoneNumber: string;
+  recipientName: string | null;
+  message: string;
+  status: "queued" | "processing" | "sending" | "sent" | "failed";
+  priority: number;
+  errorMessage: string | null;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  createdAt: string;
+}
+
+export default function ApiMessagePage() {
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("clients");
+
+  return (
+    <div className="flex flex-col h-full">
+      <header className="flex items-center gap-3 px-4 h-14 border-b border-border bg-card shrink-0">
+        <Link href="/">
+          <Button variant="ghost" size="icon" data-testid="button-back">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+        </Link>
+        <div className="flex items-center gap-2">
+          <Send className="h-5 w-5 text-primary" />
+          <h1 className="text-lg font-semibold">API Message</h1>
+        </div>
+      </header>
+
+      <div className="flex-1 overflow-auto p-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <TabsList data-testid="api-message-tabs">
+            <TabsTrigger value="clients" data-testid="tab-api-clients">
+              <Key className="h-4 w-4 mr-2" />
+              API Clients
+            </TabsTrigger>
+            <TabsTrigger value="queue" data-testid="tab-api-queue">
+              <Send className="h-4 w-4 mr-2" />
+              Queue
+            </TabsTrigger>
+            <TabsTrigger value="docs" data-testid="tab-api-docs">
+              <FileText className="h-4 w-4 mr-2" />
+              Documentation
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="clients" className="space-y-4">
+            <ApiClientsTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="queue" className="space-y-4">
+            <ApiQueueTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="docs" className="space-y-4">
+            <ApiDocsTab />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
+function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [editingClient, setEditingClient] = useState<ApiClient | null>(null);
+  const [newSecret, setNewSecret] = useState<{ clientId: string; secret: string } | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    name: "",
+    aiPrompt: "",
+    ipWhitelist: "",
+    rateLimitPerMinute: 60,
+    rateLimitPerDay: 1000,
+    isActive: true,
+  });
+
+  const { data: apiClients = [], isLoading } = useQuery<ApiClient[]>({
+    queryKey: ["/api/admin/api-clients"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { name: string; aiPrompt?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+      const res = await apiRequest("POST", "/api/admin/api-clients", data);
+      return res.json();
+    },
+    onSuccess: (data: ApiClientWithSecret) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setShowCreateDialog(false);
+      setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
+      setFormData({ name: "", aiPrompt: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
+      toast({ title: "API client created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to create API client", variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; aiPrompt?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setEditingClient(null);
+      toast({ title: "API client updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update API client", variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/api-clients/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      toast({ title: "API client deleted" });
+    },
+    onError: () => {
+      toast({ title: "Failed to delete API client", variant: "destructive" });
+    },
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/api-clients/${id}/regenerate-secret`);
+      return res.json();
+    },
+    onSuccess: (data: { clientId: string; secretKey: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
+      setNewSecret({ clientId: data.clientId, secret: data.secretKey });
+      toast({ title: "API secret regenerated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to regenerate secret", variant: "destructive" });
+    },
+  });
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: `${label} copied to clipboard` });
+  };
+
+  const handleCreate = () => {
+    const ipWhitelist = formData.ipWhitelist.trim()
+      ? formData.ipWhitelist.split(",").map(ip => ip.trim()).filter(ip => ip)
+      : undefined;
+    createMutation.mutate({
+      name: formData.name,
+      aiPrompt: formData.aiPrompt.trim() || undefined,
+      ipWhitelist,
+      rateLimitPerMinute: formData.rateLimitPerMinute,
+      rateLimitPerDay: formData.rateLimitPerDay,
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editingClient) return;
+    const ipWhitelist = formData.ipWhitelist.trim()
+      ? formData.ipWhitelist.split(",").map(ip => ip.trim()).filter(ip => ip)
+      : null;
+    updateMutation.mutate({
+      id: editingClient.id,
+      name: formData.name,
+      aiPrompt: formData.aiPrompt.trim() || null,
+      ipWhitelist,
+      rateLimitPerMinute: formData.rateLimitPerMinute,
+      rateLimitPerDay: formData.rateLimitPerDay,
+      isActive: formData.isActive,
+    });
+  };
+
+  const openEditDialog = (client: ApiClient) => {
+    setFormData({
+      name: client.name,
+      aiPrompt: client.aiPrompt || "",
+      ipWhitelist: client.ipWhitelist?.join(", ") || "",
+      rateLimitPerMinute: client.rateLimitPerMinute,
+      rateLimitPerDay: client.rateLimitPerDay,
+      isActive: client.isActive,
+    });
+    setEditingClient(client);
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle>External API Clients</CardTitle>
+              <CardDescription>Manage API keys for external applications to send WhatsApp messages through OmniDesk</CardDescription>
+            </div>
+            <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-create-api-client">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create API Client
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create API Client</DialogTitle>
+                  <DialogDescription>Create a new API client for external applications</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Client Name *</Label>
+                    <Input
+                      id="name"
+                      placeholder="e.g. My CRM System"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      data-testid="input-api-client-name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="aiPrompt">AI Prompt (for message personalization)</Label>
+                    <Textarea
+                      id="aiPrompt"
+                      placeholder="e.g. You are a friendly customer service assistant..."
+                      value={formData.aiPrompt}
+                      onChange={(e) => setFormData({ ...formData, aiPrompt: e.target.value })}
+                      rows={4}
+                      data-testid="input-api-ai-prompt"
+                    />
+                    <p className="text-xs text-muted-foreground">Use {"{{recipient_name}}"} to insert the recipient's name</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated)</Label>
+                    <Input
+                      id="ipWhitelist"
+                      placeholder="e.g. 192.168.1.1, 10.0.0.1"
+                      value={formData.ipWhitelist}
+                      onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                      data-testid="input-api-allowed-ips"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="rateLimitPerMinute">Rate Limit (per minute)</Label>
+                      <Input
+                        id="rateLimitPerMinute"
+                        type="number"
+                        min={1}
+                        value={formData.rateLimitPerMinute}
+                        onChange={(e) => setFormData({ ...formData, rateLimitPerMinute: parseInt(e.target.value) || 60 })}
+                        data-testid="input-api-rate-limit"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="rateLimitPerDay">Daily Limit</Label>
+                      <Input
+                        id="rateLimitPerDay"
+                        type="number"
+                        min={1}
+                        value={formData.rateLimitPerDay}
+                        onChange={(e) => setFormData({ ...formData, rateLimitPerDay: parseInt(e.target.value) || 1000 })}
+                        data-testid="input-api-daily-limit"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
+                  <Button onClick={handleCreate} disabled={createMutation.isPending || !formData.name.trim()} data-testid="button-confirm-create-api-client">
+                    {createMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                    Create
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : apiClients.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Key className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No API clients configured</p>
+              <p className="text-sm">Create an API client to allow external applications to send messages</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {apiClients.map((client) => (
+                <Card key={client.id} className={!client.isActive ? "opacity-60" : ""}>
+                  <CardContent className="pt-4">
+                    <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-semibold">{client.name}</h3>
+                          {client.isActive ? (
+                            <Badge variant="default" className="bg-green-600">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary">Inactive</Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">{client.clientId}</code>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => copyToClipboard(client.clientId, "Client ID")}
+                            data-testid={`button-copy-client-id-${client.id}`}
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="text-xs text-muted-foreground space-y-1">
+                          <p>Rate limit: {client.rateLimitPerMinute}/min | Daily: {client.rateLimitPerDay}</p>
+                          <p>Today: {client.requestCountToday} requests</p>
+                          {client.ipWhitelist && client.ipWhitelist.length > 0 && (
+                            <p>Allowed IPs: {client.ipWhitelist.join(", ")}</p>
+                          )}
+                          {client.lastRequestAt && (
+                            <p>Last used: {new Date(client.lastRequestAt).toLocaleString()}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm("Regenerating the secret will invalidate the current one. Continue?")) {
+                              regenerateMutation.mutate(client.id);
+                            }
+                          }}
+                          disabled={regenerateMutation.isPending}
+                          data-testid={`button-regenerate-secret-${client.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Regenerate Secret
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openEditDialog(client)}
+                          data-testid={`button-edit-api-client-${client.id}`}
+                        >
+                          <Pencil className="h-4 w-4 mr-1" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (confirm(`Delete API client "${client.name}"?`)) {
+                              deleteMutation.mutate(client.id);
+                            }
+                          }}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-api-client-${client.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit API Client</DialogTitle>
+            <DialogDescription>Update API client settings</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Client Name *</Label>
+              <Input
+                id="edit-name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                data-testid="input-edit-api-client-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-aiPrompt">AI Prompt</Label>
+              <Textarea
+                id="edit-aiPrompt"
+                value={formData.aiPrompt}
+                onChange={(e) => setFormData({ ...formData, aiPrompt: e.target.value })}
+                rows={4}
+                data-testid="input-edit-api-ai-prompt"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-ipWhitelist">Allowed IP Addresses</Label>
+              <Input
+                id="edit-ipWhitelist"
+                value={formData.ipWhitelist}
+                onChange={(e) => setFormData({ ...formData, ipWhitelist: e.target.value })}
+                data-testid="input-edit-api-allowed-ips"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-rateLimitPerMinute">Rate Limit (per minute)</Label>
+                <Input
+                  id="edit-rateLimitPerMinute"
+                  type="number"
+                  min={1}
+                  value={formData.rateLimitPerMinute}
+                  onChange={(e) => setFormData({ ...formData, rateLimitPerMinute: parseInt(e.target.value) || 60 })}
+                  data-testid="input-edit-api-rate-limit"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-rateLimitPerDay">Daily Limit</Label>
+                <Input
+                  id="edit-rateLimitPerDay"
+                  type="number"
+                  min={1}
+                  value={formData.rateLimitPerDay}
+                  onChange={(e) => setFormData({ ...formData, rateLimitPerDay: parseInt(e.target.value) || 1000 })}
+                  data-testid="input-edit-api-daily-limit"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                id="edit-isActive"
+                checked={formData.isActive}
+                onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
+                data-testid="switch-edit-api-active"
+              />
+              <Label htmlFor="edit-isActive">Active</Label>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingClient(null)}>Cancel</Button>
+            <Button onClick={handleUpdate} disabled={updateMutation.isPending || !formData.name.trim()} data-testid="button-confirm-edit-api-client">
+              {updateMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!newSecret} onOpenChange={(open) => { if (!open) { setNewSecret(null); setShowSecret(false); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>API Credentials</DialogTitle>
+            <DialogDescription>Save these credentials securely. The secret key will only be shown once.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Client ID</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono">{newSecret?.clientId}</code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(newSecret?.clientId || "", "Client ID")}
+                  data-testid="button-copy-new-client-id"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Secret Key</Label>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-muted px-3 py-2 rounded text-sm font-mono overflow-hidden">
+                  {showSecret ? newSecret?.secret : "••••••••••••••••••••••••"}
+                </code>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setShowSecret(!showSecret)}
+                  data-testid="button-toggle-secret-visibility"
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyToClipboard(newSecret?.secret || "", "Secret Key")}
+                  data-testid="button-copy-new-secret"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md">
+              <p className="text-sm text-yellow-600 dark:text-yellow-500">
+                Store the secret key securely. It cannot be retrieved after closing this dialog.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => { setNewSecret(null); setShowSecret(false); }} data-testid="button-close-credentials">
+              I've saved these credentials
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
+
+  const { data: messages = [], isLoading, refetch } = useQuery<ApiQueueMessage[]>({
+    queryKey: ["/api/admin/api-message-queue"],
+    refetchInterval: 10000,
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/api-message-queue/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-message-queue"] });
+      toast({ title: "Message cancelled" });
+    },
+    onError: () => {
+      toast({ title: "Failed to cancel message", variant: "destructive" });
+    },
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "queued":
+        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Queued</Badge>;
+      case "processing":
+        return <Badge className="bg-blue-500"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Processing</Badge>;
+      case "sending":
+        return <Badge className="bg-yellow-500"><Send className="h-3 w-3 mr-1" />Sending</Badge>;
+      case "sent":
+        return <Badge className="bg-green-500"><CheckCircle2 className="h-3 w-3 mr-1" />Sent</Badge>;
+      case "failed":
+        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const filteredMessages = statusFilter === "all" 
+    ? messages 
+    : messages.filter(m => m.status === statusFilter);
+
+  const counts = {
+    all: messages.length,
+    queued: messages.filter(m => m.status === "queued").length,
+    processing: messages.filter(m => m.status === "processing").length,
+    sending: messages.filter(m => m.status === "sending").length,
+    sent: messages.filter(m => m.status === "sent").length,
+    failed: messages.filter(m => m.status === "failed").length,
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <div>
+            <CardTitle>API Message Queue</CardTitle>
+            <CardDescription>Messages sent via external API awaiting delivery</CardDescription>
+          </div>
+          <Button variant="outline" size="icon" onClick={() => refetch()} data-testid="button-refresh-queue">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2 mb-4">
+            <Button 
+              variant={statusFilter === "all" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("all")}
+              data-testid="filter-all"
+            >
+              All ({counts.all})
+            </Button>
+            <Button 
+              variant={statusFilter === "queued" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("queued")}
+              data-testid="filter-queued"
+            >
+              Queued ({counts.queued})
+            </Button>
+            <Button 
+              variant={statusFilter === "processing" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("processing")}
+              data-testid="filter-processing"
+            >
+              Processing ({counts.processing})
+            </Button>
+            <Button 
+              variant={statusFilter === "sending" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("sending")}
+              data-testid="filter-sending"
+            >
+              Sending ({counts.sending})
+            </Button>
+            <Button 
+              variant={statusFilter === "sent" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("sent")}
+              data-testid="filter-sent"
+            >
+              Sent ({counts.sent})
+            </Button>
+            <Button 
+              variant={statusFilter === "failed" ? "default" : "outline"} 
+              size="sm" 
+              onClick={() => setStatusFilter("failed")}
+              data-testid="filter-failed"
+            >
+              Failed ({counts.failed})
+            </Button>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : filteredMessages.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Send className="h-12 w-12 mx-auto mb-2 opacity-50" />
+              <p>No messages in queue</p>
+            </div>
+          ) : (
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-2">
+                {filteredMessages.map((msg) => (
+                  <Card 
+                    key={msg.id} 
+                    className="cursor-pointer hover-elevate"
+                    onClick={() => setExpandedMessage(expandedMessage === msg.id ? null : msg.id)}
+                    data-testid={`queue-message-${msg.id}`}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">{msg.phoneNumber}</span>
+                            {msg.recipientName && (
+                              <span className="text-muted-foreground">({msg.recipientName})</span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                            <span>Client: {msg.clientName}</span>
+                            <span>-</span>
+                            <span>{new Date(msg.createdAt).toLocaleString()}</span>
+                            {msg.scheduledAt && (
+                              <>
+                                <span>-</span>
+                                <span>Scheduled: {new Date(msg.scheduledAt).toLocaleString()}</span>
+                              </>
+                            )}
+                          </div>
+                          <p className={`text-sm ${expandedMessage === msg.id ? "" : "line-clamp-2"}`}>
+                            {msg.message}
+                          </p>
+                          {msg.errorMessage && (
+                            <p className="text-sm text-destructive mt-1">{msg.errorMessage}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {getStatusBadge(msg.status)}
+                          {(msg.status === "queued" || msg.status === "failed") && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMutation.mutate(msg.id);
+                              }}
+                              disabled={deleteMutation.isPending}
+                              data-testid={`button-delete-${msg.id}`}
+                            >
+                              {deleteMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ApiDocsTab() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>API Documentation</CardTitle>
+        <CardDescription>How to integrate with OmniDesk API</CardDescription>
+      </CardHeader>
+      <CardContent className="text-sm space-y-4">
+        <div>
+          <p className="font-medium mb-2">Authentication:</p>
+          <p className="text-muted-foreground mb-2">All requests must include HMAC signature headers:</p>
+          <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
+            <li><code className="bg-muted px-1 rounded">X-Client-Id</code>: Your client ID</li>
+            <li><code className="bg-muted px-1 rounded">X-Timestamp</code>: Unix timestamp in milliseconds</li>
+            <li><code className="bg-muted px-1 rounded">X-Signature</code>: HMAC-SHA256 signature (hex)</li>
+          </ul>
+          <div className="mt-3 p-2 bg-muted rounded text-xs">
+            <p className="font-medium mb-1">Signature Calculation:</p>
+            <code>message = clientId + "." + timestamp + "." + requestBody</code><br/>
+            <code>signature = HMAC-SHA256(message, secretKey).toHex()</code>
+            <p className="mt-2 text-muted-foreground">Note: For POST requests, sign the exact raw JSON body you send.</p>
+          </div>
+        </div>
+        <Separator />
+        <div>
+          <p className="font-medium mb-2">Send Single Message:</p>
+          <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages</code>
+          <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
+  "request_id": "unique-id-123",
+  "phone_number": "628123456789",
+  "recipient_name": "John Doe",
+  "message": "Hello from my app!",
+  "priority": 0,
+  "scheduled_at": "2024-01-15T10:00:00Z",
+  "metadata": { "order_id": "12345" }
+}`}</pre>
+          <div className="mt-2 text-xs text-muted-foreground">
+            <p className="font-medium">Fields:</p>
+            <ul className="list-disc list-inside ml-2 space-y-1">
+              <li><code className="bg-muted px-1 rounded">request_id</code>: Unique ID (prevents duplicates)</li>
+              <li><code className="bg-muted px-1 rounded">phone_number</code>: WhatsApp number (without +)</li>
+              <li><code className="bg-muted px-1 rounded">recipient_name</code>: Optional, for personalization</li>
+              <li><code className="bg-muted px-1 rounded">message</code>: Message content</li>
+              <li><code className="bg-muted px-1 rounded">priority</code>: Optional (0-10, higher = sooner)</li>
+              <li><code className="bg-muted px-1 rounded">scheduled_at</code>: Optional ISO datetime</li>
+            </ul>
+          </div>
+        </div>
+        <Separator />
+        <div>
+          <p className="font-medium mb-2">Send Batch Messages:</p>
+          <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages/batch</code>
+          <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
+  "messages": [
+    { "request_id": "1", "phone_number": "628123456789", "message": "Hello 1" },
+    { "request_id": "2", "phone_number": "628987654321", "message": "Hello 2" }
+  ]
+}`}</pre>
+        </div>
+        <Separator />
+        <div>
+          <p className="font-medium mb-2">Rate Limiting:</p>
+          <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
+            <li>Per-minute and daily limits configured per API client</li>
+            <li>Response headers include remaining quota</li>
+            <li>Messages are queued and sent with 1-5 minute delays</li>
+            <li>Sending hours: 7 AM - 9 PM (Jakarta time)</li>
+          </ul>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}

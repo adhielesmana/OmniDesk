@@ -1,9 +1,7 @@
-import { useState } from "react";
-import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send, Megaphone, Bot, Key, FileText, ChevronDown, ChevronRight } from "lucide-react";
+import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send, Megaphone, Bot } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Link, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -16,9 +14,6 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
   SidebarFooter,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
@@ -43,7 +38,6 @@ interface AppSidebarProps {
   onSelectPlatform: (platform: Platform | "all") => void;
   unreadCounts: Record<Platform | "all", number>;
   onSettingsClick: () => void;
-  onAutoReplyClick?: () => void;
 }
 
 export function AppSidebar({
@@ -51,11 +45,9 @@ export function AppSidebar({
   onSelectPlatform,
   unreadCounts,
   onSettingsClick,
-  onAutoReplyClick,
 }: AppSidebarProps) {
   const [location, setLocation] = useLocation();
   const { isAdmin } = useAuth();
-  const [apiMenuOpen, setApiMenuOpen] = useState(false);
   
   const { data: branding } = useQuery<BrandingData>({
     queryKey: ["/api/admin/branding"],
@@ -242,56 +234,21 @@ export function AppSidebar({
                     </SidebarMenuButton>
                   </SidebarMenuItem>
 
-                  <Collapsible open={apiMenuOpen} onOpenChange={setApiMenuOpen}>
-                    <SidebarMenuItem>
-                      <CollapsibleTrigger asChild>
-                        <SidebarMenuButton data-testid="button-api-message">
-                          <Send className="h-5 w-5" />
-                          <span className="flex-1">API Message</span>
-                          {apiMenuOpen ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </SidebarMenuButton>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent>
-                        <SidebarMenuSub>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton 
-                              onClick={() => setLocation("/admin?tab=api-clients")}
-                              data-testid="button-api-key"
-                            >
-                              <Key className="h-4 w-4" />
-                              <span>API Key</span>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton 
-                              onClick={() => setLocation("/admin?tab=api-docs")}
-                              data-testid="button-api-docs"
-                            >
-                              <FileText className="h-4 w-4" />
-                              <span>API Documentation</span>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton 
-                              onClick={() => setLocation("/admin?tab=api-queue")}
-                              data-testid="button-api-queue"
-                            >
-                              <Send className="h-4 w-4" />
-                              <span>API Queue</span>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                      </CollapsibleContent>
-                    </SidebarMenuItem>
-                  </Collapsible>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      onClick={() => setLocation("/api-message")}
+                      isActive={location === "/api-message"}
+                      data-testid="button-api-message"
+                    >
+                      <Send className="h-5 w-5" />
+                      <span>API Message</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
 
                   <SidebarMenuItem>
                     <SidebarMenuButton 
-                      onClick={onAutoReplyClick}
+                      onClick={() => setLocation("/autoreply")}
+                      isActive={location === "/autoreply"}
                       data-testid="button-autoreply"
                     >
                       <Bot className="h-5 w-5" />

@@ -12,6 +12,8 @@ const ContactsPage = lazy(() => import("@/pages/contacts"));
 const LoginPage = lazy(() => import("@/pages/login"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const BlastPage = lazy(() => import("@/pages/blast"));
+const ApiMessagePage = lazy(() => import("@/pages/api-message"));
+const AutoReplyPage = lazy(() => import("@/pages/autoreply"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function ProtectedRoute({ component: Component, adminOnly = false }: { component: React.ComponentType; adminOnly?: boolean }) {
@@ -71,6 +73,12 @@ function Router() {
       </Route>
       <Route path="/blast">
         <ProtectedRoute component={BlastPage} adminOnly />
+      </Route>
+      <Route path="/api-message">
+        <ProtectedRoute component={ApiMessagePage} adminOnly />
+      </Route>
+      <Route path="/autoreply">
+        <ProtectedRoute component={AutoReplyPage} adminOnly />
       </Route>
       <Route component={NotFound} />
     </Switch>
