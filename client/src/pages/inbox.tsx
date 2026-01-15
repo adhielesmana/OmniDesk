@@ -175,14 +175,21 @@ function InboxContent({
     },
   });
 
+  // Use ref to access mutation without triggering re-renders
+  const sendMessageMutationRef = useRef(sendMessageMutation);
+  sendMessageMutationRef.current = sendMessageMutation;
+
   const handleSendMessage = useCallback((content: string, mediaUrl?: string) => {
     if (!selectedConversationId) return;
-    sendMessageMutation.mutate({
+    sendMessageMutationRef.current.mutate({
       conversationId: selectedConversationId,
       content,
       mediaUrl,
     });
-  }, [selectedConversationId, sendMessageMutation]);
+  }, [selectedConversationId]);
+
+  // Memoize isSending to prevent re-renders when other mutation state changes
+  const isSending = sendMessageMutation.isPending;
 
   const handleTestConnection = async (platform: Platform): Promise<boolean> => {
     try {
@@ -341,7 +348,7 @@ function InboxContent({
                   <MessageThread
                     conversation={selectedConversation || null}
                     onSendMessage={handleSendMessage}
-                    isSending={sendMessageMutation.isPending}
+                    isSending={isSending}
                     isLoading={isLoadingConversation}
                     hideHeader
                   />
@@ -374,7 +381,7 @@ function InboxContent({
             <MessageThread
               conversation={selectedConversation || null}
               onSendMessage={handleSendMessage}
-              isSending={sendMessageMutation.isPending}
+              isSending={isSending}
               isLoading={isLoadingConversation}
             />
           </div>

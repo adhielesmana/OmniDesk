@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo, memo } from "react";
 import { useLocation } from "wouter";
 import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -67,7 +67,7 @@ function shouldShowDateSeparator(
   );
 }
 
-export function MessageThread({
+export const MessageThread = memo(function MessageThread({
   conversation,
   onSendMessage,
   isSending,
@@ -369,4 +369,4 @@ export function MessageThread({
       />
     </div>
   );
-}
+});
