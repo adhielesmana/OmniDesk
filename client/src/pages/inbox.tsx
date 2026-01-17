@@ -55,6 +55,7 @@ function InboxContent({
       
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
+        // Longer debounce to prevent typing lag from constant refetches
         if (pendingInvalidationsRef.current.has("conversations")) {
           queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
         }
@@ -64,7 +65,7 @@ function InboxContent({
           });
         }
         pendingInvalidationsRef.current.clear();
-      }, 500);
+      }, 1000); // Increased from 500ms to reduce typing lag
     }
   }, [selectedConversationId]);
 
@@ -90,7 +91,8 @@ function InboxContent({
       queryKey: ["/api/conversations", selectedConversationId],
       enabled: !!selectedConversationId,
       initialData: cachedConversation || undefined,
-      staleTime: 5000, // Cache for 5 seconds to prevent constant refetching during typing
+      staleTime: 10000, // Cache for 10 seconds to prevent constant refetching during typing
+      gcTime: 30000, // Keep in cache for 30 seconds
       refetchOnWindowFocus: false, // Don't refetch on window focus to prevent typing interruption
     });
 
@@ -101,15 +103,28 @@ function InboxContent({
     }
   }, [selectedConversation]);
 
-  // Stable conversation reference - only update when message count or last message changes
+  // Stable conversation reference - only update when actual content changes
+  const prevConversationRef = useRef<ConversationWithMessages | null>(null);
   const stableConversation = useMemo(() => {
-    if (!selectedConversation) return null;
-    return selectedConversation;
-  }, [
-    selectedConversation?.id,
-    selectedConversation?.messages?.length,
-    selectedConversation?.messages?.[selectedConversation?.messages?.length - 1]?.id,
-  ]);
+    if (!selectedConversation) {
+      prevConversationRef.current = null;
+      return null;
+    }
+    
+    const prev = prevConversationRef.current;
+    // Only update reference if conversation changed meaningfully
+    const shouldUpdate = !prev ||
+      prev.id !== selectedConversation.id ||
+      prev.messages?.length !== selectedConversation.messages?.length ||
+      prev.messages?.[prev.messages?.length - 1]?.id !== selectedConversation.messages?.[selectedConversation.messages?.length - 1]?.id;
+    
+    if (shouldUpdate) {
+      prevConversationRef.current = selectedConversation;
+      return selectedConversation;
+    }
+    
+    return prev;
+  }, [selectedConversation]);
 
   const { data: platformSettings = [] } = useQuery<PlatformSettings[]>({
     queryKey: ["/api/platform-settings"],
