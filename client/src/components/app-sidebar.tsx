@@ -1,4 +1,4 @@
-import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send, Megaphone, Bot } from "lucide-react";
+import { MessageCircle, Settings, Archive, Star, Users, LogOut, Shield, Send, Megaphone, Bot, FileText } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -253,6 +253,17 @@ export function AppSidebar({
                     >
                       <Bot className="h-5 w-5" />
                       <span>Autoreply Message</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+
+                  <SidebarMenuItem>
+                    <SidebarMenuButton 
+                      onClick={() => setLocation("/templates")}
+                      isActive={location === "/templates"}
+                      data-testid="button-templates"
+                    >
+                      <FileText className="h-5 w-5" />
+                      <span>Templates</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
