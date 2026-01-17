@@ -642,8 +642,11 @@ export async function registerRoutes(
       if (message.status !== "failed") {
         return res.status(400).json({ error: "Only failed messages can be resent" });
       }
-      // Reset the message to queued status
-      await storage.updateApiMessageStatus(id, "queued", undefined);
+      // Reset the message to queued status and clear error message
+      await storage.updateApiMessage(id, {
+        status: "queued",
+        errorMessage: null,
+      });
       res.json({ success: true });
     } catch (error) {
       console.error("Error resending API message:", error);

@@ -713,6 +713,7 @@ async function processApiMessageQueue(): Promise<void> {
         contactId: contactId || null,
         conversationId: conversationId || null,
         sentAt: new Date(),
+        errorMessage: null, // Clear any previous error
       });
 
       console.log(`API queue: Sent message to ${message.phoneNumber} (request: ${message.requestId})`);

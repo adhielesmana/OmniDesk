@@ -734,7 +734,7 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                           <p className={`text-sm ${expandedMessage === msg.id ? "" : "line-clamp-2"}`}>
                             {msg.message}
                           </p>
-                          {msg.errorMessage && (
+                          {msg.status === "failed" && msg.errorMessage && (
                             <p className="text-sm text-destructive mt-1">{msg.errorMessage}</p>
                           )}
                         </div>
