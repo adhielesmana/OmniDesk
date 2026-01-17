@@ -1088,6 +1088,28 @@ wa.me/6208991066262`;
     }
   });
 
+  // Bulk sync all templates to Twilio (App -> Twilio) and clean up orphans
+  app.post("/api/admin/templates/sync-to-twilio", requireSuperadmin, async (req, res) => {
+    try {
+      const { deleteOrphans = true } = req.body;
+      const { bulkSyncDatabaseToTwilio } = await import("./twilio");
+      const result = await bulkSyncDatabaseToTwilio({ deleteOrphans });
+      
+      res.json({
+        success: result.success,
+        synced: result.synced,
+        deleted: result.deleted,
+        errors: result.errors,
+        message: result.success 
+          ? `Synced ${result.synced} templates to Twilio, deleted ${result.deleted} orphaned templates`
+          : `Sync failed with ${result.errors.length} errors`
+      });
+    } catch (error: any) {
+      console.error("Error bulk syncing to Twilio:", error);
+      res.status(500).json({ error: error.message || "Failed to sync to Twilio" });
+    }
+  });
+
   // Sync a single template to Twilio (App -> Twilio)
   app.post("/api/admin/templates/:id/sync-to-twilio", requireSuperadmin, async (req, res) => {
     try {
