@@ -412,6 +412,11 @@ export default function TemplatesPage() {
                             {getTwilioStatusBadge(template)}
                           </div>
                           <CardDescription className="mt-1">{template.description}</CardDescription>
+                          {template.twilioContentSid && (
+                            <p className="text-xs text-muted-foreground mt-1 font-mono">
+                              SID: {template.twilioContentSid}
+                            </p>
+                          )}
                           {template.twilioRejectionReason && (
                             <p className="text-xs text-destructive mt-1">Rejection: {template.twilioRejectionReason}</p>
                           )}

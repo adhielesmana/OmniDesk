@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { 
@@ -25,12 +26,22 @@ interface ApiClient {
   clientId: string;
   isActive: boolean;
   aiPrompt: string | null;
+  defaultTemplateId: string | null;
   ipWhitelist: string[] | null;
   rateLimitPerMinute: number;
   rateLimitPerDay: number;
   createdAt: Date;
   lastRequestAt: Date | null;
   requestCountToday: number;
+}
+
+interface MessageTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  twilioContentSid: string | null;
+  twilioApprovalStatus: string | null;
+  isActive: boolean;
 }
 
 interface ApiClientWithSecret extends ApiClient {
@@ -115,6 +126,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   const [formData, setFormData] = useState({
     name: "",
     aiPrompt: "",
+    defaultTemplateId: "" as string,
     ipWhitelist: "",
     rateLimitPerMinute: 60,
     rateLimitPerDay: 1000,
@@ -125,8 +137,13 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     queryKey: ["/api/admin/api-clients"],
   });
 
+  // Fetch templates for the selector
+  const { data: templates = [] } = useQuery<MessageTemplate[]>({
+    queryKey: ["/api/admin/templates"],
+  });
+
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; aiPrompt?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+    mutationFn: async (data: { name: string; aiPrompt?: string; defaultTemplateId?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
       const res = await apiRequest("POST", "/api/admin/api-clients", data);
       return res.json();
     },
@@ -134,7 +151,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
       setShowCreateDialog(false);
       setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
-      setFormData({ name: "", aiPrompt: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
+      setFormData({ name: "", aiPrompt: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
       toast({ title: "API client created successfully" });
     },
     onError: () => {
@@ -143,7 +160,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name?: string; aiPrompt?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; aiPrompt?: string | null; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
       return res.json();
     },
@@ -198,6 +215,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     createMutation.mutate({
       name: formData.name,
       aiPrompt: formData.aiPrompt.trim() || undefined,
+      defaultTemplateId: formData.defaultTemplateId || undefined,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
@@ -213,6 +231,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       id: editingClient.id,
       name: formData.name,
       aiPrompt: formData.aiPrompt.trim() || null,
+      defaultTemplateId: formData.defaultTemplateId || null,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
@@ -224,6 +243,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     setFormData({
       name: client.name,
       aiPrompt: client.aiPrompt || "",
+      defaultTemplateId: client.defaultTemplateId || "",
       ipWhitelist: client.ipWhitelist?.join(", ") || "",
       rateLimitPerMinute: client.rateLimitPerMinute,
       rateLimitPerDay: client.rateLimitPerDay,
@@ -275,6 +295,34 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                       data-testid="input-api-ai-prompt"
                     />
                     <p className="text-xs text-muted-foreground">Use {"{{recipient_name}}"} to insert the recipient's name</p>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="defaultTemplate">Default WhatsApp Template</Label>
+                    <Select
+                      value={formData.defaultTemplateId}
+                      onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
+                    >
+                      <SelectTrigger data-testid="select-api-default-template">
+                        <SelectValue placeholder="Select a template..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templates
+                          .filter(t => t.isActive && t.twilioContentSid)
+                          .map(template => (
+                            <SelectItem key={template.id} value={template.id}>
+                              <div className="flex items-center gap-2">
+                                <span>{template.name}</span>
+                                {template.twilioApprovalStatus === "approved" ? (
+                                  <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600">Approved</Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600">Pending</Badge>
+                                )}
+                              </div>
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Only approved templates with Twilio SID can be used</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated)</Label>
@@ -443,6 +491,33 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                 rows={4}
                 data-testid="input-edit-api-ai-prompt"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-defaultTemplate">Default WhatsApp Template</Label>
+              <Select
+                value={formData.defaultTemplateId}
+                onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
+              >
+                <SelectTrigger data-testid="select-edit-api-default-template">
+                  <SelectValue placeholder="Select a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates
+                    .filter(t => t.isActive && t.twilioContentSid)
+                    .map(template => (
+                      <SelectItem key={template.id} value={template.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{template.name}</span>
+                          {template.twilioApprovalStatus === "approved" ? (
+                            <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600">Approved</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-xs bg-yellow-500/10 text-yellow-600">Pending</Badge>
+                          )}
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-ipWhitelist">Allowed IP Addresses</Label>
