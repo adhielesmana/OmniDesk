@@ -4,6 +4,7 @@
 import twilio from 'twilio';
 import type { Twilio } from 'twilio';
 import { storage } from './storage';
+import { handleAutoReply } from './autoreply';
 
 let twilioClient: Twilio | null = null;
 let twilioFromNumber: string | null = null;
@@ -319,6 +320,27 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   });
   
   console.log(`[Twilio] Message saved to conversation ${conversation.id}`);
+  
+  // Trigger auto-reply using Twilio to send (fire and forget - don't await to not block response)
+  const twilioSendFn = async (to: string, content: string) => {
+    try {
+      const result = await sendWhatsAppMessage(to, content);
+      return { success: result.success, messageId: result.messageId };
+    } catch (error) {
+      console.error('[Twilio] Auto-reply send error:', error);
+      return { success: false };
+    }
+  };
+  
+  handleAutoReply(
+    conversation,
+    contact,
+    Body || '',
+    twilioSendFn,
+    'whatsapp'
+  ).catch((err) => {
+    console.error('[Twilio] Auto-reply error:', err);
+  });
 }
 
 // Update message status from Twilio status callback
