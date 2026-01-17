@@ -408,6 +408,7 @@ function convertVariablesToTwilio(content: string, variables: string[]): {
 }
 
 // Create a template in Twilio Content API
+// NOTE: Twilio SDK does NOT support template creation - must use direct HTTP requests
 export async function syncTemplateToTwilio(
   templateName: string,
   content: string,
@@ -419,16 +420,17 @@ export async function syncTemplateToTwilio(
   error?: string;
 }> {
   try {
-    const client = await getTwilioClient();
     const creds = await getCredentials();
+    if (!creds) {
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
     
     // Convert variables to Twilio format
     const { twilioContent, defaultValues } = convertVariablesToTwilio(content, variables);
     
-    // Create template via Content API
-    // Note: Twilio SDK v3+ uses content.v1.content.create()
-    const contentPayload: any = {
-      friendlyName: templateName,
+    // Build payload for Content API
+    const payload: any = {
+      friendly_name: templateName,
       language: language,
       types: {
         'twilio/text': {
@@ -439,16 +441,36 @@ export async function syncTemplateToTwilio(
     
     // Add variable defaults if we have variables
     if (variables.length > 0) {
-      contentPayload.variables = defaultValues;
+      payload.variables = defaultValues;
     }
     
-    const templateResponse = await client.content.v1.contents.create(contentPayload);
+    // Use direct HTTP request since SDK doesn't support template creation
+    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
     
-    console.log(`[Twilio Content] Template created: ${templateResponse.sid}`);
+    const response = await fetch('https://content.twilio.com/v1/Content', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      },
+      body: JSON.stringify(payload)
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('[Twilio Content] API error:', result);
+      return {
+        success: false,
+        error: result.message || result.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
+    
+    console.log(`[Twilio Content] Template created: ${result.sid}`);
     
     return {
       success: true,
-      contentSid: templateResponse.sid
+      contentSid: result.sid
     };
   } catch (error: any) {
     console.error('[Twilio Content] Error creating template:', error);
@@ -460,34 +482,44 @@ export async function syncTemplateToTwilio(
 }
 
 // Submit template for WhatsApp approval
-// ApprovalCreate response format from Twilio SDK:
-// {
-//   name: string,
-//   category: string,
-//   contentType: string,
-//   status: string,  // "received", "pending", etc.
-//   rejectionReason: string,
-//   allowCategoryChange: boolean
-// }
+// Uses direct HTTP request to Twilio Content API
 export async function submitTemplateForApproval(contentSid: string): Promise<{
   success: boolean;
   status?: string;
   error?: string;
 }> {
   try {
-    const client = await getTwilioClient();
+    const creds = await getCredentials();
+    if (!creds) {
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
     
-    // Submit for WhatsApp approval using correct SDK method
-    // Path: client.content.v1.contents(contentSid).approvalRequests('whatsapp').create()
-    const approval = await client.content.v1.contents(contentSid)
-      .approvalRequests('whatsapp')
-      .create();
+    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
+    
+    // Submit for WhatsApp approval via HTTP
+    const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests/whatsapp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${authString}`
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('[Twilio Content] Approval API error:', result);
+      return {
+        success: false,
+        error: result.message || result.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
     
     // Log the full response for debugging
-    console.log(`[Twilio Content] Template ${contentSid} submitted for WhatsApp approval:`, JSON.stringify(approval, null, 2));
+    console.log(`[Twilio Content] Template ${contentSid} submitted for WhatsApp approval:`, JSON.stringify(result, null, 2));
     
-    // ApprovalCreate response has status at top level
-    const status = (approval as any).status;
+    // Response has status at top level
+    const status = result.status;
     
     if (!status) {
       console.warn(`[Twilio Content] No status in approval response, defaulting to 'received'`);
@@ -507,20 +539,7 @@ export async function submitTemplateForApproval(contentSid: string): Promise<{
 }
 
 // Check template approval status
-// ApprovalFetch response format from Twilio SDK:
-// {
-//   sid: string,
-//   accountSid: string,
-//   url: string,
-//   whatsapp: {
-//     name: string,
-//     category: string,
-//     content_type: string,
-//     status: "received" | "pending" | "approved" | "rejected" | "paused" | "disabled",
-//     rejection_reason: string,
-//     allow_category_change: boolean
-//   }
-// }
+// Uses direct HTTP request to Twilio Content API
 export async function getTemplateApprovalStatus(contentSid: string): Promise<{
   success: boolean;
   status?: string;
@@ -528,19 +547,36 @@ export async function getTemplateApprovalStatus(contentSid: string): Promise<{
   error?: string;
 }> {
   try {
-    const client = await getTwilioClient();
+    const creds = await getCredentials();
+    if (!creds) {
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
     
-    // Fetch approval status - response has whatsapp object containing status
-    // Path: client.content.v1.contents(contentSid).approvalRequests().fetch()
-    const approval = await client.content.v1.contents(contentSid)
-      .approvalRequests()
-      .fetch();
+    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
+    
+    // Fetch approval status via HTTP
+    const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${authString}`
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('[Twilio Content] Status fetch API error:', result);
+      return {
+        success: false,
+        error: result.message || result.error || `HTTP ${response.status}: ${response.statusText}`
+      };
+    }
     
     // Log for debugging
-    console.log(`[Twilio Content] Approval status for ${contentSid}:`, JSON.stringify(approval, null, 2));
+    console.log(`[Twilio Content] Approval status for ${contentSid}:`, JSON.stringify(result, null, 2));
     
-    // ApprovalFetch response has status in whatsapp object (confirmed from SDK types)
-    const whatsapp = (approval as any).whatsapp;
+    // Response has whatsapp object containing status
+    const whatsapp = result.whatsapp;
     
     if (!whatsapp) {
       console.warn(`[Twilio Content] No whatsapp object in approval response for ${contentSid}`);
