@@ -673,3 +673,282 @@ export async function deleteTemplateFromTwilio(contentSid: string): Promise<{
     };
   }
 }
+
+// List all templates from Twilio Content API
+export async function listTwilioTemplates(): Promise<{
+  success: boolean;
+  templates?: Array<{
+    sid: string;
+    friendlyName: string;
+    language: string;
+    body?: string;
+    variables?: Record<string, string>;
+    whatsappStatus?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }>;
+  error?: string;
+}> {
+  try {
+    const auth = await getAuthForHttp();
+    if (!auth) {
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
+    
+    const response = await fetch('https://content.twilio.com/v1/Content', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${auth.authString}`
+      }
+    });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('[Twilio Content] List templates error:', result);
+      return {
+        success: false,
+        error: result.message || result.error || `HTTP ${response.status}`
+      };
+    }
+    
+    const templates = (result.contents || []).map((content: any) => ({
+      sid: content.sid,
+      friendlyName: content.friendly_name,
+      language: content.language || 'en',
+      body: content.types?.['twilio/text']?.body || content.types?.['twilio/quick-reply']?.body || '',
+      variables: content.variables || {},
+      whatsappStatus: content.approval_requests?.whatsapp?.status || 'unknown',
+      createdAt: content.date_created,
+      updatedAt: content.date_updated
+    }));
+    
+    console.log(`[Twilio Content] Found ${templates.length} templates`);
+    return { success: true, templates };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error listing templates:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to list templates from Twilio'
+    };
+  }
+}
+
+// Get single template details from Twilio
+export async function getTwilioTemplate(contentSid: string): Promise<{
+  success: boolean;
+  template?: {
+    sid: string;
+    friendlyName: string;
+    language: string;
+    body?: string;
+    variables?: Record<string, string>;
+    whatsappStatus?: string;
+  };
+  error?: string;
+}> {
+  try {
+    const auth = await getAuthForHttp();
+    if (!auth) {
+      return { success: false, error: 'Twilio credentials not configured' };
+    }
+    
+    const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${auth.authString}`
+      }
+    });
+    
+    const content = await response.json();
+    
+    if (!response.ok) {
+      console.error('[Twilio Content] Get template error:', content);
+      return {
+        success: false,
+        error: content.message || content.error || `HTTP ${response.status}`
+      };
+    }
+    
+    // Also get approval status
+    const approvalResult = await getTemplateApprovalStatus(contentSid);
+    
+    return {
+      success: true,
+      template: {
+        sid: content.sid,
+        friendlyName: content.friendly_name,
+        language: content.language || 'en',
+        body: content.types?.['twilio/text']?.body || '',
+        variables: content.variables || {},
+        whatsappStatus: approvalResult.status || 'unknown'
+      }
+    };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error getting template:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to get template from Twilio'
+    };
+  }
+}
+
+// Sync all Twilio templates to database (Twilio -> App)
+export async function syncTwilioToDatabase(): Promise<{
+  success: boolean;
+  synced: number;
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  let synced = 0;
+  
+  try {
+    const listResult = await listTwilioTemplates();
+    if (!listResult.success || !listResult.templates) {
+      return { success: false, synced: 0, errors: [listResult.error || 'Failed to list templates'] };
+    }
+    
+    const { storage } = await import('./storage');
+    
+    for (const twilioTemplate of listResult.templates) {
+      try {
+        // Try to find matching template by ContentSid first
+        const allTemplates = await storage.getAllMessageTemplates();
+        let existingTemplate = allTemplates.find(t => t.twilioContentSid === twilioTemplate.sid);
+        
+        // If not found by SID, try to match by friendly name (strip timestamp suffix)
+        if (!existingTemplate) {
+          const baseName = twilioTemplate.friendlyName.replace(/_\d+$/, '');
+          existingTemplate = allTemplates.find(t => t.name === baseName);
+        }
+        
+        if (existingTemplate) {
+          // Update existing template
+          await storage.updateMessageTemplate(existingTemplate.id, {
+            twilioContentSid: twilioTemplate.sid,
+            twilioApprovalStatus: twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
+                                   twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
+            twilioSyncedAt: new Date(),
+            content: twilioTemplate.body || existingTemplate.content
+          });
+          console.log(`[Sync] Updated template ${existingTemplate.name} from Twilio`);
+          synced++;
+        } else {
+          // Create new template in database
+          const baseName = twilioTemplate.friendlyName.replace(/_\d+$/, '');
+          await storage.createMessageTemplate({
+            name: baseName,
+            content: twilioTemplate.body || '',
+            variables: Object.keys(twilioTemplate.variables || {}),
+            isActive: true,
+            twilioContentSid: twilioTemplate.sid,
+            twilioApprovalStatus: twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
+                                   twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
+            twilioSyncedAt: new Date()
+          });
+          console.log(`[Sync] Created template ${baseName} from Twilio`);
+          synced++;
+        }
+      } catch (err: any) {
+        errors.push(`Error syncing ${twilioTemplate.friendlyName}: ${err.message}`);
+      }
+    }
+    
+    return { success: true, synced, errors };
+  } catch (error: any) {
+    return { success: false, synced, errors: [error.message] };
+  }
+}
+
+// Sync database template to Twilio (App -> Twilio)
+export async function syncDatabaseToTwilio(templateId: string): Promise<{
+  success: boolean;
+  contentSid?: string;
+  status?: string;
+  error?: string;
+}> {
+  try {
+    const { storage } = await import('./storage');
+    const template = await storage.getMessageTemplateById(templateId);
+    
+    if (!template) {
+      return { success: false, error: 'Template not found' };
+    }
+    
+    // If template already has a ContentSid, check if we need to update
+    if (template.twilioContentSid) {
+      // Delete old template and create new one (Twilio doesn't support updates)
+      await deleteTemplateFromTwilio(template.twilioContentSid);
+    }
+    
+    // Create new template in Twilio
+    const createResult = await syncTemplateToTwilio(
+      template.name,
+      template.content,
+      template.variables || [],
+      'id' // Indonesian
+    );
+    
+    if (!createResult.success) {
+      return { success: false, error: createResult.error };
+    }
+    
+    // Submit for WhatsApp approval
+    const approvalResult = await submitTemplateForApproval(createResult.contentSid!);
+    
+    // Update database with new ContentSid
+    await storage.updateMessageTemplate(templateId, {
+      twilioContentSid: createResult.contentSid,
+      twilioApprovalStatus: approvalResult.status === 'approved' ? 'approved' : 'pending',
+      twilioSyncedAt: new Date()
+    });
+    
+    console.log(`[Sync] Synced template ${template.name} to Twilio: ${createResult.contentSid}`);
+    
+    return {
+      success: true,
+      contentSid: createResult.contentSid,
+      status: approvalResult.status
+    };
+  } catch (error: any) {
+    console.error('[Sync] Error syncing to Twilio:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Refresh approval status for a template
+export async function refreshTemplateStatus(templateId: string): Promise<{
+  success: boolean;
+  status?: string;
+  error?: string;
+}> {
+  try {
+    const { storage } = await import('./storage');
+    const template = await storage.getMessageTemplateById(templateId);
+    
+    if (!template || !template.twilioContentSid) {
+      return { success: false, error: 'Template not found or not synced to Twilio' };
+    }
+    
+    const statusResult = await getTemplateApprovalStatus(template.twilioContentSid);
+    
+    if (!statusResult.success) {
+      return { success: false, error: statusResult.error };
+    }
+    
+    // Update database with new status
+    const approvalStatus = statusResult.status === 'approved' ? 'approved' : 
+                           statusResult.status === 'rejected' ? 'rejected' : 'pending';
+    
+    await storage.updateMessageTemplate(templateId, {
+      twilioApprovalStatus: approvalStatus,
+      twilioSyncedAt: new Date()
+    });
+    
+    console.log(`[Sync] Refreshed status for ${template.name}: ${approvalStatus}`);
+    
+    return { success: true, status: approvalStatus };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}

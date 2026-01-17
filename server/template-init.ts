@@ -47,9 +47,21 @@ export async function initializeTwilioTemplates(): Promise<void> {
     // Signs it needs recreation:
     // 1. Has ContentSid but content contains [variable_name] format (broken template)
     // 2. ContentSid is null/empty but template exists
+    // 3. NOT already approved with proper {{1}} variables
+    const hasProperVariables = template.content && 
+      template.content.includes('{{1}}') && 
+      template.content.includes('{{2}}');
+    const isApproved = template.twilioApprovalStatus === 'approved';
+    
     const needsRecreation = !template.twilioContentSid || 
       (template.content && template.content.includes('[recipient_name]')) ||
       (template.content && template.content.includes('[invoice_number]'));
+
+    // Skip if already approved with proper variables
+    if (hasProperVariables && isApproved && template.twilioContentSid) {
+      console.log(`[Template Init] Template ${template.twilioContentSid} already approved with proper variables`);
+      return;
+    }
 
     if (!needsRecreation) {
       console.log(`[Template Init] Template ${template.twilioContentSid} already properly configured`);

@@ -1052,6 +1052,89 @@ wa.me/6208991066262`;
     }
   });
 
+  // Sync templates from Twilio to database (Twilio -> App)
+  app.post("/api/admin/templates/sync-from-twilio", requireSuperadmin, async (req, res) => {
+    try {
+      const { syncTwilioToDatabase } = await import("./twilio");
+      const result = await syncTwilioToDatabase();
+      
+      res.json({
+        success: result.success,
+        synced: result.synced,
+        errors: result.errors,
+        message: result.success 
+          ? `Successfully synced ${result.synced} templates from Twilio`
+          : `Sync failed with ${result.errors.length} errors`
+      });
+    } catch (error: any) {
+      console.error("Error syncing from Twilio:", error);
+      res.status(500).json({ error: error.message || "Failed to sync from Twilio" });
+    }
+  });
+
+  // Sync a single template to Twilio (App -> Twilio)
+  app.post("/api/admin/templates/:id/sync-to-twilio", requireSuperadmin, async (req, res) => {
+    try {
+      const { syncDatabaseToTwilio } = await import("./twilio");
+      const result = await syncDatabaseToTwilio(req.params.id);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+      
+      res.json({
+        success: true,
+        contentSid: result.contentSid,
+        status: result.status,
+        message: `Template synced to Twilio. ContentSid: ${result.contentSid}, Status: ${result.status}`
+      });
+    } catch (error: any) {
+      console.error("Error syncing to Twilio:", error);
+      res.status(500).json({ error: error.message || "Failed to sync to Twilio" });
+    }
+  });
+
+  // Refresh template approval status from Twilio
+  app.post("/api/admin/templates/:id/refresh-status", requireSuperadmin, async (req, res) => {
+    try {
+      const { refreshTemplateStatus } = await import("./twilio");
+      const result = await refreshTemplateStatus(req.params.id);
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+      
+      res.json({
+        success: true,
+        status: result.status,
+        message: `Template status refreshed: ${result.status}`
+      });
+    } catch (error: any) {
+      console.error("Error refreshing status:", error);
+      res.status(500).json({ error: error.message || "Failed to refresh status" });
+    }
+  });
+
+  // List all templates from Twilio
+  app.get("/api/admin/twilio-templates", requireSuperadmin, async (req, res) => {
+    try {
+      const { listTwilioTemplates } = await import("./twilio");
+      const result = await listTwilioTemplates();
+      
+      if (!result.success) {
+        return res.status(400).json({ error: result.error });
+      }
+      
+      res.json({
+        success: true,
+        templates: result.templates
+      });
+    } catch (error: any) {
+      console.error("Error listing Twilio templates:", error);
+      res.status(500).json({ error: error.message || "Failed to list Twilio templates" });
+    }
+  });
+
   // Export all templates as JSON
   app.get("/api/admin/templates/export", requireSuperadmin, async (req, res) => {
     try {
