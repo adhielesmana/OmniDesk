@@ -215,7 +215,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     createMutation.mutate({
       name: formData.name,
       aiPrompt: formData.aiPrompt.trim() || undefined,
-      defaultTemplateId: formData.defaultTemplateId || undefined,
+      defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : undefined,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
@@ -231,7 +231,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       id: editingClient.id,
       name: formData.name,
       aiPrompt: formData.aiPrompt.trim() || null,
-      defaultTemplateId: formData.defaultTemplateId || null,
+      defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : null,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
@@ -306,6 +306,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                         <SelectValue placeholder="Select a template..." />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">No template (use 3-tier selection)</SelectItem>
                         {templates
                           .filter(t => t.isActive && t.twilioContentSid)
                           .map(template => (
@@ -322,7 +323,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                           ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">Only approved templates with Twilio SID can be used</p>
+                    <p className="text-xs text-muted-foreground">Select a template or leave empty for automatic selection</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated)</Label>
@@ -411,6 +412,12 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                         <div className="text-xs text-muted-foreground space-y-1">
                           <p>Rate limit: {client.rateLimitPerMinute}/min | Daily: {client.rateLimitPerDay}</p>
                           <p>Today: {client.requestCountToday} requests</p>
+                          {client.defaultTemplateId && (
+                            <p className="flex items-center gap-1">
+                              <FileText className="h-3 w-3" />
+                              Template: {templates.find(t => t.id === client.defaultTemplateId)?.name || 'Unknown'}
+                            </p>
+                          )}
                           {client.ipWhitelist && client.ipWhitelist.length > 0 && (
                             <p>Allowed IPs: {client.ipWhitelist.join(", ")}</p>
                           )}
@@ -502,6 +509,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                   <SelectValue placeholder="Select a template..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">No template (use 3-tier selection)</SelectItem>
                   {templates
                     .filter(t => t.isActive && t.twilioContentSid)
                     .map(template => (

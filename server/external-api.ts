@@ -450,26 +450,44 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     let matchedTemplateName: string | null = null;
     let matchedBy: string | null = null;
 
-    // Use 3-tier template selection: messageType → trigger rules → default
+    // Import template functions
     const { selectTemplate, renderTemplate } = await import('./template-selector');
-    
-    // Build context for template selection
     const meta = (metadata && typeof metadata === 'object') ? metadata as Record<string, any> : {};
-    const templateContext = {
-      messageType: meta.messageType,
-      message: message,
-      variables: {
-        recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
-        invoice_number: meta.invoice_number || '',
-        grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
-        invoice_url: message,
-        phone_number: phone_number,
-        ...meta,
-      }
-    };
     
-    // Select template using 3-tier priority
-    const selectionResult = await selectTemplate(templateContext);
+    // Priority 0: Check if client has a default template assigned
+    let selectionResult: { template: any | null; matchedBy: string | null } = { template: null, matchedBy: null };
+    
+    if (client.defaultTemplateId) {
+      // Client has a specific template assigned - use it directly
+      const { storage } = await import('./storage');
+      const clientTemplate = await storage.getMessageTemplate(client.defaultTemplateId);
+      // Only use if template is active, has Twilio SID, and is approved
+      if (clientTemplate && clientTemplate.isActive && clientTemplate.twilioContentSid && clientTemplate.twilioApprovalStatus === 'approved') {
+        selectionResult = { template: clientTemplate, matchedBy: 'client_default' };
+        console.log(`API queue: Using client's default template "${clientTemplate.name}" for request ${request_id}`);
+      } else if (clientTemplate) {
+        console.log(`API queue: Client template "${clientTemplate.name}" not usable (active=${clientTemplate.isActive}, sid=${clientTemplate.twilioContentSid}, status=${clientTemplate.twilioApprovalStatus})`);
+      }
+    }
+    
+    // If no client template, use 3-tier selection: messageType → trigger rules → default
+    if (!selectionResult.template) {
+      const templateContext = {
+        messageType: meta.messageType,
+        message: message,
+        variables: {
+          recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
+          invoice_number: meta.invoice_number || '',
+          grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
+          invoice_url: message,
+          phone_number: phone_number,
+          ...meta,
+        }
+      };
+      
+      // Select template using 3-tier priority
+      selectionResult = await selectTemplate(templateContext);
+    }
     
     if (selectionResult.template) {
       const template = selectionResult.template;

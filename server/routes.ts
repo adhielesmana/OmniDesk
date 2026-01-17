@@ -505,12 +505,14 @@ export async function registerRoutes(
       const secretKey = generateSecretKey();
       const secretHash = encryptSecret(secretKey);
 
+      const { defaultTemplateId } = req.body;
       const newClient = await storage.createApiClient({
         name: name.trim(),
         clientId,
         secretHash,
         isActive: true,
         aiPrompt: aiPrompt?.trim() || null,
+        defaultTemplateId: defaultTemplateId || null,
         rateLimitPerMinute: rateLimitPerMinute || 60,
         rateLimitPerDay: rateLimitPerDay || 1000,
         ipWhitelist: ipWhitelist || null,
@@ -537,7 +539,7 @@ export async function registerRoutes(
   app.patch("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, aiPrompt, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      const { name, aiPrompt, defaultTemplateId, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
 
       const client = await storage.getApiClient(id);
       if (!client) {
@@ -547,6 +549,7 @@ export async function registerRoutes(
       const updateData: Record<string, any> = {};
       if (name !== undefined) updateData.name = name;
       if (aiPrompt !== undefined) updateData.aiPrompt = aiPrompt;
+      if (defaultTemplateId !== undefined) updateData.defaultTemplateId = defaultTemplateId;
       if (isActive !== undefined) updateData.isActive = isActive;
       if (rateLimitPerMinute !== undefined) updateData.rateLimitPerMinute = rateLimitPerMinute;
       if (rateLimitPerDay !== undefined) updateData.rateLimitPerDay = rateLimitPerDay;
