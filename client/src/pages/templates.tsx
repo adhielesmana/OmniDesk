@@ -14,14 +14,70 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2 } from "lucide-react";
+import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2, Download, Upload } from "lucide-react";
 import type { Platform, MessageTemplate } from "@shared/schema";
 
 export default function TemplatesPage() {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | "all">("all");
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importData, setImportData] = useState("");
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
   const { toast } = useToast();
+
+  const handleExport = async () => {
+    try {
+      const response = await fetch("/api/admin/templates/export", { credentials: "include" });
+      const data = await response.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `templates-export-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Templates exported successfully" });
+    } catch (error) {
+      toast({ title: "Failed to export templates", variant: "destructive" });
+    }
+  };
+
+  const importMutation = useMutation({
+    mutationFn: async ({ templates, overwrite }: { templates: unknown[]; overwrite: boolean }) => {
+      const res = await apiRequest("POST", "/api/admin/templates/import", { templates, overwrite });
+      return res.json() as Promise<{ imported: number; updated: number; skipped: number; errors: string[] }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      setIsImportOpen(false);
+      setImportData("");
+      const msg = [];
+      if (data.imported > 0) msg.push(`${data.imported} imported`);
+      if (data.updated > 0) msg.push(`${data.updated} updated`);
+      if (data.skipped > 0) msg.push(`${data.skipped} skipped`);
+      toast({ title: `Import complete: ${msg.join(", ")}` });
+    },
+    onError: () => {
+      toast({ title: "Failed to import templates", variant: "destructive" });
+    },
+  });
+
+  const handleImport = () => {
+    try {
+      const parsed = JSON.parse(importData);
+      const templates = parsed.templates || parsed;
+      if (!Array.isArray(templates)) {
+        toast({ title: "Invalid format: expected templates array", variant: "destructive" });
+        return;
+      }
+      importMutation.mutate({ templates, overwrite: overwriteExisting });
+    } catch {
+      toast({ title: "Invalid JSON format", variant: "destructive" });
+    }
+  };
 
   const { data: templates = [], isLoading } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/admin/templates"],
@@ -106,13 +162,62 @@ export default function TemplatesPage() {
                   <h2 className="text-xl font-semibold">Invoice & Notification Templates</h2>
                   <p className="text-muted-foreground text-sm">Manage message templates for automated notifications</p>
                 </div>
-                <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-                  <DialogTrigger asChild>
-                    <Button data-testid="button-create-template">
-                      <Plus className="h-4 w-4 mr-2" />
-                      Create Template
-                    </Button>
-                  </DialogTrigger>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                  </Button>
+                  <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" data-testid="button-import-templates">
+                        <Upload className="h-4 w-4 mr-2" />
+                        Import
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>Import Templates</DialogTitle>
+                        <DialogDescription>Paste the exported JSON or upload a file</DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div>
+                          <Label>Template JSON</Label>
+                          <Textarea
+                            value={importData}
+                            onChange={(e) => setImportData(e.target.value)}
+                            placeholder='Paste exported JSON here or {"templates": [...]}'
+                            className="font-mono text-sm h-64"
+                            data-testid="input-import-json"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={overwriteExisting}
+                            onCheckedChange={setOverwriteExisting}
+                            id="overwrite"
+                            data-testid="switch-overwrite"
+                          />
+                          <Label htmlFor="overwrite" className="text-sm">
+                            Overwrite existing templates with same name
+                          </Label>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setIsImportOpen(false)}>Cancel</Button>
+                        <Button onClick={handleImport} disabled={!importData.trim() || importMutation.isPending} data-testid="button-confirm-import">
+                          {importMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
+                          Import
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                  <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+                    <DialogTrigger asChild>
+                      <Button data-testid="button-create-template">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Create Template
+                      </Button>
+                    </DialogTrigger>
                   <DialogContent className="max-w-2xl">
                     <DialogHeader>
                       <DialogTitle>Create New Template</DialogTitle>
@@ -121,6 +226,7 @@ export default function TemplatesPage() {
                     <CreateTemplateForm onSubmit={(data) => createMutation.mutate(data)} isPending={createMutation.isPending} />
                   </DialogContent>
                 </Dialog>
+                </div>
               </div>
 
               {isLoading ? (

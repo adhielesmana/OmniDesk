@@ -737,6 +737,81 @@ export async function registerRoutes(
     }
   });
 
+  // Export all templates as JSON
+  app.get("/api/admin/templates/export", requireSuperadmin, async (req, res) => {
+    try {
+      const templates = await storage.getAllMessageTemplates();
+      // Remove id field for export (will be regenerated on import)
+      const exportData = templates.map(({ id, createdAt, updatedAt, ...rest }) => rest);
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename="templates-export.json"');
+      res.json({
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        templates: exportData,
+      });
+    } catch (error) {
+      console.error("Error exporting templates:", error);
+      res.status(500).json({ error: "Failed to export templates" });
+    }
+  });
+
+  // Import templates from JSON
+  app.post("/api/admin/templates/import", requireSuperadmin, async (req, res) => {
+    try {
+      const { templates, overwrite } = req.body;
+      
+      if (!Array.isArray(templates)) {
+        return res.status(400).json({ error: "Invalid import data: templates must be an array" });
+      }
+
+      const results = { imported: 0, skipped: 0, updated: 0, errors: [] as string[] };
+      
+      for (const template of templates) {
+        try {
+          // Check if template with same name exists
+          const existing = await storage.getMessageTemplateByName(template.name);
+          
+          if (existing) {
+            if (overwrite) {
+              // Update existing template
+              await storage.updateMessageTemplate(existing.id, {
+                content: template.content,
+                platform: template.platform,
+                category: template.category,
+                description: template.description,
+                variables: template.variables,
+                isActive: template.isActive ?? true,
+              });
+              results.updated++;
+            } else {
+              results.skipped++;
+            }
+          } else {
+            // Create new template
+            await storage.createMessageTemplate({
+              name: template.name,
+              content: template.content,
+              platform: template.platform || 'whatsapp',
+              category: template.category,
+              description: template.description,
+              variables: template.variables,
+              isActive: template.isActive ?? true,
+            });
+            results.imported++;
+          }
+        } catch (err) {
+          results.errors.push(`Failed to import "${template.name}": ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      res.json(results);
+    } catch (error) {
+      console.error("Error importing templates:", error);
+      res.status(500).json({ error: "Failed to import templates" });
+    }
+  });
+
   // ============= ADMIN USER MANAGEMENT =============
   app.get("/api/admin/users", requireAdmin, async (req, res) => {
     try {
