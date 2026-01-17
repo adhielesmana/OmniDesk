@@ -714,6 +714,31 @@ export async function registerRoutes(
         createdBy: req.user?.id,
       });
       
+      // Auto-sync to Twilio in background (don't block response)
+      (async () => {
+        try {
+          const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
+          const syncResult = await syncTemplateToTwilio(template);
+          if (syncResult.success && syncResult.contentSid) {
+            const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
+            const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
+            let approvalStatus = 'sync_only';
+            if (approvalResult.success) {
+              approvalStatus = approvalResult.status && validStatuses.includes(approvalResult.status) 
+                ? approvalResult.status : 'received';
+            }
+            await storage.updateMessageTemplate(template.id, {
+              twilioContentSid: syncResult.contentSid,
+              twilioApprovalStatus: approvalStatus,
+              twilioSyncedAt: new Date(),
+            } as any);
+            console.log(`[Twilio] Auto-synced template ${template.id}, status: ${approvalStatus}`);
+          }
+        } catch (err) {
+          console.error(`[Twilio] Auto-sync failed for template ${template.id}:`, err);
+        }
+      })();
+      
       res.status(201).json(template);
     } catch (error) {
       console.error("Error creating template:", error);
@@ -738,6 +763,31 @@ export async function registerRoutes(
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
       }
+      
+      // Auto-sync to Twilio in background (don't block response)
+      (async () => {
+        try {
+          const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
+          const syncResult = await syncTemplateToTwilio(template);
+          if (syncResult.success && syncResult.contentSid) {
+            const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
+            const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
+            let approvalStatus = 'sync_only';
+            if (approvalResult.success) {
+              approvalStatus = approvalResult.status && validStatuses.includes(approvalResult.status) 
+                ? approvalResult.status : 'received';
+            }
+            await storage.updateMessageTemplate(id, {
+              twilioContentSid: syncResult.contentSid,
+              twilioApprovalStatus: approvalStatus,
+              twilioSyncedAt: new Date(),
+            } as any);
+            console.log(`[Twilio] Auto-synced template ${id}, status: ${approvalStatus}`);
+          }
+        } catch (err) {
+          console.error(`[Twilio] Auto-sync failed for template ${id}:`, err);
+        }
+      })();
       
       res.json(template);
     } catch (error) {

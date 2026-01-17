@@ -330,7 +330,21 @@ export default function TemplatesPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          {template.twilioContentSid ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => syncTwilioMutation.mutate(template.id)}
+                            disabled={syncingTemplateId === template.id}
+                            title={template.twilioContentSid ? "Re-sync to Twilio" : "Sync to Twilio"}
+                            data-testid={`button-sync-twilio-${template.id}`}
+                          >
+                            {syncingTemplateId === template.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <CloudUpload className="h-4 w-4" />
+                            )}
+                          </Button>
+                          {template.twilioContentSid && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -343,21 +357,6 @@ export default function TemplatesPage() {
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <RefreshCw className="h-4 w-4" />
-                              )}
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => syncTwilioMutation.mutate(template.id)}
-                              disabled={syncingTemplateId === template.id}
-                              title="Sync to Twilio"
-                              data-testid={`button-sync-twilio-${template.id}`}
-                            >
-                              {syncingTemplateId === template.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <CloudUpload className="h-4 w-4" />
                               )}
                             </Button>
                           )}
