@@ -2808,11 +2808,45 @@ export async function registerRoutes(
   // These endpoints are available to all authenticated users (not admin-only)
   // so regular users can reconnect WhatsApp if disconnected
   
-  app.get("/api/whatsapp/status", requireAuth, (req, res) => {
-    res.json({
-      status: whatsappService.getConnectionState(),
-      qr: currentQR,
-    });
+  app.get("/api/whatsapp/status", requireAuth, async (req, res) => {
+    try {
+      const baileysStatus = whatsappService.getConnectionState();
+      
+      // Check if Twilio WhatsApp is configured
+      const { getTwilioStatus } = await import("./twilio");
+      const twilioStatus = await getTwilioStatus();
+      
+      // Check if Meta WABA is configured
+      const wabaSettings = await storage.getPlatformSettings("whatsapp");
+      const wabaConfigured = wabaSettings?.accessToken && wabaSettings?.phoneNumberId;
+      
+      // Consider connected if any WhatsApp integration is active
+      let effectiveStatus = baileysStatus;
+      let connectionMethod = "baileys";
+      
+      if (twilioStatus.connected) {
+        effectiveStatus = "connected";
+        connectionMethod = "twilio";
+      } else if (wabaConfigured) {
+        effectiveStatus = "connected";
+        connectionMethod = "waba";
+      }
+      
+      res.json({
+        status: effectiveStatus,
+        qr: currentQR,
+        connectionMethod,
+        twilioConnected: twilioStatus.connected,
+        wabaConnected: !!wabaConfigured,
+        baileysConnected: baileysStatus === "connected",
+      });
+    } catch (error) {
+      res.json({
+        status: whatsappService.getConnectionState(),
+        qr: currentQR,
+        connectionMethod: "baileys",
+      });
+    }
   });
 
   app.post("/api/whatsapp/connect", requireAuth, async (req, res) => {

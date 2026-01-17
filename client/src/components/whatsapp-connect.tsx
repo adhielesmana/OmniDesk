@@ -19,6 +19,10 @@ type ConnectionStatus = "disconnected" | "connecting" | "qr" | "connected";
 interface WhatsAppStatus {
   status: ConnectionStatus;
   qr: string | null;
+  connectionMethod?: "baileys" | "twilio" | "waba";
+  twilioConnected?: boolean;
+  wabaConnected?: boolean;
+  baileysConnected?: boolean;
 }
 
 export function WhatsAppConnect() {
@@ -90,6 +94,14 @@ export function WhatsAppConnect() {
   }, [refetch]);
 
   const connectionStatus = status?.status || "disconnected";
+  const connectionMethod = status?.connectionMethod;
+  const isConnectedViaApi = status?.twilioConnected || status?.wabaConnected;
+
+  const getConnectionLabel = () => {
+    if (connectionMethod === "twilio") return "Twilio";
+    if (connectionMethod === "waba") return "WABA";
+    return "";
+  };
 
   const getStatusBadge = () => {
     switch (connectionStatus) {
@@ -97,7 +109,7 @@ export function WhatsAppConnect() {
         return (
           <Badge variant="default" className="bg-green-600">
             <Check className="w-3 h-3 mr-1" />
-            Connected
+            Connected{getConnectionLabel() ? ` (${getConnectionLabel()})` : ""}
           </Badge>
         );
       case "qr":
@@ -132,6 +144,7 @@ export function WhatsAppConnect() {
           size="sm"
           className="w-full justify-start gap-2"
           data-testid="button-whatsapp-connect"
+          disabled={connectionStatus === "connected"}
         >
           <SiWhatsapp className="w-4 h-4 text-green-500" />
           <span className="flex-1 text-left">WhatsApp</span>
