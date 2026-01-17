@@ -811,7 +811,7 @@ export async function registerRoutes(
   app.post("/api/admin/templates/:id/sync-twilio", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const template = await storage.getMessageTemplate(id);
+      const template = await storage.getMessageTemplateById(id);
       
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
@@ -881,7 +881,7 @@ export async function registerRoutes(
   app.get("/api/admin/templates/:id/twilio-status", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const template = await storage.getMessageTemplate(id);
+      const template = await storage.getMessageTemplateById(id);
       
       if (!template) {
         return res.status(404).json({ error: "Template not found" });
