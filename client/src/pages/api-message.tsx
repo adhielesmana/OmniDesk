@@ -39,6 +39,8 @@ interface MessageTemplate {
   id: string;
   name: string;
   description: string | null;
+  content: string;
+  variables: string[] | null;
   twilioContentSid: string | null;
   twilioApprovalStatus: string | null;
   isActive: boolean;
@@ -125,7 +127,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   
   const [formData, setFormData] = useState({
     name: "",
-    aiPrompt: "",
     defaultTemplateId: "" as string,
     ipWhitelist: "",
     rateLimitPerMinute: 60,
@@ -143,7 +144,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; aiPrompt?: string; defaultTemplateId?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+    mutationFn: async (data: { name: string; defaultTemplateId?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
       const res = await apiRequest("POST", "/api/admin/api-clients", data);
       return res.json();
     },
@@ -151,7 +152,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
       setShowCreateDialog(false);
       setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
-      setFormData({ name: "", aiPrompt: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
+      setFormData({ name: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
       toast({ title: "API client created successfully" });
     },
     onError: () => {
@@ -160,7 +161,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name?: string; aiPrompt?: string | null; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
       return res.json();
     },
@@ -214,7 +215,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       : undefined;
     createMutation.mutate({
       name: formData.name,
-      aiPrompt: formData.aiPrompt.trim() || undefined,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : undefined,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
@@ -230,7 +230,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     updateMutation.mutate({
       id: editingClient.id,
       name: formData.name,
-      aiPrompt: formData.aiPrompt.trim() || null,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : null,
       ipWhitelist,
       rateLimitPerMinute: formData.rateLimitPerMinute,
@@ -242,7 +241,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   const openEditDialog = (client: ApiClient) => {
     setFormData({
       name: client.name,
-      aiPrompt: client.aiPrompt || "",
       defaultTemplateId: client.defaultTemplateId || "",
       ipWhitelist: client.ipWhitelist?.join(", ") || "",
       rateLimitPerMinute: client.rateLimitPerMinute,
@@ -285,19 +283,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="aiPrompt">AI Prompt (for message personalization)</Label>
-                    <Textarea
-                      id="aiPrompt"
-                      placeholder="e.g. You are a friendly customer service assistant..."
-                      value={formData.aiPrompt}
-                      onChange={(e) => setFormData({ ...formData, aiPrompt: e.target.value })}
-                      rows={4}
-                      data-testid="input-api-ai-prompt"
-                    />
-                    <p className="text-xs text-muted-foreground">Use {"{{recipient_name}}"} to insert the recipient's name</p>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="defaultTemplate">Default WhatsApp Template</Label>
+                    <Label htmlFor="defaultTemplate">Message Template *</Label>
                     <Select
                       value={formData.defaultTemplateId}
                       onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
@@ -306,7 +292,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                         <SelectValue placeholder="Select a template..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No template (use 3-tier selection)</SelectItem>
                         {templates
                           .filter(t => t.isActive && t.twilioContentSid)
                           .map(template => (
@@ -323,7 +308,18 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                           ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">Select a template or leave empty for automatic selection</p>
+                    {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
+                      <div className="mt-2 p-3 bg-muted rounded-md">
+                        <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
+                        <pre className="text-sm whitespace-pre-wrap font-mono">
+                          {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
+                        </pre>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">API payload must include matching variable values: {`{{1}}`} → recipient_name, {`{{2}}`} → message_type, etc.</p>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated)</Label>
@@ -490,17 +486,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-aiPrompt">AI Prompt</Label>
-              <Textarea
-                id="edit-aiPrompt"
-                value={formData.aiPrompt}
-                onChange={(e) => setFormData({ ...formData, aiPrompt: e.target.value })}
-                rows={4}
-                data-testid="input-edit-api-ai-prompt"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-defaultTemplate">Default WhatsApp Template</Label>
+              <Label htmlFor="edit-defaultTemplate">Message Template *</Label>
               <Select
                 value={formData.defaultTemplateId}
                 onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
@@ -509,7 +495,6 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                   <SelectValue placeholder="Select a template..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No template (use 3-tier selection)</SelectItem>
                   {templates
                     .filter(t => t.isActive && t.twilioContentSid)
                     .map(template => (
@@ -526,6 +511,18 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                     ))}
                 </SelectContent>
               </Select>
+              {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
+                <div className="mt-2 p-3 bg-muted rounded-md">
+                  <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
+                  <pre className="text-sm whitespace-pre-wrap font-mono">
+                    {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
+                  </pre>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}
+                  </p>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">API payload must include matching variable values</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-ipWhitelist">Allowed IP Addresses</Label>

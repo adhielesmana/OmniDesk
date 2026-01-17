@@ -6,16 +6,6 @@ import { ApiClient } from "@shared/schema";
 
 const DEFAULT_TIMEZONE = "Asia/Jakarta";
 
-// Apply template variables to template content
-function applyTemplateVariables(template: string, variables: Record<string, string>): string {
-  let result = template;
-  for (const [key, value] of Object.entries(variables)) {
-    const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
-    result = result.replace(placeholder, value || '');
-  }
-  return result;
-}
-
 // Format Indonesian Rupiah currency
 function formatRupiah(amount: string | number): string {
   const num = typeof amount === 'string' ? parseInt(amount.replace(/\D/g, ''), 10) : amount;
@@ -51,88 +41,7 @@ function getLocalDateTime(timezone: string) {
   return { hour, formattedDate, formattedTime, dayName };
 }
 
-async function getOpenAIKey(): Promise<string | null> {
-  const setting = await storage.getAppSetting("openai_api_key");
-  return setting?.value || process.env.OPENAI_API_KEY || null;
-}
-
-async function generateAIPersonalizedMessage(
-  apiKey: string, 
-  aiPrompt: string, 
-  originalMessage: string,
-  recipientName: string | null,
-  phoneNumber: string
-): Promise<string> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
-  
-  const { formattedDate, formattedTime, dayName } = getLocalDateTime(DEFAULT_TIMEZONE);
-
-  try {
-    const systemPrompt = `You are a helpful assistant that generates personalized WhatsApp messages.
-Based on the client's instructions (AI Prompt) and the incoming message data, generate a unique, natural-sounding personalized message.
-Make the message feel personal and human, avoiding robotic or templated language.
-Keep the message concise and appropriate for WhatsApp.
-Vary your writing style, sentence structure, and vocabulary to make each message unique.
-
-CRITICAL: NEVER use marketing or promotional language. Avoid these words completely:
-- English: promotion, promo, discount, sale, offer, deal, limited time, special price, buy now, order now, exclusive, free, bonus, cashback, voucher, coupon
-- Indonesian: promosi, promo, diskon, potongan harga, penawaran, gratis, bonus, cashback, voucher, kupon, harga spesial, terbatas, beli sekarang, pesan sekarang
-
-Instead, use conversational and friendly language.
-
-Current date and time context (Indonesia timezone - WIB):
-- Date: ${formattedDate}
-- Time: ${formattedTime}
-- Day: ${dayName}
-
-Use appropriate greetings based on the time of day if relevant.`;
-
-    const userPrompt = `Client's AI Instructions (Prompt):
-${aiPrompt}
-
-Incoming Message Data:
-- Recipient Name: ${recipientName || "Unknown"}
-- Phone Number: ${phoneNumber}
-- Original Message Content: ${originalMessage}
-
-Based on the client's AI instructions above, generate a personalized message for this recipient. 
-Read and understand the original message content, then transform it according to the AI instructions.`;
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_tokens: 500,
-        temperature: 0.9,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || "OpenAI API error");
-    }
-
-    const data = await response.json();
-    return data.choices[0]?.message?.content?.trim() || originalMessage;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    console.error("AI personalization error:", error);
-    // Return original message if AI fails
-    return originalMessage;
-  }
-}
+// AI functions removed - external API now uses template-only messaging
 
 declare global {
   namespace Express {
@@ -407,11 +316,18 @@ export async function apiAuthMiddleware(
 const sendMessageSchema = z.object({
   request_id: z.string().min(1).max(255),
   phone_number: z.string().min(10).max(20),
-  recipient_name: z.string().max(255).optional(), // Optional name for AI personalization
+  recipient_name: z.string().max(255).optional(),
   message: z.string().min(1).max(4096),
   priority: z.number().int().min(0).max(100).optional().default(0),
   scheduled_at: z.string().datetime().optional(),
   metadata: z.record(z.any()).optional(),
+  template_variables: z.object({
+    recipient_name: z.string().optional(),
+    message_type: z.string().optional(),
+    invoice_number: z.string().optional(),
+    grand_total: z.string().optional(),
+    invoice_url: z.string().optional(),
+  }).passthrough().optional(),
 });
 
 const bulkSendSchema = z.object({
@@ -432,7 +348,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       });
     }
 
-    const { request_id, phone_number, recipient_name, message, priority, scheduled_at, metadata } = validation.data;
+    const { request_id, phone_number, recipient_name, message, priority, scheduled_at, metadata, template_variables } = validation.data;
 
     const existing = await storage.getApiMessageByRequestId(request_id);
     if (existing) {
@@ -445,7 +361,6 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
 
     const client = req.apiClient!;
     let finalMessage = message;
-    let aiGenerated = false;
     let templateApplied = false;
     let matchedTemplateName: string | null = null;
     let matchedBy: string | null = null;
@@ -515,17 +430,21 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
         }
       }
       
-      // Build template variables
+      // Build template variables - prioritize explicit template_variables, then metadata, then defaults
+      const explicitVars = template_variables || {};
       const templateVars: Record<string, string> = {
-        recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
-        invoice_number: meta.invoice_number || '',
-        grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
-        invoice_url: message,
-        message_type: messageTypeText,
+        recipient_name: explicitVars.recipient_name || recipient_name || meta.recipient_name || 'Pelanggan',
+        invoice_number: explicitVars.invoice_number || meta.invoice_number || '',
+        grand_total: explicitVars.grand_total || (meta.grand_total ? formatRupiah(meta.grand_total) : ''),
+        invoice_url: explicitVars.invoice_url || message,
+        message_type: explicitVars.message_type || messageTypeText,
         message: message,
         phone_number: phone_number,
         ...Object.fromEntries(
           Object.entries(meta).filter(([k, v]) => typeof v === 'string')
+        ),
+        ...Object.fromEntries(
+          Object.entries(explicitVars).filter(([k, v]) => v !== undefined)
         ),
       };
       
@@ -533,32 +452,13 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       templateApplied = true;
       console.log(`API queue: Applied template "${template.name}" (matched by ${matchedBy}) for request ${request_id}`);
     } else {
-      console.log(`API queue: No template match for request ${request_id}, using original message`);
-    }
-
-    // Apply AI personalization if the client has an AI prompt configured (and no template was applied)
-    if (!templateApplied && client.aiPrompt && client.aiPrompt.trim().length > 0) {
-      const apiKey = await getOpenAIKey();
-      if (apiKey) {
-        console.log(`API queue: Generating AI personalized message for request ${request_id}`);
-        try {
-          finalMessage = await generateAIPersonalizedMessage(
-            apiKey,
-            client.aiPrompt,
-            message,
-            recipient_name || null,
-            phone_number
-          );
-          aiGenerated = true;
-          console.log(`API queue: AI message generated successfully for request ${request_id}`);
-        } catch (aiError) {
-          console.error(`API queue: AI generation failed for request ${request_id}:`, aiError);
-          // Fall back to original message
-          finalMessage = message;
-        }
-      } else {
-        console.warn(`API queue: Client ${client.name} has AI prompt but no OpenAI API key configured`);
-      }
+      // Template is required for all external API messages
+      console.error(`API queue: No template matched for request ${request_id} - template required`);
+      return res.status(400).json({
+        error: "Template required",
+        message: "No applicable message template found. External API requires a valid message template to be configured or matched.",
+        request_id,
+      });
     }
 
     const queuedMessage = await storage.createApiMessage({
@@ -569,7 +469,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       message: finalMessage,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
-      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, aiGenerated, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: message, aiGenerated, templateApplied, matchedTemplateName, matchedBy }),
+      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: message, templateApplied, matchedTemplateName, matchedBy }),
     });
 
     return res.status(201).json({
@@ -577,7 +477,6 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       message_id: queuedMessage.id,
       request_id: queuedMessage.requestId,
       status: queuedMessage.status,
-      ai_generated: aiGenerated,
       template_applied: templateApplied,
       template_name: matchedTemplateName,
       matched_by: matchedBy,
@@ -600,14 +499,15 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
     }
 
     const client = req.apiClient!;
-    const hasAiPrompt = client.aiPrompt && client.aiPrompt.trim().length > 0;
-    const apiKey = hasAiPrompt ? await getOpenAIKey() : null;
+    
+    // Import template functions
+    const { selectTemplate: select, renderTemplate: render } = await import('./template-selector');
 
     const results: Array<{
       request_id: string;
       success: boolean;
       message_id?: string;
-      ai_generated?: boolean;
+      template_applied?: boolean;
       error?: string;
     }> = [];
 
@@ -625,23 +525,74 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
         }
 
         let finalMessage = msg.message;
-        let aiGenerated = false;
+        let templateApplied = false;
+        let matchedTemplateName: string | null = null;
+        let matchedBy: string | null = null;
+        
+        const meta = (msg.metadata && typeof msg.metadata === 'object') ? msg.metadata as Record<string, any> : {};
+        const explicitVars = msg.template_variables || {};
 
-        // Apply AI personalization if the client has an AI prompt configured
-        if (hasAiPrompt && apiKey) {
-          try {
-            finalMessage = await generateAIPersonalizedMessage(
-              apiKey,
-              client.aiPrompt!,
-              msg.message,
-              msg.recipient_name || null,
-              msg.phone_number
-            );
-            aiGenerated = true;
-          } catch (aiError) {
-            console.error(`API queue bulk: AI generation failed for request ${msg.request_id}:`, aiError);
-            finalMessage = msg.message;
+        // 4-tier template selection (same as single endpoint)
+        let selectionResult: { template: any | null; matchedBy: string | null } = { template: null, matchedBy: null };
+        
+        // Priority 0: Check if client has a default template assigned
+        if (client.defaultTemplateId) {
+          const clientTemplate = await storage.getMessageTemplateById(client.defaultTemplateId);
+          if (clientTemplate && clientTemplate.isActive && clientTemplate.twilioContentSid && clientTemplate.twilioApprovalStatus === 'approved') {
+            selectionResult = { template: clientTemplate, matchedBy: 'client_default' };
           }
+        }
+        
+        // If no client template, use 3-tier selection: messageType → trigger rules → default
+        if (!selectionResult.template) {
+          const templateContext = {
+            messageType: meta.messageType,
+            message: msg.message,
+            variables: {
+              recipient_name: msg.recipient_name || meta.recipient_name || 'Pelanggan',
+              invoice_number: meta.invoice_number || '',
+              grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
+              invoice_url: msg.message,
+              phone_number: msg.phone_number,
+              ...meta,
+            }
+          };
+          selectionResult = await select(templateContext);
+        }
+        
+        if (selectionResult.template) {
+          const template = selectionResult.template;
+          matchedTemplateName = template.name;
+          matchedBy = selectionResult.matchedBy;
+          
+          // Build template variables - prioritize explicit template_variables, then metadata, then defaults
+          const templateVars: Record<string, string> = {
+            recipient_name: explicitVars.recipient_name || msg.recipient_name || meta.recipient_name || 'Pelanggan',
+            message_type: explicitVars.message_type || meta.messageType || '',
+            invoice_number: explicitVars.invoice_number || meta.invoice_number || '',
+            grand_total: explicitVars.grand_total || (meta.grand_total ? formatRupiah(meta.grand_total) : ''),
+            invoice_url: explicitVars.invoice_url || meta.invoice_url || msg.message || '',
+            message: msg.message || '',
+            phone_number: msg.phone_number,
+            ...Object.fromEntries(
+              Object.entries(meta).filter(([k, v]) => typeof v === 'string')
+            ),
+            ...Object.fromEntries(
+              Object.entries(explicitVars).filter(([k, v]) => v !== undefined)
+            ),
+          };
+          finalMessage = render(template, templateVars);
+          templateApplied = true;
+        }
+
+        // Template is required for all external API messages
+        if (!templateApplied) {
+          results.push({
+            request_id: msg.request_id,
+            success: false,
+            error: "Template required - no applicable message template found",
+          });
+          continue;
         }
 
         const queuedMessage = await storage.createApiMessage({
@@ -652,14 +603,14 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           message: finalMessage,
           priority: msg.priority || 0,
           scheduledAt: msg.scheduled_at ? new Date(msg.scheduled_at) : null,
-          metadata: msg.metadata ? JSON.stringify({ ...msg.metadata, originalMessage: msg.message, aiGenerated }) : JSON.stringify({ originalMessage: msg.message, aiGenerated }),
+          metadata: msg.metadata ? JSON.stringify({ ...msg.metadata, originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }),
         });
 
         results.push({
           request_id: msg.request_id,
           success: true,
           message_id: queuedMessage.id,
-          ai_generated: aiGenerated,
+          template_applied: templateApplied,
         });
       } catch (err) {
         results.push({
