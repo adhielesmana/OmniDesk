@@ -452,21 +452,42 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     if (metadata && typeof metadata === 'object') {
       const messageType = (metadata as Record<string, any>).messageType;
       
-      if (messageType === 'reminder_invoices') {
+      if (messageType === 'reminder_invoices' || messageType === 'new_invoice' || messageType === 'overdue' || messageType === 'payment_confirmation') {
         // Apply invoice reminder template
         const template = await storage.getMessageTemplateByName('invoice_reminder');
         if (template && template.isActive) {
           const meta = metadata as Record<string, any>;
+          
+          // Map message type to Indonesian text
+          let messageTypeText = '';
+          switch (messageType) {
+            case 'new_invoice':
+              messageTypeText = 'Berikut adalah tagihan baru untuk layanan internet Anda:';
+              break;
+            case 'reminder_invoices':
+              messageTypeText = 'Kami mengingatkan tagihan internet Anda yang belum dibayar:';
+              break;
+            case 'overdue':
+              messageTypeText = 'PENTING: Tagihan internet Anda sudah melewati jatuh tempo:';
+              break;
+            case 'payment_confirmation':
+              messageTypeText = 'Terima kasih! Pembayaran Anda telah kami terima untuk:';
+              break;
+            default:
+              messageTypeText = 'Informasi tagihan internet Anda:';
+          }
+          
           const templateVars: Record<string, string> = {
             recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
             invoice_number: meta.invoice_number || '',
             grand_total: formatRupiah(meta.grand_total || '0'),
             invoice_url: message, // The message field contains the invoice URL
+            message_type: messageTypeText,
           };
           
           finalMessage = applyTemplateVariables(template.content, templateVars);
           templateApplied = true;
-          console.log(`API queue: Applied invoice_reminder template for request ${request_id}`);
+          console.log(`API queue: Applied invoice_reminder template (${messageType}) for request ${request_id}`);
         } else {
           console.warn(`API queue: invoice_reminder template not found or inactive, using original message`);
         }
