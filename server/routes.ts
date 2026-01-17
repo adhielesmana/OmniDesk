@@ -643,7 +643,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Only failed messages can be resent" });
       }
       // Reset the message to queued status
-      await storage.updateApiMessageStatus(id, "queued", null);
+      await storage.updateApiMessageStatus(id, "queued", undefined);
       res.json({ success: true });
     } catch (error) {
       console.error("Error resending API message:", error);
@@ -757,6 +757,123 @@ export async function registerRoutes(
     }
   });
 
+  // Sync template to Twilio Content API
+  app.post("/api/admin/templates/:id/sync-twilio", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const template = await storage.getMessageTemplate(id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      // Import Twilio sync functions
+      const { syncTemplateToTwilio, submitTemplateForApproval, isTwilioConfigured } = await import("./twilio");
+      
+      // Check if Twilio is configured
+      const configured = await isTwilioConfigured();
+      if (!configured) {
+        return res.status(400).json({ error: "Twilio is not configured. Add credentials in Settings." });
+      }
+      
+      // Create template in Twilio
+      const syncResult = await syncTemplateToTwilio(
+        template.name,
+        template.content,
+        template.variables || [],
+        'en' // Default to English
+      );
+      
+      if (!syncResult.success) {
+        return res.status(400).json({ error: syncResult.error });
+      }
+      
+      // Submit for WhatsApp approval
+      const approvalResult = await submitTemplateForApproval(syncResult.contentSid!);
+      
+      // Determine approval status:
+      // - If submission failed, use 'sync_only'
+      // - If success and got valid status, use it
+      // - If success but no/unknown status, use 'received' (default initial state)
+      const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
+      let approvalStatus: string;
+      
+      if (!approvalResult.success) {
+        approvalStatus = 'sync_only';
+      } else if (approvalResult.status && validStatuses.includes(approvalResult.status)) {
+        approvalStatus = approvalResult.status;
+      } else {
+        // No status or unknown status returned, default to 'received'
+        console.warn(`[Twilio] Submission succeeded but got no/invalid status: ${approvalResult.status}, defaulting to 'received'`);
+        approvalStatus = 'received';
+      }
+      
+      // Update template with Twilio info
+      await storage.updateMessageTemplate(id, {
+        twilioContentSid: syncResult.contentSid,
+        twilioApprovalStatus: approvalStatus,
+        twilioSyncedAt: new Date(),
+      } as any);
+      
+      res.json({
+        success: true,
+        contentSid: syncResult.contentSid,
+        approvalStatus: approvalStatus,
+        approvalError: approvalResult.error
+      });
+    } catch (error) {
+      console.error("Error syncing template to Twilio:", error);
+      res.status(500).json({ error: "Failed to sync template to Twilio" });
+    }
+  });
+
+  // Check Twilio template approval status
+  app.get("/api/admin/templates/:id/twilio-status", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const template = await storage.getMessageTemplate(id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      if (!template.twilioContentSid) {
+        return res.status(400).json({ error: "Template not synced to Twilio" });
+      }
+      
+      // Import Twilio status function
+      const { getTemplateApprovalStatus } = await import("./twilio");
+      
+      const statusResult = await getTemplateApprovalStatus(template.twilioContentSid);
+      
+      if (!statusResult.success) {
+        return res.status(400).json({ error: statusResult.error });
+      }
+      
+      // Only update template status if we got a valid status (not 'unknown')
+      // This prevents overwriting real status with unknown due to API issues
+      const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
+      const isValidStatus = validStatuses.includes(statusResult.status || '');
+      
+      if (isValidStatus && statusResult.status !== template.twilioApprovalStatus) {
+        await storage.updateMessageTemplate(id, {
+          twilioApprovalStatus: statusResult.status,
+          twilioRejectionReason: statusResult.rejectionReason,
+        } as any);
+      } else if (!isValidStatus) {
+        console.warn(`[Twilio] Got unknown status for template ${id}, keeping previous status: ${template.twilioApprovalStatus}`);
+      }
+      
+      res.json({
+        status: isValidStatus ? statusResult.status : template.twilioApprovalStatus,
+        rejectionReason: statusResult.rejectionReason
+      });
+    } catch (error) {
+      console.error("Error checking Twilio status:", error);
+      res.status(500).json({ error: "Failed to check Twilio status" });
+    }
+  });
+
   // Export all templates as JSON
   app.get("/api/admin/templates/export", requireSuperadmin, async (req, res) => {
     try {
@@ -797,7 +914,6 @@ export async function registerRoutes(
               // Update existing template
               await storage.updateMessageTemplate(existing.id, {
                 content: template.content,
-                platform: template.platform,
                 category: template.category,
                 description: template.description,
                 variables: template.variables,
@@ -812,7 +928,6 @@ export async function registerRoutes(
             await storage.createMessageTemplate({
               name: template.name,
               content: template.content,
-              platform: template.platform || 'whatsapp',
               category: template.category,
               description: template.description,
               variables: template.variables,
@@ -2912,7 +3027,7 @@ export async function registerRoutes(
       const twilioStatus = await getTwilioStatus();
       
       // Check if Meta WABA is configured
-      const wabaSettings = await storage.getPlatformSettings("whatsapp");
+      const wabaSettings = await storage.getPlatformSetting("whatsapp");
       const wabaConfigured = wabaSettings?.accessToken && wabaSettings?.phoneNumberId;
       
       // Consider connected if any WhatsApp integration is active

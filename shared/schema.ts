@@ -636,6 +636,11 @@ export const messageTemplates = pgTable("message_templates", {
   category: varchar("category", { length: 50 }), // Category for organization (e.g., "billing", "notification")
   isActive: boolean("is_active").default(true),
   createdBy: varchar("created_by").references(() => users.id),
+  // Twilio Content API sync fields
+  twilioContentSid: varchar("twilio_content_sid", { length: 50 }), // Twilio Content SID (HXXX...)
+  twilioApprovalStatus: varchar("twilio_approval_status", { length: 20 }), // received, pending, approved, rejected
+  twilioRejectionReason: text("twilio_rejection_reason"), // Reason if rejected
+  twilioSyncedAt: timestamp("twilio_synced_at"), // When template was synced to Twilio
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

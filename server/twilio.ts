@@ -365,3 +365,230 @@ export async function updateMessageStatus(webhookData: any): Promise<void> {
   // Note: This requires a storage method to find message by platformMessageId
   console.log(`[Twilio] Status update: ${MessageSid} -> ${status}`);
 }
+
+// =============== TWILIO CONTENT API (Template Sync) ===============
+
+interface TwilioContentTemplate {
+  sid: string;
+  friendly_name: string;
+  language: string;
+  types: {
+    'twilio/text'?: { body: string };
+  };
+  approval_requests?: {
+    whatsapp?: {
+      status: string;
+      rejection_reason?: string;
+    };
+  };
+}
+
+// Convert OmniDesk variables to Twilio numbered variables
+// {{recipient_name}} -> {{1}}, {{invoice_number}} -> {{2}}, etc.
+function convertVariablesToTwilio(content: string, variables: string[]): {
+  twilioContent: string;
+  variableMap: Record<string, string>;
+  defaultValues: Record<string, string>;
+} {
+  const variableMap: Record<string, string> = {};
+  const defaultValues: Record<string, string> = {};
+  let twilioContent = content;
+  
+  variables.forEach((variable, index) => {
+    const twilioVar = `{{${index + 1}}}`;
+    variableMap[variable] = twilioVar;
+    defaultValues[String(index + 1)] = `[${variable}]`; // Default sample value
+    
+    // Replace all occurrences of {{variable}} with {{1}}, {{2}}, etc.
+    const regex = new RegExp(`\\{\\{${variable}\\}\\}`, 'g');
+    twilioContent = twilioContent.replace(regex, twilioVar);
+  });
+  
+  return { twilioContent, variableMap, defaultValues };
+}
+
+// Create a template in Twilio Content API
+export async function syncTemplateToTwilio(
+  templateName: string,
+  content: string,
+  variables: string[] = [],
+  language: string = 'en'
+): Promise<{
+  success: boolean;
+  contentSid?: string;
+  error?: string;
+}> {
+  try {
+    const client = await getTwilioClient();
+    const creds = await getCredentials();
+    
+    // Convert variables to Twilio format
+    const { twilioContent, defaultValues } = convertVariablesToTwilio(content, variables);
+    
+    // Create template via Content API
+    // Note: Twilio SDK v3+ uses content.v1.content.create()
+    const contentPayload: any = {
+      friendlyName: templateName,
+      language: language,
+      types: {
+        'twilio/text': {
+          body: twilioContent
+        }
+      }
+    };
+    
+    // Add variable defaults if we have variables
+    if (variables.length > 0) {
+      contentPayload.variables = defaultValues;
+    }
+    
+    const templateResponse = await client.content.v1.contents.create(contentPayload);
+    
+    console.log(`[Twilio Content] Template created: ${templateResponse.sid}`);
+    
+    return {
+      success: true,
+      contentSid: templateResponse.sid
+    };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error creating template:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to create template in Twilio'
+    };
+  }
+}
+
+// Submit template for WhatsApp approval
+// ApprovalCreate response format from Twilio SDK:
+// {
+//   name: string,
+//   category: string,
+//   contentType: string,
+//   status: string,  // "received", "pending", etc.
+//   rejectionReason: string,
+//   allowCategoryChange: boolean
+// }
+export async function submitTemplateForApproval(contentSid: string): Promise<{
+  success: boolean;
+  status?: string;
+  error?: string;
+}> {
+  try {
+    const client = await getTwilioClient();
+    
+    // Submit for WhatsApp approval using correct SDK method
+    // Path: client.content.v1.contents(contentSid).approvalRequests('whatsapp').create()
+    const approval = await client.content.v1.contents(contentSid)
+      .approvalRequests('whatsapp')
+      .create();
+    
+    // Log the full response for debugging
+    console.log(`[Twilio Content] Template ${contentSid} submitted for WhatsApp approval:`, JSON.stringify(approval, null, 2));
+    
+    // ApprovalCreate response has status at top level
+    const status = (approval as any).status;
+    
+    if (!status) {
+      console.warn(`[Twilio Content] No status in approval response, defaulting to 'received'`);
+    }
+    
+    return {
+      success: true,
+      status: status || 'received'
+    };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error submitting for approval:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to submit template for approval'
+    };
+  }
+}
+
+// Check template approval status
+// ApprovalFetch response format from Twilio SDK:
+// {
+//   sid: string,
+//   accountSid: string,
+//   url: string,
+//   whatsapp: {
+//     name: string,
+//     category: string,
+//     content_type: string,
+//     status: "received" | "pending" | "approved" | "rejected" | "paused" | "disabled",
+//     rejection_reason: string,
+//     allow_category_change: boolean
+//   }
+// }
+export async function getTemplateApprovalStatus(contentSid: string): Promise<{
+  success: boolean;
+  status?: string;
+  rejectionReason?: string;
+  error?: string;
+}> {
+  try {
+    const client = await getTwilioClient();
+    
+    // Fetch approval status - response has whatsapp object containing status
+    // Path: client.content.v1.contents(contentSid).approvalRequests().fetch()
+    const approval = await client.content.v1.contents(contentSid)
+      .approvalRequests()
+      .fetch();
+    
+    // Log for debugging
+    console.log(`[Twilio Content] Approval status for ${contentSid}:`, JSON.stringify(approval, null, 2));
+    
+    // ApprovalFetch response has status in whatsapp object (confirmed from SDK types)
+    const whatsapp = (approval as any).whatsapp;
+    
+    if (!whatsapp) {
+      console.warn(`[Twilio Content] No whatsapp object in approval response for ${contentSid}`);
+      return {
+        success: true,
+        status: 'unknown',
+      };
+    }
+    
+    const status = whatsapp.status;
+    const rejectionReason = whatsapp.rejection_reason || undefined;
+    
+    if (!status) {
+      console.warn(`[Twilio Content] No status in whatsapp object for ${contentSid}`);
+    }
+    
+    return {
+      success: true,
+      status: status || 'unknown',
+      rejectionReason: rejectionReason
+    };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error fetching approval status:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to fetch approval status'
+    };
+  }
+}
+
+// Delete a template from Twilio
+export async function deleteTemplateFromTwilio(contentSid: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const client = await getTwilioClient();
+    
+    await client.content.v1.contents(contentSid).remove();
+    
+    console.log(`[Twilio Content] Template ${contentSid} deleted`);
+    
+    return { success: true };
+  } catch (error: any) {
+    console.error('[Twilio Content] Error deleting template:', error);
+    return {
+      success: false,
+      error: error.message || 'Failed to delete template from Twilio'
+    };
+  }
+}

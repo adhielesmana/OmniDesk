@@ -14,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2, Download, Upload } from "lucide-react";
+import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2, Download, Upload, RefreshCw, CloudUpload, CheckCircle2, XCircle, Clock } from "lucide-react";
 import type { Platform, MessageTemplate } from "@shared/schema";
 
 export default function TemplatesPage() {
@@ -123,6 +123,73 @@ export default function TemplatesPage() {
       toast({ title: "Failed to delete template", variant: "destructive" });
     },
   });
+
+  const [syncingTemplateId, setSyncingTemplateId] = useState<string | null>(null);
+  const [refreshingStatusId, setRefreshingStatusId] = useState<string | null>(null);
+
+  const syncTwilioMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setSyncingTemplateId(id);
+      const res = await apiRequest("POST", `/api/admin/templates/${id}/sync-twilio`);
+      return res.json() as Promise<{ success: boolean; contentSid: string; approvalStatus: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      toast({ title: "Template synced to Twilio", description: `Status: ${data.approvalStatus}` });
+      setSyncingTemplateId(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to sync template", description: error.message, variant: "destructive" });
+      setSyncingTemplateId(null);
+    },
+  });
+
+  const refreshTwilioStatusMutation = useMutation({
+    mutationFn: async (id: string) => {
+      setRefreshingStatusId(id);
+      const res = await apiRequest("GET", `/api/admin/templates/${id}/twilio-status`);
+      return res.json() as Promise<{ status: string; rejectionReason?: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      toast({ title: "Status updated", description: `Approval status: ${data.status}` });
+      setRefreshingStatusId(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to refresh status", variant: "destructive" });
+      setRefreshingStatusId(null);
+    },
+  });
+
+  const getTwilioStatusBadge = (template: MessageTemplate) => {
+    if (!template.twilioContentSid) return null;
+    
+    const status = template.twilioApprovalStatus;
+    switch (status) {
+      case 'approved':
+        return <Badge variant="default" className="bg-green-600"><CheckCircle2 className="h-3 w-3 mr-1" />Twilio Approved</Badge>;
+      case 'pending':
+      case 'received':
+      case 'in_review':
+        return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Twilio Pending</Badge>;
+      case 'rejected':
+        return (
+          <Badge variant="destructive" title={template.twilioRejectionReason || 'No reason provided'}>
+            <XCircle className="h-3 w-3 mr-1" />Twilio Rejected
+          </Badge>
+        );
+      case 'paused':
+        return <Badge variant="outline" className="border-yellow-500 text-yellow-600"><Clock className="h-3 w-3 mr-1" />Paused</Badge>;
+      case 'disabled':
+        return <Badge variant="destructive"><XCircle className="h-3 w-3 mr-1" />Disabled</Badge>;
+      case 'sync_only':
+        return <Badge variant="outline"><CloudUpload className="h-3 w-3 mr-1" />Synced (Not Submitted)</Badge>;
+      case 'unknown':
+        return <Badge variant="outline"><CloudUpload className="h-3 w-3 mr-1" />Status Unknown</Badge>;
+      default:
+        return <Badge variant="outline"><CloudUpload className="h-3 w-3 mr-1" />Synced</Badge>;
+    }
+  };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -247,7 +314,7 @@ export default function TemplatesPage() {
                     <Card key={template.id}>
                       <CardHeader className="flex flex-row items-start justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <CardTitle className="text-lg">{template.name}</CardTitle>
                             <Badge variant={template.isActive ? "default" : "secondary"}>
                               {template.isActive ? "Active" : "Inactive"}
@@ -255,10 +322,45 @@ export default function TemplatesPage() {
                             {template.category && (
                               <Badge variant="outline">{template.category}</Badge>
                             )}
+                            {getTwilioStatusBadge(template)}
                           </div>
                           <CardDescription className="mt-1">{template.description}</CardDescription>
+                          {template.twilioRejectionReason && (
+                            <p className="text-xs text-destructive mt-1">Rejection: {template.twilioRejectionReason}</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
+                          {template.twilioContentSid ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => refreshTwilioStatusMutation.mutate(template.id)}
+                              disabled={refreshingStatusId === template.id}
+                              title="Refresh Twilio status"
+                              data-testid={`button-refresh-twilio-${template.id}`}
+                            >
+                              {refreshingStatusId === template.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4" />
+                              )}
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => syncTwilioMutation.mutate(template.id)}
+                              disabled={syncingTemplateId === template.id}
+                              title="Sync to Twilio"
+                              data-testid={`button-sync-twilio-${template.id}`}
+                            >
+                              {syncingTemplateId === template.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CloudUpload className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
