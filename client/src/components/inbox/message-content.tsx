@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, memo } from "react";
 import { ExternalLink, MapPin, Play } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 
@@ -210,7 +210,7 @@ function LinkPreview({ url, isOutbound }: { url: string; isOutbound: boolean }) 
   );
 }
 
-export function MessageContent({
+export const MessageContent = memo(function MessageContent({
   content,
   mediaUrl,
   mediaType,
@@ -334,4 +334,4 @@ export function MessageContent({
       )}
     </div>
   );
-}
+});

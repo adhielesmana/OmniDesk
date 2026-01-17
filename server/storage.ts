@@ -715,7 +715,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getConversation(id: string, messageLimit: number = 100): Promise<ConversationWithMessages | undefined> {
+  async getConversation(id: string, messageLimit: number = 20): Promise<ConversationWithMessages | undefined> {
     const [row] = await db
       .select()
       .from(conversations)
