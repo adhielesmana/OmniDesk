@@ -285,13 +285,14 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                   <div className="space-y-2">
                     <Label htmlFor="defaultTemplate">Message Template *</Label>
                     <Select
-                      value={formData.defaultTemplateId}
-                      onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
+                      value={formData.defaultTemplateId || "none"}
+                      onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value === "none" ? "" : value })}
                     >
                       <SelectTrigger data-testid="select-api-default-template">
                         <SelectValue placeholder="Select a template..." />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">No template (use 4-tier selection)</SelectItem>
                         {templates
                           .filter(t => t.isActive && t.twilioContentSid)
                           .map(template => (
@@ -488,13 +489,14 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
             <div className="space-y-2">
               <Label htmlFor="edit-defaultTemplate">Message Template *</Label>
               <Select
-                value={formData.defaultTemplateId}
-                onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value })}
+                value={formData.defaultTemplateId || "none"}
+                onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value === "none" ? "" : value })}
               >
                 <SelectTrigger data-testid="select-edit-api-default-template">
                   <SelectValue placeholder="Select a template..." />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">No template (use 4-tier selection)</SelectItem>
                   {templates
                     .filter(t => t.isActive && t.twilioContentSid)
                     .map(template => (
