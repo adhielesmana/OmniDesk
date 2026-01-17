@@ -127,6 +127,7 @@ export default function TemplatesPage() {
   const [syncingTemplateId, setSyncingTemplateId] = useState<string | null>(null);
   const [refreshingStatusId, setRefreshingStatusId] = useState<string | null>(null);
   const [isSyncingFromTwilio, setIsSyncingFromTwilio] = useState(false);
+  const [isSyncingToTwilio, setIsSyncingToTwilio] = useState(false);
 
   const syncFromTwilioMutation = useMutation({
     mutationFn: async () => {
@@ -145,6 +146,29 @@ export default function TemplatesPage() {
     onError: (error: any) => {
       toast({ title: "Failed to sync from Twilio", description: error.message, variant: "destructive" });
       setIsSyncingFromTwilio(false);
+    },
+  });
+
+  const syncToTwilioMutation = useMutation({
+    mutationFn: async () => {
+      setIsSyncingToTwilio(true);
+      const res = await apiRequest("POST", "/api/admin/templates/sync-to-twilio", { deleteOrphans: false, forceResync: true });
+      return res.json() as Promise<{ success: boolean; synced: number; deleted: number; skipped: number; orphans: string[]; errors: string[]; message: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      toast({ 
+        title: "Synced to Twilio", 
+        description: data.message
+      });
+      if (data.orphans?.length > 0) {
+        console.log("Unlinked Twilio templates:", data.orphans);
+      }
+      setIsSyncingToTwilio(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to sync to Twilio", description: error.message, variant: "destructive" });
+      setIsSyncingToTwilio(false);
     },
   });
 
@@ -260,9 +284,22 @@ export default function TemplatesPage() {
                     {isSyncingFromTwilio ? (
                       <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
+                      <Download className="h-4 w-4 mr-2" />
                     )}
                     Sync from Twilio
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => syncToTwilioMutation.mutate()}
+                    disabled={isSyncingToTwilio}
+                    data-testid="button-sync-to-twilio"
+                  >
+                    {isSyncingToTwilio ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-2" />
+                    )}
+                    Sync to Twilio
                   </Button>
                   <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
                     <Download className="h-4 w-4 mr-2" />

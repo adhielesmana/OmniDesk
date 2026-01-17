@@ -930,18 +930,23 @@ export async function syncDatabaseToTwilio(templateId: string): Promise<{
 }
 
 // Bulk sync all database templates to Twilio (App -> Twilio)
-// Also cleans up orphaned Twilio templates
+// Also cleans up orphaned Twilio templates (only if explicitly requested)
 export async function bulkSyncDatabaseToTwilio(options: {
   deleteOrphans?: boolean;
+  forceResync?: boolean;
 } = {}): Promise<{
   success: boolean;
   synced: number;
   deleted: number;
+  skipped: number;
+  orphans: string[];
   errors: string[];
 }> {
   const errors: string[] = [];
+  const orphans: string[] = [];
   let synced = 0;
   let deleted = 0;
+  let skipped = 0;
   
   try {
     const { storage } = await import('./storage');
@@ -950,16 +955,23 @@ export async function bulkSyncDatabaseToTwilio(options: {
     // Get all Twilio templates
     const twilioResult = await listTwilioTemplates();
     if (!twilioResult.success) {
-      return { success: false, synced: 0, deleted: 0, errors: [twilioResult.error || 'Failed to list Twilio templates'] };
+      return { success: false, synced: 0, deleted: 0, skipped: 0, orphans: [], errors: [twilioResult.error || 'Failed to list Twilio templates'] };
     }
     
     const twilioTemplates = twilioResult.templates || [];
     const localContentSids = new Set(allLocalTemplates.map(t => t.twilioContentSid).filter(Boolean));
+    const localNames = new Set(allLocalTemplates.map(t => t.name.toLowerCase()));
     
-    // 1. Delete orphaned Twilio templates (exist in Twilio but not in local DB)
-    if (options.deleteOrphans !== false) {
-      for (const twilioTemplate of twilioTemplates) {
-        if (!localContentSids.has(twilioTemplate.sid)) {
+    // 1. Find orphaned Twilio templates (exist in Twilio but not linked to local DB)
+    // Only delete if explicitly requested AND template name doesn't match any local template
+    for (const twilioTemplate of twilioTemplates) {
+      if (!localContentSids.has(twilioTemplate.sid)) {
+        // Check if name matches any local template (could be a template that needs linking)
+        const nameMatch = localNames.has(twilioTemplate.friendlyName.toLowerCase()) || 
+                         localNames.has(twilioTemplate.friendlyName.replace(/_\d+$/, '').toLowerCase());
+        
+        if (options.deleteOrphans === true && !nameMatch) {
+          // Only delete if explicitly requested AND no name match
           try {
             await deleteTemplateFromTwilio(twilioTemplate.sid);
             console.log(`[Bulk Sync] Deleted orphaned Twilio template: ${twilioTemplate.friendlyName} (${twilioTemplate.sid})`);
@@ -967,6 +979,10 @@ export async function bulkSyncDatabaseToTwilio(options: {
           } catch (err: any) {
             errors.push(`Failed to delete orphan ${twilioTemplate.friendlyName}: ${err.message}`);
           }
+        } else {
+          // Report as orphan but don't delete
+          orphans.push(`${twilioTemplate.friendlyName} (${twilioTemplate.sid})`);
+          console.log(`[Bulk Sync] Found orphaned Twilio template (not deleting): ${twilioTemplate.friendlyName} (${twilioTemplate.sid})`);
         }
       }
     }
@@ -974,31 +990,34 @@ export async function bulkSyncDatabaseToTwilio(options: {
     // 2. Sync all local templates to Twilio
     for (const localTemplate of allLocalTemplates) {
       try {
-        // Check if template exists in Twilio
+        // Check if template exists in Twilio with matching ContentSid
         const existsInTwilio = twilioTemplates.find(t => t.sid === localTemplate.twilioContentSid);
         
-        if (!existsInTwilio) {
-          // Template doesn't exist in Twilio - create it
+        if (!existsInTwilio || options.forceResync === true) {
+          // Template doesn't exist in Twilio or force resync - create/update it
           const result = await syncDatabaseToTwilio(localTemplate.id);
           if (result.success) {
-            console.log(`[Bulk Sync] Created template ${localTemplate.name} in Twilio`);
+            console.log(`[Bulk Sync] Synced template ${localTemplate.name} to Twilio (${result.contentSid})`);
             synced++;
           } else {
             errors.push(`Failed to sync ${localTemplate.name}: ${result.error}`);
           }
         } else {
-          // Template exists - just refresh status
-          await refreshTemplateStatus(localTemplate.id);
-          synced++;
+          // Template exists in Twilio - refresh status only
+          const statusResult = await refreshTemplateStatus(localTemplate.id);
+          if (statusResult.success) {
+            console.log(`[Bulk Sync] Refreshed status for ${localTemplate.name}: ${statusResult.status}`);
+            skipped++;
+          }
         }
       } catch (err: any) {
         errors.push(`Error syncing ${localTemplate.name}: ${err.message}`);
       }
     }
     
-    return { success: true, synced, deleted, errors };
+    return { success: true, synced, deleted, skipped, orphans, errors };
   } catch (error: any) {
-    return { success: false, synced, deleted, errors: [error.message] };
+    return { success: false, synced, deleted, skipped: 0, orphans: [], errors: [error.message] };
   }
 }
 

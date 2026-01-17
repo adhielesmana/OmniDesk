@@ -807,19 +807,33 @@ export async function registerRoutes(
       // Get template to check if it has a Twilio ContentSid
       const template = await storage.getMessageTemplateById(id);
       
+      let twilioDeleted = false;
+      let twilioError: string | null = null;
+      
       if (template && template.twilioContentSid && deleteFromTwilio !== 'false') {
         // Also delete from Twilio
         try {
           const { deleteTemplateFromTwilio } = await import("./twilio");
-          await deleteTemplateFromTwilio(template.twilioContentSid);
-          console.log(`[Template Delete] Deleted from Twilio: ${template.twilioContentSid}`);
-        } catch (twilioError: any) {
-          console.warn(`[Template Delete] Failed to delete from Twilio (continuing): ${twilioError.message}`);
+          const result = await deleteTemplateFromTwilio(template.twilioContentSid);
+          if (result.success) {
+            twilioDeleted = true;
+            console.log(`[Template Delete] Deleted from Twilio: ${template.twilioContentSid}`);
+          } else {
+            twilioError = result.error || 'Unknown error';
+            console.warn(`[Template Delete] Failed to delete from Twilio: ${twilioError}`);
+          }
+        } catch (err: any) {
+          twilioError = err.message;
+          console.warn(`[Template Delete] Failed to delete from Twilio (continuing): ${err.message}`);
         }
       }
       
       await storage.deleteMessageTemplate(id);
-      res.json({ success: true, deletedFromTwilio: !!template?.twilioContentSid });
+      res.json({ 
+        success: true, 
+        deletedFromTwilio: twilioDeleted,
+        twilioError: twilioError 
+      });
     } catch (error) {
       console.error("Error deleting template:", error);
       res.status(500).json({ error: "Failed to delete template" });
@@ -1088,21 +1102,33 @@ wa.me/6208991066262`;
     }
   });
 
-  // Bulk sync all templates to Twilio (App -> Twilio) and clean up orphans
+  // Bulk sync all templates to Twilio (App -> Twilio) and optionally clean up orphans
+  // forceResync=true means re-create all templates in Twilio (useful when content has changed)
   app.post("/api/admin/templates/sync-to-twilio", requireSuperadmin, async (req, res) => {
     try {
-      const { deleteOrphans = true } = req.body;
+      const { deleteOrphans = false, forceResync = true } = req.body;
       const { bulkSyncDatabaseToTwilio } = await import("./twilio");
-      const result = await bulkSyncDatabaseToTwilio({ deleteOrphans });
+      const result = await bulkSyncDatabaseToTwilio({ deleteOrphans, forceResync });
+      
+      let message = `Synced ${result.synced} templates to Twilio`;
+      if (result.skipped > 0) {
+        message += `, ${result.skipped} already up-to-date`;
+      }
+      if (result.deleted > 0) {
+        message += `, deleted ${result.deleted} orphaned templates`;
+      }
+      if (result.orphans.length > 0) {
+        message += `. Found ${result.orphans.length} unlinked Twilio template(s)`;
+      }
       
       res.json({
         success: result.success,
         synced: result.synced,
         deleted: result.deleted,
+        skipped: result.skipped,
+        orphans: result.orphans,
         errors: result.errors,
-        message: result.success 
-          ? `Synced ${result.synced} templates to Twilio, deleted ${result.deleted} orphaned templates`
-          : `Sync failed with ${result.errors.length} errors`
+        message: result.success ? message : `Sync failed with ${result.errors.length} errors`
       });
     } catch (error: any) {
       console.error("Error bulk syncing to Twilio:", error);
