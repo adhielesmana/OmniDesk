@@ -626,6 +626,13 @@ export type InsertShortenedUrl = z.infer<typeof insertShortenedUrlSchema>;
 
 // ============= MESSAGE TEMPLATES =============
 
+// Trigger rule type for template matching
+export type TriggerRule = {
+  field: string;       // Field to check (e.g., "message", "variables.invoice_number")
+  operator: "contains" | "equals" | "startsWith" | "endsWith" | "exists" | "regex";
+  value?: string;      // Value to match (not needed for "exists")
+};
+
 // Message templates for external API - reusable templates with variables
 export const messageTemplates = pgTable("message_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -636,6 +643,11 @@ export const messageTemplates = pgTable("message_templates", {
   category: varchar("category", { length: 50 }), // Category for organization (e.g., "billing", "notification")
   isActive: boolean("is_active").default(true),
   createdBy: varchar("created_by").references(() => users.id),
+  // Template selection fields (3-tier priority: message type → trigger rules → default)
+  messageType: varchar("message_type", { length: 50 }), // Message type this template handles (e.g., "invoice", "reminder")
+  triggerRules: json("trigger_rules").$type<TriggerRule[]>(), // Trigger rules for matching messages
+  isDefault: boolean("is_default").default(false), // Fallback template when no match found
+  priority: integer("priority").default(0), // Higher priority = checked first
   // Twilio Content API sync fields
   twilioContentSid: varchar("twilio_content_sid", { length: 50 }), // Twilio Content SID (HXXX...)
   twilioApprovalStatus: varchar("twilio_approval_status", { length: 20 }), // received, pending, approved, rejected
@@ -646,6 +658,8 @@ export const messageTemplates = pgTable("message_templates", {
 }, (table) => [
   index("message_templates_name_idx").on(table.name),
   index("message_templates_category_idx").on(table.category),
+  index("message_templates_message_type_idx").on(table.messageType),
+  index("message_templates_is_default_idx").on(table.isDefault),
 ]);
 
 export const insertMessageTemplateSchema = createInsertSchema(messageTemplates).omit({

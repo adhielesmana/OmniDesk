@@ -447,51 +447,75 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     let finalMessage = message;
     let aiGenerated = false;
     let templateApplied = false;
+    let matchedTemplateName: string | null = null;
+    let matchedBy: string | null = null;
 
-    // Check if this is a template-based message (e.g., invoice reminder)
-    if (metadata && typeof metadata === 'object') {
-      const messageType = (metadata as Record<string, any>).messageType;
+    // Use 3-tier template selection: messageType → trigger rules → default
+    const { selectTemplate, renderTemplate } = await import('./template-selector');
+    
+    // Build context for template selection
+    const meta = (metadata && typeof metadata === 'object') ? metadata as Record<string, any> : {};
+    const templateContext = {
+      messageType: meta.messageType,
+      message: message,
+      variables: {
+        recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
+        invoice_number: meta.invoice_number || '',
+        grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
+        invoice_url: message,
+        phone_number: phone_number,
+        ...meta,
+      }
+    };
+    
+    // Select template using 3-tier priority
+    const selectionResult = await selectTemplate(templateContext);
+    
+    if (selectionResult.template) {
+      const template = selectionResult.template;
+      matchedTemplateName = template.name;
+      matchedBy = selectionResult.matchedBy;
       
-      if (messageType === 'reminder_invoices' || messageType === 'new_invoice' || messageType === 'overdue' || messageType === 'payment_confirmation') {
-        // Apply invoice reminder template
-        const template = await storage.getMessageTemplateByName('invoice_reminder');
-        if (template && template.isActive) {
-          const meta = metadata as Record<string, any>;
-          
-          // Map message type to Indonesian text
-          let messageTypeText = '';
-          switch (messageType) {
-            case 'new_invoice':
-              messageTypeText = 'Berikut adalah tagihan baru untuk layanan internet Anda:';
-              break;
-            case 'reminder_invoices':
-              messageTypeText = 'Kami mengingatkan tagihan internet Anda yang belum dibayar:';
-              break;
-            case 'overdue':
-              messageTypeText = 'PENTING: Tagihan internet Anda sudah melewati jatuh tempo:';
-              break;
-            case 'payment_confirmation':
-              messageTypeText = 'Terima kasih! Pembayaran Anda telah kami terima untuk:';
-              break;
-            default:
-              messageTypeText = 'Informasi tagihan internet Anda:';
-          }
-          
-          const templateVars: Record<string, string> = {
-            recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
-            invoice_number: meta.invoice_number || '',
-            grand_total: formatRupiah(meta.grand_total || '0'),
-            invoice_url: message, // The message field contains the invoice URL
-            message_type: messageTypeText,
-          };
-          
-          finalMessage = applyTemplateVariables(template.content, templateVars);
-          templateApplied = true;
-          console.log(`API queue: Applied invoice_reminder template (${messageType}) for request ${request_id}`);
-        } else {
-          console.warn(`API queue: invoice_reminder template not found or inactive, using original message`);
+      // Map message type to Indonesian text for invoice-related messages
+      let messageTypeText = '';
+      if (meta.messageType) {
+        switch (meta.messageType) {
+          case 'new_invoice':
+            messageTypeText = 'Berikut adalah tagihan baru untuk layanan internet Anda:';
+            break;
+          case 'reminder_invoices':
+            messageTypeText = 'Kami mengingatkan tagihan internet Anda yang belum dibayar:';
+            break;
+          case 'overdue':
+            messageTypeText = 'PENTING: Tagihan internet Anda sudah melewati jatuh tempo:';
+            break;
+          case 'payment_confirmation':
+            messageTypeText = 'Terima kasih! Pembayaran Anda telah kami terima untuk:';
+            break;
+          default:
+            messageTypeText = 'Informasi tagihan internet Anda:';
         }
       }
+      
+      // Build template variables
+      const templateVars: Record<string, string> = {
+        recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
+        invoice_number: meta.invoice_number || '',
+        grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
+        invoice_url: message,
+        message_type: messageTypeText,
+        message: message,
+        phone_number: phone_number,
+        ...Object.fromEntries(
+          Object.entries(meta).filter(([k, v]) => typeof v === 'string')
+        ),
+      };
+      
+      finalMessage = renderTemplate(template, templateVars);
+      templateApplied = true;
+      console.log(`API queue: Applied template "${template.name}" (matched by ${matchedBy}) for request ${request_id}`);
+    } else {
+      console.log(`API queue: No template match for request ${request_id}, using original message`);
     }
 
     // Apply AI personalization if the client has an AI prompt configured (and no template was applied)
@@ -527,7 +551,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       message: finalMessage,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
-      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, aiGenerated, templateApplied }) : JSON.stringify({ originalMessage: message, aiGenerated, templateApplied }),
+      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, aiGenerated, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: message, aiGenerated, templateApplied, matchedTemplateName, matchedBy }),
     });
 
     return res.status(201).json({
@@ -536,6 +560,9 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       request_id: queuedMessage.requestId,
       status: queuedMessage.status,
       ai_generated: aiGenerated,
+      template_applied: templateApplied,
+      template_name: matchedTemplateName,
+      matched_by: matchedBy,
       created_at: queuedMessage.createdAt,
     });
   } catch (error) {
