@@ -126,16 +126,37 @@ export default function TemplatesPage() {
 
   const [syncingTemplateId, setSyncingTemplateId] = useState<string | null>(null);
   const [refreshingStatusId, setRefreshingStatusId] = useState<string | null>(null);
+  const [isSyncingFromTwilio, setIsSyncingFromTwilio] = useState(false);
+
+  const syncFromTwilioMutation = useMutation({
+    mutationFn: async () => {
+      setIsSyncingFromTwilio(true);
+      const res = await apiRequest("POST", "/api/admin/templates/sync-from-twilio");
+      return res.json() as Promise<{ success: boolean; synced: number; errors: string[]; message: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      toast({ 
+        title: "Synced from Twilio", 
+        description: data.message 
+      });
+      setIsSyncingFromTwilio(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to sync from Twilio", description: error.message, variant: "destructive" });
+      setIsSyncingFromTwilio(false);
+    },
+  });
 
   const syncTwilioMutation = useMutation({
     mutationFn: async (id: string) => {
       setSyncingTemplateId(id);
-      const res = await apiRequest("POST", `/api/admin/templates/${id}/sync-twilio`);
-      return res.json() as Promise<{ success: boolean; contentSid: string; approvalStatus: string }>;
+      const res = await apiRequest("POST", `/api/admin/templates/${id}/sync-to-twilio`);
+      return res.json() as Promise<{ success: boolean; contentSid: string; status: string }>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
-      toast({ title: "Template synced to Twilio", description: `Status: ${data.approvalStatus}` });
+      toast({ title: "Template synced to Twilio", description: `Status: ${data.status}` });
       setSyncingTemplateId(null);
     },
     onError: (error: any) => {
@@ -147,8 +168,8 @@ export default function TemplatesPage() {
   const refreshTwilioStatusMutation = useMutation({
     mutationFn: async (id: string) => {
       setRefreshingStatusId(id);
-      const res = await apiRequest("GET", `/api/admin/templates/${id}/twilio-status`);
-      return res.json() as Promise<{ status: string; rejectionReason?: string }>;
+      const res = await apiRequest("POST", `/api/admin/templates/${id}/refresh-status`);
+      return res.json() as Promise<{ success: boolean; status: string }>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
@@ -230,6 +251,19 @@ export default function TemplatesPage() {
                   <p className="text-muted-foreground text-sm">Manage message templates for automated notifications</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => syncFromTwilioMutation.mutate()}
+                    disabled={isSyncingFromTwilio}
+                    data-testid="button-sync-from-twilio"
+                  >
+                    {isSyncingFromTwilio ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Sync from Twilio
+                  </Button>
                   <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
                     <Download className="h-4 w-4 mr-2" />
                     Export
