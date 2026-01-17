@@ -809,35 +809,45 @@ export async function syncTwilioToDatabase(): Promise<{
     }
     
     const { storage } = await import('./storage');
+    const allTemplates = await storage.getAllMessageTemplates();
+    
+    // Track ContentSids already processed in this sync to avoid duplicates
+    const processedSids = new Set<string>();
     
     for (const twilioTemplate of listResult.templates) {
       try {
-        // Try to find matching template by ContentSid first
-        const allTemplates = await storage.getAllMessageTemplates();
+        // Skip if we've already processed this ContentSid
+        if (processedSids.has(twilioTemplate.sid)) {
+          console.log(`[Sync] Skipping duplicate ContentSid: ${twilioTemplate.sid}`);
+          continue;
+        }
+        processedSids.add(twilioTemplate.sid);
+        
+        // Try to find matching template by ContentSid first (exact match)
         let existingTemplate = allTemplates.find(t => t.twilioContentSid === twilioTemplate.sid);
         
-        // If not found by SID, try to match by friendly name (strip timestamp suffix)
-        if (!existingTemplate) {
-          const baseName = twilioTemplate.friendlyName.replace(/_\d+$/, '');
-          existingTemplate = allTemplates.find(t => t.name === baseName);
-        }
-        
         if (existingTemplate) {
-          // Update existing template
+          // Update existing template that already has this ContentSid
           await storage.updateMessageTemplate(existingTemplate.id, {
-            twilioContentSid: twilioTemplate.sid,
             twilioApprovalStatus: twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
                                    twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
             twilioSyncedAt: new Date(),
             content: twilioTemplate.body || existingTemplate.content
           });
-          console.log(`[Sync] Updated template ${existingTemplate.name} from Twilio`);
+          console.log(`[Sync] Updated template ${existingTemplate.name} (ContentSid: ${twilioTemplate.sid})`);
           synced++;
         } else {
-          // Create new template in database
-          const baseName = twilioTemplate.friendlyName.replace(/_\d+$/, '');
-          await storage.createMessageTemplate({
-            name: baseName,
+          // This ContentSid doesn't exist in database - create new template
+          // Use full friendly name to preserve uniqueness
+          const templateName = twilioTemplate.friendlyName;
+          
+          // Check if a template with this exact name already exists
+          const nameExists = allTemplates.find(t => t.name === templateName);
+          // If name exists, append ContentSid suffix to make it unique
+          const finalName = nameExists ? `${templateName}_${twilioTemplate.sid.slice(-8)}` : templateName;
+          
+          const newTemplate = await storage.createMessageTemplate({
+            name: finalName,
             content: twilioTemplate.body || '',
             variables: Object.keys(twilioTemplate.variables || {}),
             isActive: true,
@@ -846,8 +856,11 @@ export async function syncTwilioToDatabase(): Promise<{
                                    twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
             twilioSyncedAt: new Date()
           });
-          console.log(`[Sync] Created template ${baseName} from Twilio`);
+          console.log(`[Sync] Created template ${finalName} (ContentSid: ${twilioTemplate.sid})`);
           synced++;
+          
+          // Add to allTemplates to track for subsequent iterations
+          allTemplates.push(newTemplate as any);
         }
       } catch (err: any) {
         errors.push(`Error syncing ${twilioTemplate.friendlyName}: ${err.message}`);
