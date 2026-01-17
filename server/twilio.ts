@@ -800,6 +800,7 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
   created: number;
   updated: number;
   deleted: number;
+  unchanged: number;
   errors: string[];
 }> {
   const errors: string[] = [];
@@ -807,11 +808,12 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
   let created = 0;
   let updated = 0;
   let deleted = 0;
+  let unchanged = 0;
   
   try {
     const listResult = await listTwilioTemplates();
     if (!listResult.success || !listResult.templates) {
-      return { success: false, synced: 0, created: 0, updated: 0, deleted: 0, errors: [listResult.error || 'Failed to list templates'] };
+      return { success: false, synced: 0, created: 0, updated: 0, deleted: 0, unchanged: 0, errors: [listResult.error || 'Failed to list templates'] };
     }
     
     const { storage } = await import('./storage');
@@ -837,17 +839,30 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
         // Try to find matching template by ContentSid first (exact match)
         let existingTemplate = allTemplates.find(t => t.twilioContentSid === twilioTemplate.sid);
         
+        // Normalize approval status from Twilio
+        const twilioApprovalStatus = twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
+                                      twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending';
+        const twilioContent = twilioTemplate.body || '';
+        
         if (existingTemplate) {
-          // Update existing template that already has this ContentSid
-          await storage.updateMessageTemplate(existingTemplate.id, {
-            twilioApprovalStatus: twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
-                                   twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
-            twilioSyncedAt: new Date(),
-            content: twilioTemplate.body || existingTemplate.content
-          });
-          console.log(`[Sync] Updated template ${existingTemplate.name} (ContentSid: ${twilioTemplate.sid})`);
-          synced++;
-          updated++;
+          // Check if there are actual changes before updating
+          const hasChanges = 
+            existingTemplate.twilioApprovalStatus !== twilioApprovalStatus ||
+            existingTemplate.content !== twilioContent;
+          
+          if (hasChanges) {
+            await storage.updateMessageTemplate(existingTemplate.id, {
+              twilioApprovalStatus,
+              twilioSyncedAt: new Date(),
+              content: twilioContent || existingTemplate.content
+            });
+            console.log(`[Sync] Updated template ${existingTemplate.name} (ContentSid: ${twilioTemplate.sid}, status: ${twilioApprovalStatus})`);
+            synced++;
+            updated++;
+          } else {
+            console.log(`[Sync] Template ${existingTemplate.name} unchanged, skipping`);
+            unchanged++;
+          }
         } else {
           // This ContentSid doesn't exist in database - create new template
           // Use full friendly name to preserve uniqueness
@@ -860,12 +875,11 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
           
           const newTemplate = await storage.createMessageTemplate({
             name: finalName,
-            content: twilioTemplate.body || '',
+            content: twilioContent,
             variables: Object.keys(twilioTemplate.variables || {}),
             isActive: true,
             twilioContentSid: twilioTemplate.sid,
-            twilioApprovalStatus: twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
-                                   twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending',
+            twilioApprovalStatus,
             twilioSyncedAt: new Date()
           });
           console.log(`[Sync] Created template ${finalName} (ContentSid: ${twilioTemplate.sid})`);
@@ -895,9 +909,103 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
       }
     }
     
-    return { success: true, synced, created, updated, deleted, errors };
+    return { success: true, synced, created, updated, deleted, unchanged, errors };
   } catch (error: any) {
-    return { success: false, synced, created: 0, updated: 0, deleted: 0, errors: [error.message] };
+    return { success: false, synced, created: 0, updated: 0, deleted: 0, unchanged: 0, errors: [error.message] };
+  }
+}
+
+// Combined bidirectional sync: Twilio -> App first, then App -> Twilio
+export async function bidirectionalSync(): Promise<{
+  success: boolean;
+  fromTwilio: { created: number; updated: number; deleted: number; unchanged: number };
+  toTwilio: { synced: number; skipped: number };
+  errors: string[];
+}> {
+  const errors: string[] = [];
+  
+  try {
+    console.log('[Bidirectional Sync] Starting Twilio -> App sync...');
+    
+    // Step 1: Sync from Twilio to App (creates, updates, deletes orphans)
+    const fromTwilioResult = await syncTwilioToDatabase({ deleteOrphans: true });
+    
+    if (!fromTwilioResult.success) {
+      return {
+        success: false,
+        fromTwilio: { created: 0, updated: 0, deleted: 0, unchanged: 0 },
+        toTwilio: { synced: 0, skipped: 0 },
+        errors: fromTwilioResult.errors
+      };
+    }
+    
+    errors.push(...fromTwilioResult.errors);
+    
+    console.log(`[Bidirectional Sync] Twilio -> App completed: ${fromTwilioResult.created} created, ${fromTwilioResult.updated} updated, ${fromTwilioResult.deleted} deleted, ${fromTwilioResult.unchanged} unchanged`);
+    
+    // Step 2: Sync from App to Twilio (push local templates that don't exist in Twilio)
+    console.log('[Bidirectional Sync] Starting App -> Twilio sync...');
+    
+    const { storage } = await import('./storage');
+    const allLocalTemplates = await storage.getAllMessageTemplates();
+    
+    // Get current Twilio templates to check what exists
+    const twilioResult = await listTwilioTemplates();
+    const twilioSids = new Set((twilioResult.templates || []).map(t => t.sid));
+    
+    let toTwilioSynced = 0;
+    let toTwilioSkipped = 0;
+    
+    for (const localTemplate of allLocalTemplates) {
+      // Only sync templates that don't have a valid Twilio ContentSid
+      if (!localTemplate.twilioContentSid || !twilioSids.has(localTemplate.twilioContentSid)) {
+        // Template doesn't exist in Twilio - create it
+        if (localTemplate.content && localTemplate.content.trim()) {
+          try {
+            const result = await syncDatabaseToTwilio(localTemplate.id);
+            if (result.success) {
+              console.log(`[Bidirectional Sync] Pushed template ${localTemplate.name} to Twilio (${result.contentSid})`);
+              toTwilioSynced++;
+            } else {
+              errors.push(`Failed to push ${localTemplate.name}: ${result.error}`);
+            }
+          } catch (err: any) {
+            errors.push(`Error pushing ${localTemplate.name}: ${err.message}`);
+          }
+        } else {
+          console.log(`[Bidirectional Sync] Skipping ${localTemplate.name} - no content`);
+          toTwilioSkipped++;
+        }
+      } else {
+        // Template already exists in Twilio
+        toTwilioSkipped++;
+      }
+    }
+    
+    console.log(`[Bidirectional Sync] App -> Twilio completed: ${toTwilioSynced} synced, ${toTwilioSkipped} skipped`);
+    
+    return {
+      success: true,
+      fromTwilio: {
+        created: fromTwilioResult.created,
+        updated: fromTwilioResult.updated,
+        deleted: fromTwilioResult.deleted,
+        unchanged: fromTwilioResult.unchanged
+      },
+      toTwilio: {
+        synced: toTwilioSynced,
+        skipped: toTwilioSkipped
+      },
+      errors
+    };
+  } catch (error: any) {
+    console.error('[Bidirectional Sync] Error:', error);
+    return {
+      success: false,
+      fromTwilio: { created: 0, updated: 0, deleted: 0, unchanged: 0 },
+      toTwilio: { synced: 0, skipped: 0 },
+      errors: [error.message]
+    };
   }
 }
 

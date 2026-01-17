@@ -1134,21 +1134,22 @@ wa.me/6208991066262`;
     }
   });
   
-  // Manual sync trigger via scheduler (with result persistence)
+  // Manual bidirectional sync trigger via scheduler (with result persistence)
   app.post("/api/admin/templates/manual-sync", requireSuperadmin, async (req, res) => {
     try {
       const { runManualSync } = await import("./template-sync-scheduler");
       const result = await runManualSync();
       
+      const fromTwilio = result?.fromTwilio ?? { created: 0, updated: 0, deleted: 0, unchanged: 0 };
+      const toTwilio = result?.toTwilio ?? { synced: 0, skipped: 0 };
+      
       res.json({
         success: result?.success ?? false,
-        synced: result?.synced ?? 0,
-        created: result?.created ?? 0,
-        updated: result?.updated ?? 0,
-        deleted: result?.deleted ?? 0,
+        fromTwilio,
+        toTwilio,
         errors: result?.errors ?? [],
         message: result?.success 
-          ? `Synced ${result.synced} templates (${result.created} created, ${result.updated} updated, ${result.deleted} deleted)`
+          ? `Twilio→App: ${fromTwilio.created} created, ${fromTwilio.updated} updated, ${fromTwilio.deleted} deleted, ${fromTwilio.unchanged} unchanged. App→Twilio: ${toTwilio.synced} synced, ${toTwilio.skipped} skipped`
           : `Sync failed with ${result?.errors?.length ?? 0} errors`
       });
     } catch (error: any) {

@@ -127,8 +127,7 @@ export default function TemplatesPage() {
 
   const [syncingTemplateId, setSyncingTemplateId] = useState<string | null>(null);
   const [refreshingStatusId, setRefreshingStatusId] = useState<string | null>(null);
-  const [isSyncingFromTwilio, setIsSyncingFromTwilio] = useState(false);
-  const [isSyncingToTwilio, setIsSyncingToTwilio] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const { data: syncStatus } = useQuery<{
     schedulerActive: boolean;
@@ -138,10 +137,8 @@ export default function TemplatesPage() {
     lastSyncResult: {
       timestamp: string;
       success: boolean;
-      synced: number;
-      created: number;
-      updated: number;
-      deleted: number;
+      fromTwilio: { created: number; updated: number; deleted: number; unchanged: number };
+      toTwilio: { synced: number; skipped: number };
       errors: string[];
       source: 'auto' | 'manual';
     } | null;
@@ -150,47 +147,30 @@ export default function TemplatesPage() {
     refetchInterval: 60000,
   });
 
-  const syncFromTwilioMutation = useMutation({
+  const bidirectionalSyncMutation = useMutation({
     mutationFn: async () => {
-      setIsSyncingFromTwilio(true);
+      setIsSyncing(true);
       const res = await apiRequest("POST", "/api/admin/templates/manual-sync");
-      return res.json() as Promise<{ success: boolean; synced: number; created: number; updated: number; deleted: number; errors: string[]; message: string }>;
+      return res.json() as Promise<{ 
+        success: boolean; 
+        fromTwilio: { created: number; updated: number; deleted: number; unchanged: number };
+        toTwilio: { synced: number; skipped: number };
+        errors: string[]; 
+        message: string 
+      }>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/templates/sync-status"] });
       toast({ 
-        title: "Synced from Twilio", 
+        title: "Sync Complete", 
         description: data.message 
       });
-      setIsSyncingFromTwilio(false);
+      setIsSyncing(false);
     },
     onError: (error: any) => {
-      toast({ title: "Failed to sync from Twilio", description: error.message, variant: "destructive" });
-      setIsSyncingFromTwilio(false);
-    },
-  });
-
-  const syncToTwilioMutation = useMutation({
-    mutationFn: async () => {
-      setIsSyncingToTwilio(true);
-      const res = await apiRequest("POST", "/api/admin/templates/sync-to-twilio", { deleteOrphans: false, forceResync: true });
-      return res.json() as Promise<{ success: boolean; synced: number; deleted: number; skipped: number; orphans: string[]; errors: string[]; message: string }>;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
-      toast({ 
-        title: "Synced to Twilio", 
-        description: data.message
-      });
-      if (data.orphans?.length > 0) {
-        console.log("Unlinked Twilio templates:", data.orphans);
-      }
-      setIsSyncingToTwilio(false);
-    },
-    onError: (error: any) => {
-      toast({ title: "Failed to sync to Twilio", description: error.message, variant: "destructive" });
-      setIsSyncingToTwilio(false);
+      toast({ title: "Sync Failed", description: error.message, variant: "destructive" });
+      setIsSyncing(false);
     },
   });
 
@@ -300,29 +280,16 @@ export default function TemplatesPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button 
                       variant="outline" 
-                      onClick={() => syncFromTwilioMutation.mutate()}
-                      disabled={isSyncingFromTwilio}
-                      data-testid="button-sync-from-twilio"
+                      onClick={() => bidirectionalSyncMutation.mutate()}
+                      disabled={isSyncing}
+                      data-testid="button-sync-twilio"
                     >
-                      {isSyncingFromTwilio ? (
+                      {isSyncing ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       ) : (
-                        <Download className="h-4 w-4 mr-2" />
+                        <RefreshCw className="h-4 w-4 mr-2" />
                       )}
-                      Sync from Twilio
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      onClick={() => syncToTwilioMutation.mutate()}
-                      disabled={isSyncingToTwilio}
-                      data-testid="button-sync-to-twilio"
-                    >
-                      {isSyncingToTwilio ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4 mr-2" />
-                      )}
-                      Sync to Twilio
+                      Sync with Twilio
                     </Button>
                     <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
                     <Download className="h-4 w-4 mr-2" />
@@ -392,7 +359,7 @@ export default function TemplatesPage() {
                     <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
                       <Clock className="h-3 w-3" />
                       <span>
-                        Next auto-sync in {syncStatus.nextSyncIn.hours}h {syncStatus.nextSyncIn.minutes}m
+                        Next auto-sync in {syncStatus.nextSyncIn?.hours ?? 0}h {syncStatus.nextSyncIn?.minutes ?? 0}m
                         {syncStatus.schedulerActive && <Badge variant="outline" className="ml-1 text-xs py-0">Active</Badge>}
                       </span>
                       {syncStatus.lastSyncResult && (
