@@ -686,16 +686,25 @@ async function processApiMessageQueue(): Promise<void> {
             : message.metadata;
           
           // Map OmniDesk variable names to Twilio numbered format
-          // Template variables: recipient_name, invoice_number, grand_total, invoice_url, message_type
+          // Template variables: 1=recipient_name, 2=message_type, 3=invoice_number, 4=grand_total, 5=invoice_url
+          // Note: recipient_name is at root level (message.recipientName), invoice_url comes from message.message field
+          // messageType in payload is camelCase, we also check snake_case for compatibility
+          const messageTypeText = metadata.messageType === "new_invoice" || metadata.message_type === "new_invoice"
+            ? "Berikut adalah tagihan baru untuk layanan internet Anda:"
+            : metadata.messageType === "reminder" || metadata.message_type === "reminder"
+            ? "Ini adalah pengingat untuk tagihan internet Anda yang belum dibayar:"
+            : "Berikut adalah informasi tagihan layanan internet Anda:";
+          
           const contentVariables: Record<string, string> = {
-            "1": metadata.recipient_name || message.recipientName || "Pelanggan",
-            "2": metadata.message_type || "Berikut adalah tagihan baru untuk layanan internet Anda:",
+            "1": message.recipientName || metadata.recipient_name || "Pelanggan",
+            "2": messageTypeText,
             "3": metadata.invoice_number || "",
             "4": metadata.grand_total || "",
-            "5": metadata.invoice_url || ""
+            "5": message.message || metadata.invoice_url || ""
           };
           
           console.log(`API queue: Using approved template ${invoiceTemplate.twilioContentSid} for ${message.phoneNumber}`);
+          console.log(`API queue: Template variables:`, JSON.stringify(contentVariables));
           const twilioResult = await sendWhatsAppTemplate(
             message.phoneNumber,
             invoiceTemplate.twilioContentSid!,
