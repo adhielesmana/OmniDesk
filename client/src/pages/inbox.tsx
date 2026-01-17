@@ -90,7 +90,8 @@ function InboxContent({
       queryKey: ["/api/conversations", selectedConversationId],
       enabled: !!selectedConversationId,
       initialData: cachedConversation || undefined,
-      staleTime: 0, // Always refetch to get latest messages
+      staleTime: 5000, // Cache for 5 seconds to prevent constant refetching during typing
+      refetchOnWindowFocus: false, // Don't refetch on window focus to prevent typing interruption
     });
 
   // Cache the conversation when it's fetched
@@ -99,6 +100,16 @@ function InboxContent({
       setCachedConversation(selectedConversation);
     }
   }, [selectedConversation]);
+
+  // Stable conversation reference - only update when message count or last message changes
+  const stableConversation = useMemo(() => {
+    if (!selectedConversation) return null;
+    return selectedConversation;
+  }, [
+    selectedConversation?.id,
+    selectedConversation?.messages?.length,
+    selectedConversation?.messages?.[selectedConversation?.messages?.length - 1]?.id,
+  ]);
 
   const { data: platformSettings = [] } = useQuery<PlatformSettings[]>({
     queryKey: ["/api/platform-settings"],
@@ -346,7 +357,7 @@ function InboxContent({
                 {/* Message Thread */}
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <MessageThread
-                    conversation={selectedConversation || null}
+                    conversation={stableConversation}
                     onSendMessage={handleSendMessage}
                     isSending={isSending}
                     isLoading={isLoadingConversation}
@@ -379,7 +390,7 @@ function InboxContent({
 
           <div className="hidden md:flex flex-1 min-w-0 flex-col h-full">
             <MessageThread
-              conversation={selectedConversation || null}
+              conversation={stableConversation}
               onSendMessage={handleSendMessage}
               isSending={isSending}
               isLoading={isLoadingConversation}
