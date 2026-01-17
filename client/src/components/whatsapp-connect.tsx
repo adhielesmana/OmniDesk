@@ -107,9 +107,9 @@ export function WhatsAppConnect() {
     switch (connectionStatus) {
       case "connected":
         return (
-          <Badge variant="default" className="bg-green-600">
+          <Badge variant="outline" className="border-green-600 text-green-600">
             <Check className="w-3 h-3 mr-1" />
-            Connected{getConnectionLabel() ? ` (${getConnectionLabel()})` : ""}
+            Connected
           </Badge>
         );
       case "qr":
