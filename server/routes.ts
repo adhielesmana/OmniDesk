@@ -802,8 +802,24 @@ export async function registerRoutes(
   app.delete("/api/admin/templates/:id", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
+      const { deleteFromTwilio } = req.query;
+      
+      // Get template to check if it has a Twilio ContentSid
+      const template = await storage.getMessageTemplateById(id);
+      
+      if (template && template.twilioContentSid && deleteFromTwilio !== 'false') {
+        // Also delete from Twilio
+        try {
+          const { deleteTemplateFromTwilio } = await import("./twilio");
+          await deleteTemplateFromTwilio(template.twilioContentSid);
+          console.log(`[Template Delete] Deleted from Twilio: ${template.twilioContentSid}`);
+        } catch (twilioError: any) {
+          console.warn(`[Template Delete] Failed to delete from Twilio (continuing): ${twilioError.message}`);
+        }
+      }
+      
       await storage.deleteMessageTemplate(id);
-      res.json({ success: true });
+      res.json({ success: true, deletedFromTwilio: !!template?.twilioContentSid });
     } catch (error) {
       console.error("Error deleting template:", error);
       res.status(500).json({ error: "Failed to delete template" });
