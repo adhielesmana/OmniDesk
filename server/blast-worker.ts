@@ -685,8 +685,8 @@ async function processApiMessageQueue(): Promise<void> {
             ? JSON.parse(message.metadata) 
             : message.metadata;
           
-          // Map OmniDesk variable names to Twilio numbered format
-          // Template variables: 1=recipient_name, 2=message_type, 3=invoice_number, 4=grand_total, 5=invoice_url
+          // Map payload to Twilio Content Template variable names
+          // Template uses named variables: {{recipient_name}}, {{message_type}}, {{invoice_number}}, {{grand_total}}, {{invoice_url}}
           // Note: recipient_name is at root level (message.recipientName), invoice_url comes from message.message field
           // messageType in payload is camelCase, we also check snake_case for compatibility
           const messageTypeText = metadata.messageType === "new_invoice" || metadata.message_type === "new_invoice"
@@ -696,11 +696,11 @@ async function processApiMessageQueue(): Promise<void> {
             : "Berikut adalah informasi tagihan layanan internet Anda:";
           
           const contentVariables: Record<string, string> = {
-            "1": message.recipientName || metadata.recipient_name || "Pelanggan",
-            "2": messageTypeText,
-            "3": metadata.invoice_number || "",
-            "4": metadata.grand_total || "",
-            "5": message.message || metadata.invoice_url || ""
+            "recipient_name": message.recipientName || metadata.recipient_name || "Pelanggan",
+            "message_type": messageTypeText,
+            "invoice_number": metadata.invoice_number || "",
+            "grand_total": metadata.grand_total || "",
+            "invoice_url": message.message || metadata.invoice_url || ""
           };
           
           console.log(`API queue: Using approved template ${invoiceTemplate.twilioContentSid} for ${message.phoneNumber}`);
