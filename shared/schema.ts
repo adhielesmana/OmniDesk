@@ -623,3 +623,31 @@ export const insertShortenedUrlSchema = createInsertSchema(shortenedUrls).omit({
 
 export type ShortenedUrl = typeof shortenedUrls.$inferSelect;
 export type InsertShortenedUrl = z.infer<typeof insertShortenedUrlSchema>;
+
+// ============= MESSAGE TEMPLATES =============
+
+// Message templates for external API - reusable templates with variables
+export const messageTemplates = pgTable("message_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull().unique(), // Template identifier (e.g., "invoice", "payment_reminder")
+  description: text("description"), // Human-readable description
+  content: text("content").notNull(), // Template content with {{variable}} placeholders
+  variables: text("variables").array(), // List of required variable names
+  category: varchar("category", { length: 50 }), // Category for organization (e.g., "billing", "notification")
+  isActive: boolean("is_active").default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("message_templates_name_idx").on(table.name),
+  index("message_templates_category_idx").on(table.category),
+]);
+
+export const insertMessageTemplateSchema = createInsertSchema(messageTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type MessageTemplate = typeof messageTemplates.$inferSelect;
+export type InsertMessageTemplate = z.infer<typeof insertMessageTemplateSchema>;

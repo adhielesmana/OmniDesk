@@ -33,6 +33,9 @@ import {
   shortenedUrls,
   type ShortenedUrl,
   type InsertShortenedUrl,
+  messageTemplates,
+  type MessageTemplate,
+  type InsertMessageTemplate,
   users,
   contacts,
   conversations,
@@ -217,6 +220,14 @@ export interface IStorage {
   createShortenedUrl(url: InsertShortenedUrl): Promise<ShortenedUrl>;
   getShortenedUrlByCode(shortCode: string): Promise<ShortenedUrl | undefined>;
   incrementShortenedUrlClickCount(shortCode: string): Promise<void>;
+
+  // Message Templates
+  createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate>;
+  getMessageTemplateByName(name: string): Promise<MessageTemplate | undefined>;
+  getMessageTemplateById(id: string): Promise<MessageTemplate | undefined>;
+  getAllMessageTemplates(): Promise<MessageTemplate[]>;
+  updateMessageTemplate(id: string, updates: Partial<InsertMessageTemplate>): Promise<MessageTemplate | undefined>;
+  deleteMessageTemplate(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1676,6 +1687,48 @@ export class DatabaseStorage implements IStorage {
       .update(shortenedUrls)
       .set({ clickCount: sql`${shortenedUrls.clickCount} + 1` })
       .where(eq(shortenedUrls.shortCode, shortCode));
+  }
+
+  // Message Templates
+  async createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate> {
+    const [newTemplate] = await db.insert(messageTemplates).values(template).returning();
+    return newTemplate;
+  }
+
+  async getMessageTemplateByName(name: string): Promise<MessageTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(messageTemplates)
+      .where(eq(messageTemplates.name, name));
+    return template || undefined;
+  }
+
+  async getMessageTemplateById(id: string): Promise<MessageTemplate | undefined> {
+    const [template] = await db
+      .select()
+      .from(messageTemplates)
+      .where(eq(messageTemplates.id, id));
+    return template || undefined;
+  }
+
+  async getAllMessageTemplates(): Promise<MessageTemplate[]> {
+    return await db
+      .select()
+      .from(messageTemplates)
+      .orderBy(messageTemplates.name);
+  }
+
+  async updateMessageTemplate(id: string, updates: Partial<InsertMessageTemplate>): Promise<MessageTemplate | undefined> {
+    const [updated] = await db
+      .update(messageTemplates)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(messageTemplates.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteMessageTemplate(id: string): Promise<void> {
+    await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
   }
 }
 

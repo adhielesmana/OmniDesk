@@ -6,6 +6,23 @@ import { ApiClient } from "@shared/schema";
 
 const DEFAULT_TIMEZONE = "Asia/Jakarta";
 
+// Apply template variables to template content
+function applyTemplateVariables(template: string, variables: Record<string, string>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(variables)) {
+    const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+    result = result.replace(placeholder, value || '');
+  }
+  return result;
+}
+
+// Format Indonesian Rupiah currency
+function formatRupiah(amount: string | number): string {
+  const num = typeof amount === 'string' ? parseInt(amount.replace(/\D/g, ''), 10) : amount;
+  if (isNaN(num)) return String(amount);
+  return num.toLocaleString('id-ID');
+}
+
 function getLocalDateTime(timezone: string) {
   const now = new Date();
   const jakartaOffset = 7 * 60; // WIB is UTC+7
@@ -429,9 +446,35 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     const client = req.apiClient!;
     let finalMessage = message;
     let aiGenerated = false;
+    let templateApplied = false;
 
-    // Apply AI personalization if the client has an AI prompt configured
-    if (client.aiPrompt && client.aiPrompt.trim().length > 0) {
+    // Check if this is a template-based message (e.g., invoice reminder)
+    if (metadata && typeof metadata === 'object') {
+      const messageType = (metadata as Record<string, any>).messageType;
+      
+      if (messageType === 'reminder_invoices') {
+        // Apply invoice reminder template
+        const template = await storage.getMessageTemplateByName('invoice_reminder');
+        if (template && template.isActive) {
+          const meta = metadata as Record<string, any>;
+          const templateVars: Record<string, string> = {
+            recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
+            invoice_number: meta.invoice_number || '',
+            grand_total: formatRupiah(meta.grand_total || '0'),
+            invoice_url: message, // The message field contains the invoice URL
+          };
+          
+          finalMessage = applyTemplateVariables(template.content, templateVars);
+          templateApplied = true;
+          console.log(`API queue: Applied invoice_reminder template for request ${request_id}`);
+        } else {
+          console.warn(`API queue: invoice_reminder template not found or inactive, using original message`);
+        }
+      }
+    }
+
+    // Apply AI personalization if the client has an AI prompt configured (and no template was applied)
+    if (!templateApplied && client.aiPrompt && client.aiPrompt.trim().length > 0) {
       const apiKey = await getOpenAIKey();
       if (apiKey) {
         console.log(`API queue: Generating AI personalized message for request ${request_id}`);
@@ -463,7 +506,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       message: finalMessage,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
-      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, aiGenerated }) : JSON.stringify({ originalMessage: message, aiGenerated }),
+      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, aiGenerated, templateApplied }) : JSON.stringify({ originalMessage: message, aiGenerated, templateApplied }),
     });
 
     return res.status(201).json({
@@ -606,6 +649,26 @@ externalApiRouter.get("/messages/:id", async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Error getting message:", error);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Get available templates (for API clients to reference)
+externalApiRouter.get("/templates", async (req: Request, res: Response) => {
+  try {
+    const templates = await storage.getAllMessageTemplates();
+    const activeTemplates = templates.filter(t => t.isActive);
+    
+    return res.json({
+      templates: activeTemplates.map(t => ({
+        name: t.name,
+        description: t.description,
+        variables: t.variables,
+        category: t.category,
+      })),
+    });
+  } catch (error) {
+    console.error("Error getting templates:", error);
     return res.status(500).json({ error: "Internal server error" });
   }
 });

@@ -660,6 +660,83 @@ export async function registerRoutes(
     }
   });
 
+  // ============= MESSAGE TEMPLATES MANAGEMENT =============
+  app.get("/api/admin/templates", requireSuperadmin, async (req, res) => {
+    try {
+      const templates = await storage.getAllMessageTemplates();
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching templates:", error);
+      res.status(500).json({ error: "Failed to fetch templates" });
+    }
+  });
+
+  app.post("/api/admin/templates", requireSuperadmin, async (req, res) => {
+    try {
+      const { name, description, content, variables, category } = req.body;
+      
+      if (!name || !content) {
+        return res.status(400).json({ error: "Name and content are required" });
+      }
+
+      const existing = await storage.getMessageTemplateByName(name);
+      if (existing) {
+        return res.status(409).json({ error: "Template with this name already exists" });
+      }
+
+      const template = await storage.createMessageTemplate({
+        name,
+        description,
+        content,
+        variables: variables || [],
+        category,
+        isActive: true,
+        createdBy: req.user?.id,
+      });
+      
+      res.status(201).json(template);
+    } catch (error) {
+      console.error("Error creating template:", error);
+      res.status(500).json({ error: "Failed to create template" });
+    }
+  });
+
+  app.put("/api/admin/templates/:id", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { name, description, content, variables, category, isActive } = req.body;
+      
+      const template = await storage.updateMessageTemplate(id, {
+        name,
+        description,
+        content,
+        variables,
+        category,
+        isActive,
+      });
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      res.json(template);
+    } catch (error) {
+      console.error("Error updating template:", error);
+      res.status(500).json({ error: "Failed to update template" });
+    }
+  });
+
+  app.delete("/api/admin/templates/:id", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteMessageTemplate(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting template:", error);
+      res.status(500).json({ error: "Failed to delete template" });
+    }
+  });
+
   // ============= ADMIN USER MANAGEMENT =============
   app.get("/api/admin/users", requireAdmin, async (req, res) => {
     try {
