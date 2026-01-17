@@ -631,6 +631,26 @@ export async function registerRoutes(
     }
   });
 
+  // Resend a failed queue message
+  app.post("/api/admin/api-message-queue/:id/resend", requireSuperadmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const message = await storage.getApiMessage(id);
+      if (!message) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+      if (message.status !== "failed") {
+        return res.status(400).json({ error: "Only failed messages can be resent" });
+      }
+      // Reset the message to queued status
+      await storage.updateApiMessageStatus(id, "queued", null);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error resending API message:", error);
+      res.status(500).json({ error: "Failed to resend message" });
+    }
+  });
+
   app.get("/api/admin/api-clients/:id/logs", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;

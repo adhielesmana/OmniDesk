@@ -583,6 +583,20 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
     },
   });
 
+  const resendMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/api-message-queue/${id}/resend`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/api-message-queue"] });
+      toast({ title: "Message queued for resend" });
+    },
+    onError: () => {
+      toast({ title: "Failed to resend message", variant: "destructive" });
+    },
+  });
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "queued":
@@ -726,6 +740,25 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                         </div>
                         <div className="flex items-center gap-2">
                           {getStatusBadge(msg.status)}
+                          {msg.status === "failed" && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                resendMutation.mutate(msg.id);
+                              }}
+                              disabled={resendMutation.isPending}
+                              title="Resend message"
+                              data-testid={`button-resend-${msg.id}`}
+                            >
+                              {resendMutation.isPending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="h-4 w-4 text-primary" />
+                              )}
+                            </Button>
+                          )}
                           {(msg.status === "queued" || msg.status === "failed") && (
                             <Button
                               variant="ghost"
@@ -735,6 +768,7 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                                 deleteMutation.mutate(msg.id);
                               }}
                               disabled={deleteMutation.isPending}
+                              title="Delete message"
                               data-testid={`button-delete-${msg.id}`}
                             >
                               {deleteMutation.isPending ? (
