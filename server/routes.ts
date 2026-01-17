@@ -718,7 +718,7 @@ export async function registerRoutes(
       (async () => {
         try {
           const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
-          const syncResult = await syncTemplateToTwilio(template);
+          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || []);
           if (syncResult.success && syncResult.contentSid) {
             const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
             const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
@@ -768,7 +768,7 @@ export async function registerRoutes(
       (async () => {
         try {
           const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
-          const syncResult = await syncTemplateToTwilio(template);
+          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || []);
           if (syncResult.success && syncResult.contentSid) {
             const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
             const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
