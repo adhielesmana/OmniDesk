@@ -213,14 +213,6 @@ else
 fi
 echo -e "  ${GREEN}✓${NC} Session table ready"
 
-echo -e "  ${YELLOW}→${NC} Syncing Twilio template ContentSid..."
-if docker compose version &> /dev/null; then
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET twilio_content_sid = 'HXc4c3a3d7bbe381f5f14da01b43c9b134', twilio_approval_status = 'approved', twilio_synced_at = NOW() WHERE name = 'invoice_reminder';" 2>/dev/null || true
-else
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET twilio_content_sid = 'HXc4c3a3d7bbe381f5f14da01b43c9b134', twilio_approval_status = 'approved', twilio_synced_at = NOW() WHERE name = 'invoice_reminder';" 2>/dev/null || true
-fi
-echo -e "  ${GREEN}✓${NC} Twilio template synced"
-
 echo -e "  ${YELLOW}→${NC} Cleaning up legacy admin user if exists..."
 if docker compose version &> /dev/null; then
     docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true

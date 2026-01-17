@@ -7,6 +7,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { seedSuperadmin, seedDefaultDepartment } from "./auth";
 import { startBlastWorker, startApiQueueWorker } from "./blast-worker";
+import { initializeTwilioTemplates } from "./template-init";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 
@@ -136,6 +137,9 @@ app.use((req, res, next) => {
   await seedSuperadmin();
   await seedDefaultDepartment();
   await registerRoutes(httpServer, app);
+  
+  // Initialize Twilio templates (recreates with proper numbered variables if needed)
+  setTimeout(() => initializeTwilioTemplates(), 5000);
   
   startBlastWorker();
   startApiQueueWorker();
