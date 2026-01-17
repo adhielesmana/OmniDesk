@@ -439,7 +439,7 @@ function convertVariablesToTwilio(content: string, variables: string[]): {
 
 // Helper to get auth credentials for HTTP requests
 // Database uses accountSid:authToken, Replit uses apiKey:apiKeySecret
-async function getAuthForHttp(): Promise<{ authString: string; accountSid: string } | null> {
+export async function getAuthForHttp(): Promise<{ authString: string; accountSid: string } | null> {
   try {
     const creds = await getCredentials();
     let authString: string;

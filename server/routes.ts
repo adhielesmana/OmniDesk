@@ -927,6 +927,131 @@ export async function registerRoutes(
     }
   });
 
+  // Recreate invoice_reminder template with proper numbered variables
+  // This fixes templates that were created with [variable_name] instead of {{1}}
+  app.post("/api/admin/templates/recreate-invoice-template", requireSuperadmin, async (req, res) => {
+    try {
+      const { syncTemplateToTwilio, submitTemplateForApproval, deleteTemplateFromTwilio, getTemplateApprovalStatus } = await import("./twilio");
+      
+      // Get existing template
+      const template = await storage.getMessageTemplateByName("invoice_reminder");
+      
+      if (!template) {
+        return res.status(404).json({ error: "invoice_reminder template not found in database" });
+      }
+      
+      // Delete old template from Twilio if exists
+      if (template.twilioContentSid) {
+        console.log(`[Template Recreate] Deleting old template ${template.twilioContentSid}...`);
+        await deleteTemplateFromTwilio(template.twilioContentSid);
+      }
+      
+      // Create new template with PROPER numbered variables
+      // The body MUST use {{1}}, {{2}}, {{3}}, {{4}}, {{5}} format
+      const properTemplateBody = `Yth. {{1}},
+
+{{2}}
+
+Nomor Invoice: {{3}}
+Total Tagihan: Rp {{4}}
+
+Untuk melihat detail dan pembayaran, silakan klik:
+{{5}}
+
+Jika sudah melakukan pembayaran, mohon abaikan pesan ini.
+
+Terima kasih,
+MAXNET Customer Care
+wa.me/6208991066262`;
+
+      // Variables array for reference (order matters!)
+      const variables = ["recipient_name", "message_type", "invoice_number", "grand_total", "invoice_url"];
+      
+      // Create the template - body already has {{1}}, {{2}} etc.
+      // We pass empty variables array since body already has numbered vars
+      console.log(`[Template Recreate] Creating new template with numbered variables...`);
+      
+      const { getAuthForHttp } = await import("./twilio");
+      const auth = await getAuthForHttp();
+      
+      if (!auth) {
+        return res.status(400).json({ error: "Twilio credentials not configured" });
+      }
+      
+      // Build payload with proper numbered variables
+      const payload = {
+        friendly_name: "invoice_reminder_v2",
+        language: "id",
+        types: {
+          "twilio/text": {
+            body: properTemplateBody
+          }
+        },
+        variables: {
+          "1": "Pelanggan",
+          "2": "Berikut adalah tagihan baru untuk layanan internet Anda:",
+          "3": "INV000000",
+          "4": "100000",
+          "5": "https://invoice.example.com"
+        }
+      };
+      
+      // Create template via HTTP
+      const response = await fetch('https://content.twilio.com/v1/Content', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${auth.authString}`
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      const result = await response.json();
+      
+      if (!response.ok) {
+        console.error('[Template Recreate] API error:', result);
+        return res.status(400).json({ 
+          error: result.message || result.error || `HTTP ${response.status}`,
+          details: result
+        });
+      }
+      
+      const newContentSid = result.sid;
+      console.log(`[Template Recreate] Template created: ${newContentSid}`);
+      
+      // Submit for WhatsApp approval
+      console.log(`[Template Recreate] Submitting for WhatsApp approval...`);
+      const approvalResult = await submitTemplateForApproval(newContentSid);
+      
+      let approvalStatus = "pending";
+      if (approvalResult.success && approvalResult.status) {
+        approvalStatus = approvalResult.status;
+      }
+      
+      // Update database with new ContentSid
+      await storage.updateMessageTemplate(template.id, {
+        content: properTemplateBody,
+        variables: variables,
+        twilioContentSid: newContentSid,
+        twilioApprovalStatus: approvalStatus,
+        twilioSyncedAt: new Date(),
+      } as any);
+      
+      console.log(`[Template Recreate] Success! New ContentSid: ${newContentSid}, Status: ${approvalStatus}`);
+      
+      res.json({
+        success: true,
+        oldContentSid: template.twilioContentSid,
+        newContentSid: newContentSid,
+        approvalStatus: approvalStatus,
+        message: "Template recreated with proper numbered variables. Wait for WhatsApp approval."
+      });
+    } catch (error: any) {
+      console.error("[Template Recreate] Error:", error);
+      res.status(500).json({ error: error.message || "Failed to recreate template" });
+    }
+  });
+
   // Export all templates as JSON
   app.get("/api/admin/templates/export", requireSuperadmin, async (req, res) => {
     try {
