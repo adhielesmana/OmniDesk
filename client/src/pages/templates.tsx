@@ -130,14 +130,35 @@ export default function TemplatesPage() {
   const [isSyncingFromTwilio, setIsSyncingFromTwilio] = useState(false);
   const [isSyncingToTwilio, setIsSyncingToTwilio] = useState(false);
 
+  const { data: syncStatus } = useQuery<{
+    schedulerActive: boolean;
+    nextSyncTime: string;
+    nextSyncIn: { hours: number; minutes: number };
+    lastAutoSync: string | null;
+    lastSyncResult: {
+      timestamp: string;
+      success: boolean;
+      synced: number;
+      created: number;
+      updated: number;
+      deleted: number;
+      errors: string[];
+      source: 'auto' | 'manual';
+    } | null;
+  }>({
+    queryKey: ["/api/admin/templates/sync-status"],
+    refetchInterval: 60000,
+  });
+
   const syncFromTwilioMutation = useMutation({
     mutationFn: async () => {
       setIsSyncingFromTwilio(true);
-      const res = await apiRequest("POST", "/api/admin/templates/sync-from-twilio");
-      return res.json() as Promise<{ success: boolean; synced: number; errors: string[]; message: string }>;
+      const res = await apiRequest("POST", "/api/admin/templates/manual-sync");
+      return res.json() as Promise<{ success: boolean; synced: number; created: number; updated: number; deleted: number; errors: string[]; message: string }>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates/sync-status"] });
       toast({ 
         title: "Synced from Twilio", 
         description: data.message 
@@ -275,34 +296,35 @@ export default function TemplatesPage() {
                   <h2 className="text-xl font-semibold">Invoice & Notification Templates</h2>
                   <p className="text-muted-foreground text-sm">Manage message templates for automated notifications</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => syncFromTwilioMutation.mutate()}
-                    disabled={isSyncingFromTwilio}
-                    data-testid="button-sync-from-twilio"
-                  >
-                    {isSyncingFromTwilio ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-2" />
-                    )}
-                    Sync from Twilio
-                  </Button>
-                  <Button 
-                    variant="outline" 
-                    onClick={() => syncToTwilioMutation.mutate()}
-                    disabled={isSyncingToTwilio}
-                    data-testid="button-sync-to-twilio"
-                  >
-                    {isSyncingToTwilio ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Upload className="h-4 w-4 mr-2" />
-                    )}
-                    Sync to Twilio
-                  </Button>
-                  <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => syncFromTwilioMutation.mutate()}
+                      disabled={isSyncingFromTwilio}
+                      data-testid="button-sync-from-twilio"
+                    >
+                      {isSyncingFromTwilio ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Sync from Twilio
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      onClick={() => syncToTwilioMutation.mutate()}
+                      disabled={isSyncingToTwilio}
+                      data-testid="button-sync-to-twilio"
+                    >
+                      {isSyncingToTwilio ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      Sync to Twilio
+                    </Button>
+                    <Button variant="outline" onClick={handleExport} data-testid="button-export-templates">
                     <Download className="h-4 w-4 mr-2" />
                     Export
                   </Button>
@@ -365,6 +387,27 @@ export default function TemplatesPage() {
                     <CreateTemplateForm onSubmit={(data) => createMutation.mutate(data)} isPending={createMutation.isPending} />
                   </DialogContent>
                 </Dialog>
+                  </div>
+                  {syncStatus && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                      <Clock className="h-3 w-3" />
+                      <span>
+                        Next auto-sync in {syncStatus.nextSyncIn.hours}h {syncStatus.nextSyncIn.minutes}m
+                        {syncStatus.schedulerActive && <Badge variant="outline" className="ml-1 text-xs py-0">Active</Badge>}
+                      </span>
+                      {syncStatus.lastSyncResult && (
+                        <span className="text-muted-foreground/70">
+                          | Last: {new Date(syncStatus.lastSyncResult.timestamp).toLocaleString()} 
+                          ({syncStatus.lastSyncResult.source === 'auto' ? 'auto' : 'manual'})
+                          {syncStatus.lastSyncResult.success ? (
+                            <CheckCircle2 className="h-3 w-3 inline ml-1 text-green-500" />
+                          ) : (
+                            <XCircle className="h-3 w-3 inline ml-1 text-red-500" />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

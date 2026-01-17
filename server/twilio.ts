@@ -794,27 +794,38 @@ export async function getTwilioTemplate(contentSid: string): Promise<{
 }
 
 // Sync all Twilio templates to database (Twilio -> App)
-export async function syncTwilioToDatabase(): Promise<{
+export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } = {}): Promise<{
   success: boolean;
   synced: number;
+  created: number;
+  updated: number;
+  deleted: number;
   errors: string[];
 }> {
   const errors: string[] = [];
   let synced = 0;
+  let created = 0;
+  let updated = 0;
+  let deleted = 0;
   
   try {
     const listResult = await listTwilioTemplates();
     if (!listResult.success || !listResult.templates) {
-      return { success: false, synced: 0, errors: [listResult.error || 'Failed to list templates'] };
+      return { success: false, synced: 0, created: 0, updated: 0, deleted: 0, errors: [listResult.error || 'Failed to list templates'] };
     }
     
     const { storage } = await import('./storage');
     const allTemplates = await storage.getAllMessageTemplates();
     
+    // Build set of all Twilio SIDs for orphan detection
+    const twilioSids = new Set<string>();
+    
     // Track ContentSids already processed in this sync to avoid duplicates
     const processedSids = new Set<string>();
     
     for (const twilioTemplate of listResult.templates) {
+      twilioSids.add(twilioTemplate.sid);
+      
       try {
         // Skip if we've already processed this ContentSid
         if (processedSids.has(twilioTemplate.sid)) {
@@ -836,6 +847,7 @@ export async function syncTwilioToDatabase(): Promise<{
           });
           console.log(`[Sync] Updated template ${existingTemplate.name} (ContentSid: ${twilioTemplate.sid})`);
           synced++;
+          updated++;
         } else {
           // This ContentSid doesn't exist in database - create new template
           // Use full friendly name to preserve uniqueness
@@ -858,6 +870,7 @@ export async function syncTwilioToDatabase(): Promise<{
           });
           console.log(`[Sync] Created template ${finalName} (ContentSid: ${twilioTemplate.sid})`);
           synced++;
+          created++;
           
           // Add to allTemplates to track for subsequent iterations
           allTemplates.push(newTemplate as any);
@@ -867,9 +880,24 @@ export async function syncTwilioToDatabase(): Promise<{
       }
     }
     
-    return { success: true, synced, errors };
+    // Delete orphaned templates (templates in app with SID that no longer exists in Twilio)
+    if (options.deleteOrphans !== false) {
+      for (const template of allTemplates) {
+        if (template.twilioContentSid && !twilioSids.has(template.twilioContentSid)) {
+          try {
+            console.log(`[Sync] Deleting orphaned template ${template.name} (ContentSid: ${template.twilioContentSid} no longer exists in Twilio)`);
+            await storage.deleteMessageTemplate(template.id);
+            deleted++;
+          } catch (err: any) {
+            errors.push(`Error deleting orphaned template ${template.name}: ${err.message}`);
+          }
+        }
+      }
+    }
+    
+    return { success: true, synced, created, updated, deleted, errors };
   } catch (error: any) {
-    return { success: false, synced, errors: [error.message] };
+    return { success: false, synced, created: 0, updated: 0, deleted: 0, errors: [error.message] };
   }
 }
 

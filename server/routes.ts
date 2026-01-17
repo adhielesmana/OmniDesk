@@ -1086,22 +1086,74 @@ wa.me/6208991066262`;
   });
 
   // Sync templates from Twilio to database (Twilio -> App)
+  // deleteOrphans: if true, removes templates from app that no longer exist in Twilio
   app.post("/api/admin/templates/sync-from-twilio", requireSuperadmin, async (req, res) => {
     try {
+      const { deleteOrphans = true } = req.body;
       const { syncTwilioToDatabase } = await import("./twilio");
-      const result = await syncTwilioToDatabase();
+      const result = await syncTwilioToDatabase({ deleteOrphans });
       
       res.json({
         success: result.success,
         synced: result.synced,
+        created: result.created,
+        updated: result.updated,
+        deleted: result.deleted,
         errors: result.errors,
         message: result.success 
-          ? `Successfully synced ${result.synced} templates from Twilio`
+          ? `Synced ${result.synced} templates (${result.created} created, ${result.updated} updated, ${result.deleted} deleted)`
           : `Sync failed with ${result.errors.length} errors`
       });
     } catch (error: any) {
       console.error("Error syncing from Twilio:", error);
       res.status(500).json({ error: error.message || "Failed to sync from Twilio" });
+    }
+  });
+
+  // Get template sync scheduler status
+  app.get("/api/admin/templates/sync-status", requireSuperadmin, async (req, res) => {
+    try {
+      const { getLastSyncResult, isSchedulerActive, getNextSyncTime, getMillisecondsUntilNextSync } = await import("./template-sync-scheduler");
+      const lastSync = getLastSyncResult();
+      const lastAutoSync = await storage.getAppSetting('template_last_auto_sync');
+      const nextSyncTime = getNextSyncTime();
+      const msUntilSync = getMillisecondsUntilNextSync();
+      
+      res.json({
+        schedulerActive: isSchedulerActive(),
+        nextSyncTime: nextSyncTime.toISOString(),
+        nextSyncIn: {
+          hours: Math.floor(msUntilSync / (1000 * 60 * 60)),
+          minutes: Math.floor((msUntilSync % (1000 * 60 * 60)) / (1000 * 60))
+        },
+        lastAutoSync: lastAutoSync?.value || null,
+        lastSyncResult: lastSync
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to get sync status" });
+    }
+  });
+  
+  // Manual sync trigger via scheduler (with result persistence)
+  app.post("/api/admin/templates/manual-sync", requireSuperadmin, async (req, res) => {
+    try {
+      const { runManualSync } = await import("./template-sync-scheduler");
+      const result = await runManualSync();
+      
+      res.json({
+        success: result?.success ?? false,
+        synced: result?.synced ?? 0,
+        created: result?.created ?? 0,
+        updated: result?.updated ?? 0,
+        deleted: result?.deleted ?? 0,
+        errors: result?.errors ?? [],
+        message: result?.success 
+          ? `Synced ${result.synced} templates (${result.created} created, ${result.updated} updated, ${result.deleted} deleted)`
+          : `Sync failed with ${result?.errors?.length ?? 0} errors`
+      });
+    } catch (error: any) {
+      console.error("Error running manual sync:", error);
+      res.status(500).json({ error: error.message || "Failed to run manual sync" });
     }
   });
 

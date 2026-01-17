@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { seedSuperadmin, seedDefaultDepartment } from "./auth";
 import { startBlastWorker, startApiQueueWorker } from "./blast-worker";
 import { initializeTwilioTemplates } from "./template-init";
+import { startTemplateSyncScheduler } from "./template-sync-scheduler";
 import pgSession from "connect-pg-simple";
 import { Pool } from "pg";
 
@@ -143,6 +144,7 @@ app.use((req, res, next) => {
   
   startBlastWorker();
   startApiQueueWorker();
+  startTemplateSyncScheduler();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
