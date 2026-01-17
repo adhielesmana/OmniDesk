@@ -207,6 +207,36 @@ export async function sendWhatsAppMessage(
   }
 }
 
+// Send WhatsApp message using approved template (ContentSid)
+// Required for business-initiated messages outside 24-hour window
+export async function sendWhatsAppTemplate(
+  to: string,
+  contentSid: string,
+  contentVariables: Record<string, string>
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const client = await getTwilioClient();
+    const fromNumber = await getTwilioFromPhoneNumber();
+    
+    // Format phone numbers for WhatsApp
+    const toWhatsApp = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+    const fromWhatsApp = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+    
+    const message = await client.messages.create({
+      from: fromWhatsApp,
+      to: toWhatsApp,
+      contentSid: contentSid,
+      contentVariables: JSON.stringify(contentVariables)
+    });
+    
+    console.log(`[Twilio] WhatsApp template message sent: ${message.sid} (template: ${contentSid})`);
+    return { success: true, messageId: message.sid };
+  } catch (error: any) {
+    console.error('[Twilio] Failed to send WhatsApp template:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Send SMS message via Twilio
 export async function sendSMSMessage(
   to: string,

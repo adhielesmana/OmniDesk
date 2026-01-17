@@ -667,19 +667,56 @@ async function processApiMessageQueue(): Promise<void> {
       const shortenedMessage = await shortenUrlsInText(message.message, baseUrl, message.clientId);
       
       // Try Twilio first (official API), then fall back to Baileys (unofficial)
-      const { isTwilioConfigured, sendWhatsAppMessage: twilioSend } = await import("./twilio");
+      const { isTwilioConfigured, sendWhatsAppMessage: twilioSend, sendWhatsAppTemplate } = await import("./twilio");
       const twilioAvailable = await isTwilioConfigured();
       
       let result: { messageId?: string; success: boolean; rateLimited?: boolean; waitMs?: number; error?: string };
       
       if (twilioAvailable) {
-        // Use Twilio (official WhatsApp Business API)
-        const twilioResult = await twilioSend(message.phoneNumber, shortenedMessage);
-        result = {
-          messageId: twilioResult.messageId,
-          success: twilioResult.success,
-          error: twilioResult.error
-        };
+        // Check if we have an approved template to use
+        const invoiceTemplate = await storage.getMessageTemplateByName("invoice_reminder");
+        const hasApprovedTemplate = invoiceTemplate?.twilioContentSid && 
+          invoiceTemplate?.twilioApprovalStatus === "approved";
+        
+        if (hasApprovedTemplate && message.metadata) {
+          // Use approved template with content variables
+          // Extract variables from metadata (set by external API)
+          const metadata = typeof message.metadata === 'string' 
+            ? JSON.parse(message.metadata) 
+            : message.metadata;
+          
+          // Map OmniDesk variable names to Twilio numbered format
+          // Template variables: recipient_name, invoice_number, grand_total, invoice_url, message_type
+          const contentVariables: Record<string, string> = {
+            "1": metadata.recipient_name || message.recipientName || "Pelanggan",
+            "2": metadata.message_type || "Berikut adalah tagihan baru untuk layanan internet Anda:",
+            "3": metadata.invoice_number || "",
+            "4": metadata.grand_total || "",
+            "5": metadata.invoice_url || ""
+          };
+          
+          console.log(`API queue: Using approved template ${invoiceTemplate.twilioContentSid} for ${message.phoneNumber}`);
+          const twilioResult = await sendWhatsAppTemplate(
+            message.phoneNumber,
+            invoiceTemplate.twilioContentSid!,
+            contentVariables
+          );
+          result = {
+            messageId: twilioResult.messageId,
+            success: twilioResult.success,
+            error: twilioResult.error
+          };
+        } else {
+          // No approved template - try free-form (may fail for business-initiated messages)
+          console.log(`API queue: No approved template, sending free-form to ${message.phoneNumber}`);
+          const twilioResult = await twilioSend(message.phoneNumber, shortenedMessage);
+          result = {
+            messageId: twilioResult.messageId,
+            success: twilioResult.success,
+            error: twilioResult.error
+          };
+        }
+        
         if (!result.success) {
           throw new Error(result.error || "Failed to send via Twilio");
         }
