@@ -407,6 +407,27 @@ function convertVariablesToTwilio(content: string, variables: string[]): {
   return { twilioContent, variableMap, defaultValues };
 }
 
+// Helper to get auth credentials for HTTP requests
+// Database uses accountSid:authToken, Replit uses apiKey:apiKeySecret
+async function getAuthForHttp(): Promise<{ authString: string; accountSid: string } | null> {
+  try {
+    const creds = await getCredentials();
+    let authString: string;
+    
+    if (creds.source === 'database' && creds.authToken) {
+      authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
+    } else if (creds.apiKey && creds.apiKeySecret) {
+      authString = Buffer.from(`${creds.apiKey}:${creds.apiKeySecret}`).toString('base64');
+    } else {
+      return null;
+    }
+    
+    return { authString, accountSid: creds.accountSid };
+  } catch {
+    return null;
+  }
+}
+
 // Create a template in Twilio Content API
 // NOTE: Twilio SDK does NOT support template creation - must use direct HTTP requests
 export async function syncTemplateToTwilio(
@@ -420,8 +441,8 @@ export async function syncTemplateToTwilio(
   error?: string;
 }> {
   try {
-    const creds = await getCredentials();
-    if (!creds) {
+    const auth = await getAuthForHttp();
+    if (!auth) {
       return { success: false, error: 'Twilio credentials not configured' };
     }
     
@@ -445,13 +466,11 @@ export async function syncTemplateToTwilio(
     }
     
     // Use direct HTTP request since SDK doesn't support template creation
-    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
-    
     const response = await fetch('https://content.twilio.com/v1/Content', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${authString}`
+        'Authorization': `Basic ${auth.authString}`
       },
       body: JSON.stringify(payload)
     });
@@ -489,19 +508,17 @@ export async function submitTemplateForApproval(contentSid: string): Promise<{
   error?: string;
 }> {
   try {
-    const creds = await getCredentials();
-    if (!creds) {
+    const auth = await getAuthForHttp();
+    if (!auth) {
       return { success: false, error: 'Twilio credentials not configured' };
     }
-    
-    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
     
     // Submit for WhatsApp approval via HTTP
     const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests/whatsapp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Basic ${authString}`
+        'Authorization': `Basic ${auth.authString}`
       }
     });
     
@@ -547,18 +564,16 @@ export async function getTemplateApprovalStatus(contentSid: string): Promise<{
   error?: string;
 }> {
   try {
-    const creds = await getCredentials();
-    if (!creds) {
+    const auth = await getAuthForHttp();
+    if (!auth) {
       return { success: false, error: 'Twilio credentials not configured' };
     }
-    
-    const authString = Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64');
     
     // Fetch approval status via HTTP
     const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests`, {
       method: 'GET',
       headers: {
-        'Authorization': `Basic ${authString}`
+        'Authorization': `Basic ${auth.authString}`
       }
     });
     

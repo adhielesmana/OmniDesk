@@ -871,9 +871,9 @@ export async function registerRoutes(
         approvalStatus: approvalStatus,
         approvalError: approvalResult.error
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error syncing template to Twilio:", error);
-      res.status(500).json({ error: "Failed to sync template to Twilio" });
+      res.status(500).json({ error: error.message || "Failed to sync template to Twilio" });
     }
   });
 
