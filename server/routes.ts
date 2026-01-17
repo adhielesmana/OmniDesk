@@ -479,6 +479,7 @@ export async function registerRoutes(
         clientId: client.clientId,
         isActive: client.isActive,
         aiPrompt: client.aiPrompt,
+        defaultTemplateId: client.defaultTemplateId,
         rateLimitPerMinute: client.rateLimitPerMinute,
         rateLimitPerDay: client.rateLimitPerDay,
         requestCountToday: client.requestCountToday,
