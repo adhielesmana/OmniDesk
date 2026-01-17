@@ -666,24 +666,44 @@ async function processApiMessageQueue(): Promise<void> {
         : process.env.APP_URL || "https://omnidesk.maxnetplus.id";
       const shortenedMessage = await shortenUrlsInText(message.message, baseUrl, message.clientId);
       
-      const formattedNumber = message.phoneNumber + "@s.whatsapp.net";
-      const result = await whatsappService.sendMessage(formattedNumber, shortenedMessage);
+      // Try Twilio first (official API), then fall back to Baileys (unofficial)
+      const { isTwilioConfigured, sendWhatsAppMessage: twilioSend } = await import("./twilio");
+      const twilioAvailable = await isTwilioConfigured();
       
-      // Check for rate limiting - requeue the message
-      if (result.rateLimited) {
-        console.log(`API queue: Rate limited for ${message.phoneNumber}. Requeuing...`);
-        await storage.updateApiMessage(message.id, {
-          status: "queued",
-          errorMessage: "Rate limited - will retry later",
-        });
-        // Set next send time based on rate limit wait time
-        apiQueueNextSendTime = Date.now() + (result.waitMs || 60000);
-        isApiQueueProcessing = false;
-        return;
-      }
+      let result: { messageId?: string; success: boolean; rateLimited?: boolean; waitMs?: number; error?: string };
       
-      if (!result.success) {
-        throw new Error("Failed to send WhatsApp message");
+      if (twilioAvailable) {
+        // Use Twilio (official WhatsApp Business API)
+        const twilioResult = await twilioSend(message.phoneNumber, shortenedMessage);
+        result = {
+          messageId: twilioResult.messageId,
+          success: twilioResult.success,
+          error: twilioResult.error
+        };
+        if (!result.success) {
+          throw new Error(result.error || "Failed to send via Twilio");
+        }
+      } else {
+        // Fall back to Baileys (unofficial)
+        const formattedNumber = message.phoneNumber + "@s.whatsapp.net";
+        result = await whatsappService.sendMessage(formattedNumber, shortenedMessage);
+        
+        // Check for rate limiting - requeue the message
+        if (result.rateLimited) {
+          console.log(`API queue: Rate limited for ${message.phoneNumber}. Requeuing...`);
+          await storage.updateApiMessage(message.id, {
+            status: "queued",
+            errorMessage: "Rate limited - will retry later",
+          });
+          // Set next send time based on rate limit wait time
+          apiQueueNextSendTime = Date.now() + (result.waitMs || 60000);
+          isApiQueueProcessing = false;
+          return;
+        }
+        
+        if (!result.success) {
+          throw new Error("Failed to send WhatsApp message via Baileys");
+        }
       }
 
       // Update message as sent
