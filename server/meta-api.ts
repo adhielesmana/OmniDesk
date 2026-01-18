@@ -106,7 +106,8 @@ export class MetaApiService {
           break;
 
         case "facebook":
-          url = `${GRAPH_API_BASE}/${this.config.pageId}/messages`;
+          // Facebook Send API uses /me/messages when using Page Access Token
+          url = `${GRAPH_API_BASE}/me/messages`;
           payload = {
             recipient: { id: recipientId },
             messaging_type: "RESPONSE",
@@ -212,9 +213,10 @@ export class MetaApiService {
           messageId: data.messages?.[0]?.id,
         };
       } else if (this.platform === "facebook" || this.platform === "instagram") {
+        // Facebook Send API uses /me/messages when using Page Access Token
         const url = this.platform === "facebook" 
-          ? `${GRAPH_API_BASE}/${this.config.pageId}/messages`
-          : `${GRAPH_API_BASE}/${this.config.businessId}/messages`;
+          ? `${GRAPH_API_BASE}/me/messages`
+          : `${GRAPH_API_BASE}/${this.config.businessId || this.config.pageId}/messages`;
         
         const payload = {
           recipient: { id: recipientId },
