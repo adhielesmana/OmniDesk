@@ -45,13 +45,14 @@ Preferred communication style: Simple, everyday language.
 - **Superadmin Seeding**: Hardcoded superadmin (username: adhielesmana, password: admin123) created on startup, non-deletable
 - **Admin Panel**: New admin page for managing users and departments
 - **OpenAI API Key Management**: Added Settings modal tab for managing OpenAI API key with validation, save/delete functionality
-- **External API for WhatsApp Messaging**: Secure API for external applications to send WhatsApp messages through OmniDesk. Features include:
+- **External API for WhatsApp Messaging**: Secure API for external applications to send WhatsApp messages through OmniDesk. See `docs/EXTERNAL_API.md` for complete documentation. Features include:
   - HMAC-SHA256 authentication with AES-256-GCM encrypted secrets
   - Per-minute sliding window rate limiting with X-RateLimit headers
   - Daily quota enforcement with automatic reset
   - IP whitelisting supporting Cloudflare's CF-Connecting-IP header
   - Message queue with 2-3 minute throttling and 7AM-9PM Jakarta time restrictions
   - Request ID deduplication to prevent duplicate sends
+  - Automatic template variable mapping from payload to Twilio numbered placeholders
   - Full admin UI for API client management in Admin panel
 - **URL Shortening for API Messages**: All URLs in API messages are automatically shortened to prevent WhatsApp detection/blocking. Uses JavaScript-based redirect (not HTTP 301) so WhatsApp's link preview cannot see the final domain. Short URLs use `/s/{code}` format and track click counts. URLs are stored in `shortened_urls` table.
 
