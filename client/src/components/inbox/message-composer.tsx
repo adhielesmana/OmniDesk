@@ -26,14 +26,23 @@ export const MessageComposer = memo(function MessageComposer({
   };
 
   return (
-    <div className="border-t border-border p-3">
+    <div style={{ borderTop: "1px solid #333", padding: "12px" }}>
       <input
         ref={inputRef}
         type="text"
         placeholder="Type a message and press Enter..."
         onKeyDown={handleKeyDown}
         disabled={isSending}
-        className="w-full px-4 py-3 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+        style={{
+          width: "100%",
+          padding: "12px 16px",
+          border: "1px solid #555",
+          borderRadius: "8px",
+          backgroundColor: "#1a1a1a",
+          color: "#ffffff",
+          fontSize: "14px",
+          outline: "none",
+        }}
         data-testid="input-message"
         autoComplete="off"
       />
