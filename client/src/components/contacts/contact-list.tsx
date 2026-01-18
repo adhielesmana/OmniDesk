@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { getAvatarColor, getInitials } from "@/lib/avatar-colors";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Contact, Platform } from "@shared/schema";
@@ -29,16 +30,6 @@ function getPlatformIcon(platform: Platform) {
     default:
       return null;
   }
-}
-
-function getInitials(name: string | null): string {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 }
 
 export function ContactList({
@@ -110,7 +101,14 @@ export function ContactList({
                 data-testid={`contact-item-${contact.id}`}
               >
                 <Avatar className="h-10 w-10">
-                  <AvatarFallback>{getInitials(contact.name)}</AvatarFallback>
+                  <AvatarFallback
+                    style={{ 
+                      backgroundColor: getAvatarColor(contact.name).bg,
+                      color: getAvatarColor(contact.name).text 
+                    }}
+                  >
+                    {getInitials(contact.name)}
+                  </AvatarFallback>
                 </Avatar>
 
                 <div className="flex-1 min-w-0">

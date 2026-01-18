@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { getAvatarColor, getInitials } from "@/lib/avatar-colors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -43,16 +44,6 @@ function getPlatformIcon(platform: Platform) {
     default:
       return null;
   }
-}
-
-function getInitials(name: string | null): string {
-  if (!name) return "?";
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 }
 
 export function ContactDetail({
@@ -123,7 +114,15 @@ export function ContactDetail({
       <div className="p-6 space-y-6">
         <div className="flex items-start gap-4">
           <Avatar className="h-16 w-16">
-            <AvatarFallback className="text-xl">{getInitials(contact.name)}</AvatarFallback>
+            <AvatarFallback 
+              className="text-xl font-semibold"
+              style={{ 
+                backgroundColor: getAvatarColor(contact.name).bg,
+                color: getAvatarColor(contact.name).text 
+              }}
+            >
+              {getInitials(contact.name)}
+            </AvatarFallback>
           </Avatar>
 
           <div className="flex-1 min-w-0">

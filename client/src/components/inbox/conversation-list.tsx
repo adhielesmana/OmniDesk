@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { getAvatarColor, getInitials } from "@/lib/avatar-colors";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,10 +77,6 @@ export function ConversationList({
     }
   }, [hasMore, filteredConversations.length]);
 
-  const getInitials = useCallback((name: string | null | undefined) => {
-    if (!name) return "?";
-    return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-  }, []);
 
   const formatTime = useCallback((date: Date | null | undefined) => {
     if (!date) return "";
@@ -185,7 +182,12 @@ export function ConversationList({
                     <div className="flex items-center gap-3">
                       <div className="relative shrink-0">
                         <Avatar className="h-12 w-12">
-                          <AvatarFallback className="bg-muted text-muted-foreground">
+                          <AvatarFallback 
+                            style={{ 
+                              backgroundColor: getAvatarColor(conv.contact.name).bg,
+                              color: getAvatarColor(conv.contact.name).text 
+                            }}
+                          >
                             {getInitials(conv.contact.name)}
                           </AvatarFallback>
                         </Avatar>

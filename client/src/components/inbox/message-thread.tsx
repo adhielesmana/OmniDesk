@@ -4,6 +4,7 @@ import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { getAvatarColor, getInitials } from "@/lib/avatar-colors";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -227,7 +228,13 @@ export const MessageThread = memo(function MessageThread({
             )}
             <div className="relative shrink-0">
               <Avatar className="h-9 w-9">
-                <AvatarFallback className="bg-muted text-muted-foreground text-sm">
+                <AvatarFallback 
+                  className="text-sm font-medium"
+                  style={{ 
+                    backgroundColor: getAvatarColor(contact.name).bg,
+                    color: getAvatarColor(contact.name).text 
+                  }}
+                >
                   {getInitials(contact.name)}
                 </AvatarFallback>
               </Avatar>
