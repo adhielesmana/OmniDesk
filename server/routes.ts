@@ -3730,7 +3730,7 @@ wa.me/6208991066262`;
   // Create blast campaign
   app.post("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds } = req.body;
+      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId } = req.body;
       
       if (!name || !prompt) {
         return res.status(400).json({ error: "Name and prompt are required" });
@@ -3744,6 +3744,7 @@ wa.me/6208991066262`;
         totalRecipients: contactIds?.length || 0,
         minIntervalSeconds: minIntervalSeconds || 120,
         maxIntervalSeconds: maxIntervalSeconds || 180,
+        templateId: templateId || null,
         createdBy: req.session.userId,
       });
 

@@ -309,13 +309,51 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
 
     if (twilioAvailable) {
       // Use Twilio (official API) for blast messages
-      console.log(`Blast: Sending via Twilio to ${recipient.contact.name || phoneNumber}`);
-      const twilioResult = await twilioSend(phoneNumber.replace(/\D/g, ""), shortenedMessage);
-      sendResult = {
-        success: twilioResult.success,
-        messageId: twilioResult.messageId,
-        error: twilioResult.error
-      };
+      // Check if campaign has a template assigned (required for Twilio business-initiated messages)
+      const { sendWhatsAppTemplate } = await import("./twilio");
+      
+      let template = null;
+      if (recipient.campaign.templateId) {
+        template = await storage.getMessageTemplateById(recipient.campaign.templateId);
+      }
+      
+      const hasApprovedTemplate = template?.twilioContentSid && 
+        template?.twilioApprovalStatus === "approved";
+      
+      if (hasApprovedTemplate) {
+        // Use approved template with AI message as variable
+        // Template format: "Hi {{1}}, {{2}}" where {{1}}=name, {{2}}=AI message
+        const recipientName = recipient.contact.name || "Pelanggan";
+        const contentVariables: Record<string, string> = {
+          "1": recipientName,
+          "2": shortenedMessage
+        };
+        
+        console.log(`Blast: Sending via Twilio template "${template!.name}" to ${recipientName}`);
+        const twilioResult = await sendWhatsAppTemplate(
+          phoneNumber.replace(/\D/g, ""),
+          template!.twilioContentSid!,
+          contentVariables
+        );
+        sendResult = {
+          success: twilioResult.success,
+          messageId: twilioResult.messageId,
+          error: twilioResult.error
+        };
+      } else {
+        // No approved template - try free-form (will fail for business-initiated)
+        console.log(`Blast: No approved template, trying free-form to ${recipient.contact.name || phoneNumber}`);
+        const twilioResult = await twilioSend(phoneNumber.replace(/\D/g, ""), shortenedMessage);
+        sendResult = {
+          success: twilioResult.success,
+          messageId: twilioResult.messageId,
+          error: twilioResult.error
+        };
+        
+        if (!sendResult.success && sendResult.error?.includes("template")) {
+          sendResult.error = "Twilio requires an approved template for blast messages. Please assign a template to this campaign.";
+        }
+      }
     } else {
       // Fallback to Baileys (unofficial)
       const jid = phoneNumber.includes("@") ? phoneNumber : `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;

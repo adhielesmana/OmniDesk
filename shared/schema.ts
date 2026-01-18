@@ -336,6 +336,7 @@ export const blastCampaigns = pgTable("blast_campaigns", {
   isGenerating: boolean("is_generating").default(false),
   minIntervalSeconds: integer("min_interval_seconds").default(120),
   maxIntervalSeconds: integer("max_interval_seconds").default(180),
+  templateId: varchar("template_id").references(() => messageTemplates.id), // Twilio template with {{1}}=name, {{2}}=AI message
   createdBy: varchar("created_by").references(() => users.id),
   scheduledAt: timestamp("scheduled_at"),
   startedAt: timestamp("started_at"),

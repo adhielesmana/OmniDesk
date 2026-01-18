@@ -13,6 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { MessageTemplate } from "@shared/schema";
 import { 
   Plus, 
   Loader2, 
@@ -386,6 +388,20 @@ function CreateCampaignDialog({
   const [maxInterval, setMaxInterval] = useState("1800");
   const [contactSearch, setContactSearch] = useState("");
   const [displayLimit, setDisplayLimit] = useState(50);
+  const [templateId, setTemplateId] = useState<string>("");
+
+  const { data: templatesData } = useQuery<MessageTemplate[]>({
+    queryKey: ["/api/templates"],
+    enabled: open,
+  });
+
+  const approvedTemplates = useMemo(() => {
+    return (templatesData || []).filter(t => 
+      t.isActive && 
+      t.twilioContentSid && 
+      t.twilioApprovalStatus === "approved"
+    );
+  }, [templatesData]);
 
   const { data: contactsData, isLoading: contactsLoading } = useQuery<{ contacts: Contact[]; total: number }>({
     queryKey: ["/api/contacts", { limit: 50000 }],
@@ -420,6 +436,7 @@ function CreateCampaignDialog({
         contactIds: Array.from(selectedContacts),
         minIntervalSeconds: parseInt(minInterval),
         maxIntervalSeconds: parseInt(maxInterval),
+        templateId: templateId || undefined,
       });
       return res.json();
     },
@@ -431,6 +448,7 @@ function CreateCampaignDialog({
       setSelectedContacts(new Set());
       setContactSearch("");
       setDisplayLimit(50);
+      setTemplateId("");
       toast({ title: "Campaign created successfully" });
     },
     onError: () => {
@@ -534,6 +552,27 @@ function CreateCampaignDialog({
           <p className="text-xs text-muted-foreground">
             Messages will be sent with a random delay between these intervals to avoid detection.
           </p>
+
+          <div className="space-y-2">
+            <Label>WhatsApp Template (Required for Twilio)</Label>
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger data-testid="select-blast-template">
+                <SelectValue placeholder="Select an approved template..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">No template (Baileys only)</SelectItem>
+                {approvedTemplates.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name} {t.category && `(${t.category})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              For Twilio: Create a template like "Hi {"{{1}}"}, {"{{2}}"}" where {"{{1}}"}=name, {"{{2}}"}=AI message. 
+              Without a template, only Baileys (unofficial) can send blast messages.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
