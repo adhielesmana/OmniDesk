@@ -712,16 +712,41 @@ export async function listTwilioTemplates(): Promise<{
       };
     }
     
-    const templates = (result.contents || []).map((content: any) => ({
-      sid: content.sid,
-      friendlyName: content.friendly_name,
-      language: content.language || 'en',
-      body: content.types?.['twilio/text']?.body || content.types?.['twilio/quick-reply']?.body || '',
-      variables: content.variables || {},
-      whatsappStatus: content.approval_requests?.whatsapp?.status || 'unknown',
-      createdAt: content.date_created,
-      updatedAt: content.date_updated
-    }));
+    const templates = (result.contents || []).map((content: any) => {
+      // Extract WhatsApp approval status - check multiple possible paths
+      // Twilio Content API uses approval_requests.whatsapp or approval_requests.content_approval
+      let whatsappStatus = 'unknown';
+      if (content.approval_requests?.whatsapp?.status) {
+        whatsappStatus = content.approval_requests.whatsapp.status;
+      } else if (content.approval_requests?.content_approval?.status) {
+        whatsappStatus = content.approval_requests.content_approval.status;
+      } else if (content.approval_requests) {
+        // Check any approval request status
+        const requests = content.approval_requests;
+        for (const key of Object.keys(requests)) {
+          if (requests[key]?.status) {
+            whatsappStatus = requests[key].status;
+            break;
+          }
+        }
+      }
+      
+      return {
+        sid: content.sid,
+        friendlyName: content.friendly_name,
+        language: content.language || 'en',
+        body: content.types?.['twilio/text']?.body || content.types?.['twilio/quick-reply']?.body || '',
+        variables: content.variables || {},
+        whatsappStatus,
+        createdAt: content.date_created,
+        updatedAt: content.date_updated
+      };
+    });
+    
+    // Log status for debugging
+    templates.forEach((t: { friendlyName: string; sid: string; whatsappStatus: string }) => {
+      console.log(`[Twilio Content] Template ${t.friendlyName} (${t.sid}): status=${t.whatsappStatus}`);
+    });
     
     console.log(`[Twilio Content] Found ${templates.length} templates`);
     return { success: true, templates };
@@ -839,9 +864,20 @@ export async function syncTwilioToDatabase(options: { deleteOrphans?: boolean } 
         // Try to find matching template by ContentSid first (exact match)
         let existingTemplate = allTemplates.find(t => t.twilioContentSid === twilioTemplate.sid);
         
+        // Get approval status - if list API returned 'unknown', fetch the actual status
+        let whatsappStatus = twilioTemplate.whatsappStatus;
+        if (whatsappStatus === 'unknown' || !whatsappStatus) {
+          // Fetch the actual approval status from the dedicated API
+          const statusResult = await getTemplateApprovalStatus(twilioTemplate.sid);
+          if (statusResult.success && statusResult.status) {
+            whatsappStatus = statusResult.status;
+            console.log(`[Sync] Fetched actual status for ${twilioTemplate.friendlyName}: ${whatsappStatus}`);
+          }
+        }
+        
         // Normalize approval status from Twilio
-        const twilioApprovalStatus = twilioTemplate.whatsappStatus === 'approved' ? 'approved' : 
-                                      twilioTemplate.whatsappStatus === 'rejected' ? 'rejected' : 'pending';
+        const twilioApprovalStatus = whatsappStatus === 'approved' ? 'approved' : 
+                                      whatsappStatus === 'rejected' ? 'rejected' : 'pending';
         const twilioContent = twilioTemplate.body || '';
         
         if (existingTemplate) {
