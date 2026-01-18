@@ -221,6 +221,16 @@ else
 fi
 echo -e "  ${GREEN}✓${NC} Legacy admin cleanup complete"
 
+echo -e "  ${YELLOW}→${NC} Ensuring template messageType is set..."
+if docker compose version &> /dev/null; then
+    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET message_type = 'reminder_invoices' WHERE name LIKE 'invoice_reminder%' AND (message_type IS NULL OR message_type = '');" 2>/dev/null || true
+    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "ALTER TABLE api_message_queue ADD COLUMN IF NOT EXISTS template_id VARCHAR REFERENCES message_templates(id);" 2>/dev/null || true
+else
+    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET message_type = 'reminder_invoices' WHERE name LIKE 'invoice_reminder%' AND (message_type IS NULL OR message_type = '');" 2>/dev/null || true
+    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "ALTER TABLE api_message_queue ADD COLUMN IF NOT EXISTS template_id VARCHAR REFERENCES message_templates(id);" 2>/dev/null || true
+fi
+echo -e "  ${GREEN}✓${NC} Template migrations complete"
+
 echo -e "  ${YELLOW}→${NC} Restarting app to seed superadmin..."
 if docker compose version &> /dev/null; then
     docker compose restart inbox-app
