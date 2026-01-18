@@ -215,8 +215,9 @@ export async function handleAutoReply(
   if (!enabled) return false;
 
   // SAFETY: Check quiet hours to reduce ban risk (9PM-7AM Jakarta time)
-  if (isQuietHours()) {
-    console.log("Auto-reply: Quiet hours active (9PM-7AM Jakarta), skipping to reduce ban risk");
+  // Only apply to WhatsApp - Instagram/Facebook don't have the same ban risk
+  if (platform === "whatsapp" && isQuietHours()) {
+    console.log("Auto-reply: Quiet hours active (9PM-7AM Jakarta), skipping WhatsApp to reduce ban risk");
     return false;
   }
 
