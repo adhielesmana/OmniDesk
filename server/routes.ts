@@ -3748,7 +3748,7 @@ wa.me/6208991066262`;
   // Create blast campaign
   app.post("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate } = req.body;
+      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent } = req.body;
       
       if (!name || !prompt) {
         return res.status(400).json({ error: "Name and prompt are required" });
@@ -3759,11 +3759,16 @@ wa.me/6208991066262`;
       // Auto-create a new template for this campaign if requested
       if (createNewTemplate) {
         const templateName = `blast_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+        // Extract variables from content (e.g., {{1}}, {{2}})
+        const content = templateContent || "Hi {{1}}, {{2}}";
+        const variableMatches = content.match(/\{\{(\d+)\}\}/g) || [];
+        const variables = [...new Set(variableMatches.map((m: string) => m.replace(/[{}]/g, '')))];
+        
         const newTemplate = await storage.createMessageTemplate({
           name: templateName,
           description: `Auto-created template for blast campaign: ${name}`,
-          content: "Hi {{1}}, {{2}}",
-          variables: ["1", "2"],
+          content,
+          variables,
           category: "MARKETING",
           isActive: true,
           isSystemTemplate: false,
@@ -3809,7 +3814,7 @@ wa.me/6208991066262`;
   // Update blast campaign
   app.patch("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate } = req.body;
+      const { name, prompt, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent } = req.body;
       
       let finalTemplateId = templateId;
       
@@ -3820,11 +3825,16 @@ wa.me/6208991066262`;
           return res.status(404).json({ error: "Campaign not found" });
         }
         const templateName = `blast_${(existingCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+        // Extract variables from content (e.g., {{1}}, {{2}})
+        const content = templateContent || "Hi {{1}}, {{2}}";
+        const variableMatches = content.match(/\{\{(\d+)\}\}/g) || [];
+        const variables = [...new Set(variableMatches.map((m: string) => m.replace(/[{}]/g, '')))];
+        
         const newTemplate = await storage.createMessageTemplate({
           name: templateName,
           description: `Auto-created template for blast campaign: ${existingCampaign.name}`,
-          content: "Hi {{1}}, {{2}}",
-          variables: ["1", "2"],
+          content,
+          variables,
           category: "MARKETING",
           isActive: true,
           isSystemTemplate: false,

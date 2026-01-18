@@ -390,6 +390,7 @@ function CreateCampaignDialog({
   const [displayLimit, setDisplayLimit] = useState(50);
   const [templateId, setTemplateId] = useState<string>("");
   const [templateMode, setTemplateMode] = useState<"none" | "existing" | "new">("none");
+  const [newTemplateContent, setNewTemplateContent] = useState("Hi {{1}}, {{2}}");
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/templates"],
@@ -439,6 +440,7 @@ function CreateCampaignDialog({
         maxIntervalSeconds: parseInt(maxInterval),
         templateId: templateMode === "existing" ? templateId : undefined,
         createNewTemplate: templateMode === "new",
+        templateContent: templateMode === "new" ? newTemplateContent : undefined,
       });
       return res.json();
     },
@@ -453,6 +455,7 @@ function CreateCampaignDialog({
       setDisplayLimit(50);
       setTemplateId("");
       setTemplateMode("none");
+      setNewTemplateContent("Hi {{1}}, {{2}}");
       toast({ title: "Campaign created successfully" });
     },
     onError: () => {
@@ -611,18 +614,29 @@ function CreateCampaignDialog({
             )}
             
             {templateMode === "new" && (
-              <div className="p-3 rounded-md bg-muted/50 border">
-                <p className="text-sm text-muted-foreground">
-                  A new template will be created automatically with format: <strong>Hi {"{{1}}"}, {"{{2}}"}</strong>
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  After creation, sync it to Twilio and wait for approval before starting the campaign.
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-sm">Template Content</Label>
+                  <Textarea
+                    value={newTemplateContent}
+                    onChange={(e) => setNewTemplateContent(e.target.value)}
+                    placeholder="Hi {{1}}, {{2}}"
+                    rows={3}
+                    className="mt-1"
+                    data-testid="input-create-template-content"
+                  />
+                </div>
+                <div className="p-3 rounded-md bg-muted/50 border">
+                  <p className="text-xs text-muted-foreground">
+                    Use {"{{1}}"} for recipient name and {"{{2}}"} for AI-generated message.
+                    After creation, sync it to Twilio and wait for approval.
+                  </p>
+                </div>
               </div>
             )}
             
             <p className="text-xs text-muted-foreground">
-              Templates use {"{{1}}"}=name, {"{{2}}"}=AI message. Templates must be approved by Twilio before sending.
+              Templates must be approved by Twilio before sending.
             </p>
           </div>
 
@@ -1020,6 +1034,7 @@ function CampaignDetail({
   const [templateMode, setTemplateMode] = useState<"none" | "existing" | "new">(
     campaign.templateId ? "existing" : "none"
   );
+  const [newTemplateContent, setNewTemplateContent] = useState("Hi {{1}}, {{2}}");
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/templates"],
@@ -1039,7 +1054,7 @@ function CampaignDetail({
   }, [campaign.templateId, templatesData]);
 
   const updateTemplateMutation = useMutation({
-    mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean }) => {
+    mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean; templateContent?: string }) => {
       const res = await apiRequest("PATCH", `/api/blast-campaigns/${campaign.id}`, data);
       return res.json();
     },
@@ -1337,13 +1352,24 @@ function CampaignDetail({
               )}
 
               {templateMode === "new" && (
-                <div className="p-3 rounded-md bg-muted/50 border">
-                  <p className="text-sm text-muted-foreground">
-                    A new template will be created with format: <strong>Hi {"{{1}}"}, {"{{2}}"}</strong>
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    After creation, sync it to Twilio and wait for approval.
-                  </p>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm">Template Content</Label>
+                    <Textarea
+                      value={newTemplateContent}
+                      onChange={(e) => setNewTemplateContent(e.target.value)}
+                      placeholder="Hi {{1}}, {{2}}"
+                      rows={3}
+                      className="mt-1"
+                      data-testid="input-new-template-content"
+                    />
+                  </div>
+                  <div className="p-3 rounded-md bg-muted/50 border">
+                    <p className="text-xs text-muted-foreground">
+                      Use {"{{1}}"} for recipient name and {"{{2}}"} for AI-generated message.
+                      After creation, sync it to Twilio and wait for approval.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1356,14 +1382,19 @@ function CampaignDetail({
                   if (templateMode === "none") {
                     updateTemplateMutation.mutate({ templateId: null });
                   } else if (templateMode === "new") {
-                    updateTemplateMutation.mutate({ templateId: null, createNewTemplate: true });
+                    updateTemplateMutation.mutate({ 
+                      templateId: null, 
+                      createNewTemplate: true,
+                      templateContent: newTemplateContent 
+                    });
                   } else if (templateMode === "existing" && selectedTemplateId) {
                     updateTemplateMutation.mutate({ templateId: selectedTemplateId });
                   }
                 }}
                 disabled={
                   updateTemplateMutation.isPending ||
-                  (templateMode === "existing" && !selectedTemplateId)
+                  (templateMode === "existing" && !selectedTemplateId) ||
+                  (templateMode === "new" && !newTemplateContent.trim())
                 }
                 data-testid="button-save-template"
               >
