@@ -18,7 +18,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Platform, PlatformSettings } from "@shared/schema";
 
-type SettingsTab = Platform | "openai";
+type SettingsTab = Platform | "openai" | "autoreply";
 
 interface SettingsModalProps {
   isOpen: boolean;

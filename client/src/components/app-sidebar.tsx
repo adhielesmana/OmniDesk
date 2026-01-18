@@ -47,15 +47,17 @@ export function AppSidebar({
   onSettingsClick,
 }: AppSidebarProps) {
   const [location, setLocation] = useLocation();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isAuthenticated } = useAuth();
   
   const { data: branding } = useQuery<BrandingData>({
     queryKey: ["/api/admin/branding"],
+    enabled: isAuthenticated,
   });
 
   const { data: platformSettings = [] } = useQuery<PlatformSettingsData[]>({
     queryKey: ["/api/platform-settings"],
-    refetchInterval: 30000,
+    enabled: isAuthenticated,
+    refetchInterval: isAuthenticated ? 30000 : false,
   });
 
   const getPlatformStatus = (platformId: string): "connected" | "configured" | "disconnected" => {

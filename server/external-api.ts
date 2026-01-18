@@ -78,7 +78,8 @@ function checkRateLimitPerMinute(clientId: string, limit: number): { allowed: bo
 // Clean up expired rate limit windows periodically
 setInterval(() => {
   const now = Date.now();
-  for (const [key, window] of rateLimitWindows.entries()) {
+  const entries = Array.from(rateLimitWindows.entries());
+  for (const [key, window] of entries) {
     if (now >= window.resetAt) {
       rateLimitWindows.delete(key);
     }
