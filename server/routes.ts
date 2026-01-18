@@ -1996,14 +1996,28 @@ wa.me/6208991066262`;
           });
         }
       } else if (conversation.platform === "instagram" || conversation.platform === "facebook") {
-        // Use Meta API for Instagram/Facebook - MUST use correct platform settings
+        // Use Meta API for Instagram/Facebook
         let settings = await storage.getPlatformSetting(conversation.platform);
         
-        // For Instagram: Fall back to Facebook settings ONLY if they share the same Page access token
-        // This is valid because Instagram Business accounts are linked to Facebook Pages
-        if (!settings?.accessToken && conversation.platform === "instagram") {
-          console.log("Instagram settings not found, checking Facebook settings for shared Page token");
-          settings = await storage.getPlatformSetting("facebook");
+        // For Instagram: The Messaging API requires the Facebook Page Access Token
+        // (Instagram Business accounts are accessed through their connected Facebook Page)
+        let instagramBusinessId: string | undefined;
+        if (conversation.platform === "instagram") {
+          // Store Instagram Business ID before potentially switching to Facebook settings
+          instagramBusinessId = settings?.businessId || undefined;
+          
+          // Get Facebook settings to use the Page Access Token
+          const fbSettings = await storage.getPlatformSetting("facebook");
+          if (fbSettings?.accessToken && fbSettings.isConnected) {
+            console.log("[Instagram] Using Facebook Page Access Token for Instagram Messaging API");
+            // Use Facebook token but keep Instagram businessId
+            settings = {
+              ...fbSettings,
+              businessId: instagramBusinessId || fbSettings.businessId,
+            };
+          } else if (!settings?.accessToken) {
+            console.log("Instagram settings not found and no Facebook settings available");
+          }
         }
         
         if (!settings?.accessToken) {
@@ -2018,7 +2032,7 @@ wa.me/6208991066262`;
           });
         }
         
-        // Create Meta API service with the CORRECT platform to ensure proper routing
+        // Create Meta API service
         const metaApi = new MetaApiService(conversation.platform, {
           accessToken: settings.accessToken,
           phoneNumberId: settings.phoneNumberId || undefined,
@@ -2026,7 +2040,7 @@ wa.me/6208991066262`;
           businessId: settings.businessId || undefined,
         });
         
-        console.log(`[Meta API] Sending ${conversation.platform} message to recipient: ${conversation.contact.platformId}, pageId: ${settings.pageId}, businessId: ${settings.businessId}`);
+        console.log(`[Meta API] Sending ${conversation.platform} message to recipient: ${conversation.contact.platformId}, pageId: ${settings.pageId}, businessId: ${settings.businessId}, using FB token: ${conversation.platform === "instagram"}`);
         const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
         result = { success: metaResult.success, messageId: metaResult.messageId };
         
@@ -2603,10 +2617,20 @@ wa.me/6208991066262`;
         if (!isEcho && webhookMessage.content && ["facebook", "instagram"].includes(webhookMessage.platform)) {
           let settings = await storage.getPlatformSetting(webhookMessage.platform);
           
-          // Fallback: If Instagram settings not found, try using Facebook settings
-          if (!settings?.accessToken && webhookMessage.platform === "instagram") {
-            console.log("Instagram settings not found for auto-reply, falling back to Facebook settings");
-            settings = await storage.getPlatformSetting("facebook");
+          // For Instagram: Use Facebook Page Access Token (required for Instagram Messaging API)
+          let instagramBusinessId: string | undefined;
+          if (webhookMessage.platform === "instagram") {
+            instagramBusinessId = settings?.businessId || undefined;
+            const fbSettings = await storage.getPlatformSetting("facebook");
+            if (fbSettings?.accessToken && fbSettings.isConnected) {
+              console.log("[Instagram Auto-reply] Using Facebook Page Access Token");
+              settings = {
+                ...fbSettings,
+                businessId: instagramBusinessId || fbSettings.businessId,
+              };
+            } else if (!settings?.accessToken) {
+              console.log("Instagram settings not found for auto-reply and no Facebook settings available");
+            }
           }
           
           if (settings?.accessToken) {
