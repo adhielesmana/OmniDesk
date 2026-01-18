@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, memo } from "react";
+import { useRef, useState, useCallback, memo } from "react";
 import { Send, Paperclip, Smile, Mic, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,44 +19,64 @@ export const MessageComposer = memo(function MessageComposer({
   isSending,
   platform,
 }: MessageComposerProps) {
-  const [message, setMessage] = useState("");
   const [attachmentPreview, setAttachmentPreview] = useState<string | null>(null);
+  const [hasContent, setHasContent] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
+    const message = textareaRef.current?.value || "";
     if (!message.trim() && !attachmentPreview) return;
+    
     onSendMessage(message.trim(), attachmentPreview || undefined);
-    setMessage("");
+    
+    if (textareaRef.current) {
+      textareaRef.current.value = "";
+      textareaRef.current.style.height = "auto";
+    }
     setAttachmentPreview(null);
-  };
+    setHasContent(false);
+  }, [onSendMessage, attachmentPreview]);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
-  };
+  }, [handleSubmit]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInput = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    
+    const newHasContent = textarea.value.trim().length > 0;
+    if (newHasContent !== hasContent) {
+      setHasContent(newHasContent);
+    }
+  }, [hasContent]);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
         setAttachmentPreview(reader.result as string);
+        setHasContent(true);
       };
       reader.readAsDataURL(file);
     }
-  };
+  }, []);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`;
-    }
-  }, [message]);
+  const removeAttachment = useCallback(() => {
+    setAttachmentPreview(null);
+    const hasText = (textareaRef.current?.value || "").trim().length > 0;
+    setHasContent(hasText);
+  }, []);
 
-  const hasContent = message.trim() || attachmentPreview;
+  const showSendButton = hasContent || attachmentPreview;
 
   return (
     <div className="border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 p-3">
@@ -71,7 +91,7 @@ export const MessageComposer = memo(function MessageComposer({
             variant="secondary"
             size="icon"
             className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow-md"
-            onClick={() => setAttachmentPreview(null)}
+            onClick={removeAttachment}
             data-testid="button-remove-attachment"
           >
             <X className="h-3 w-3" />
@@ -121,23 +141,19 @@ export const MessageComposer = memo(function MessageComposer({
 
           <textarea
             ref={textareaRef}
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            defaultValue=""
+            onInput={handleInput}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             className="flex-1 bg-transparent border-0 resize-none min-h-[24px] max-h-[120px] py-1 px-1 text-sm focus:outline-none focus:ring-0 placeholder:text-muted-foreground/70"
             rows={1}
             data-testid="input-message"
           />
-
-          <span className="text-[10px] text-muted-foreground/60 pb-1 tabular-nums">
-            {message.length > 0 && `${message.length}/4096`}
-          </span>
         </div>
 
         <Tooltip>
           <TooltipTrigger asChild>
-            {hasContent ? (
+            {showSendButton ? (
               <Button
                 size="icon"
                 onClick={handleSubmit}
@@ -158,7 +174,7 @@ export const MessageComposer = memo(function MessageComposer({
               </Button>
             )}
           </TooltipTrigger>
-          <TooltipContent>{hasContent ? "Send message" : "Voice message"}</TooltipContent>
+          <TooltipContent>{showSendButton ? "Send message" : "Voice message"}</TooltipContent>
         </Tooltip>
       </div>
 
