@@ -1,4 +1,4 @@
-import { useRef, memo } from "react";
+import { useEffect, useRef } from "react";
 
 interface MessageComposerProps {
   onSendMessage: (content: string, mediaUrl?: string) => void;
@@ -6,46 +6,77 @@ interface MessageComposerProps {
   platform: string;
 }
 
-export const MessageComposer = memo(function MessageComposer({
+export function MessageComposer({
   onSendMessage,
   isSending,
 }: MessageComposerProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const onSendRef = useRef(onSendMessage);
+  const isSendingRef = useRef(isSending);
+  
+  onSendRef.current = onSendMessage;
+  isSendingRef.current = isSending;
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      const message = inputRef.current?.value?.trim();
-      if (message && !isSending) {
-        onSendMessage(message);
-        if (inputRef.current) {
-          inputRef.current.value = "";
+  useEffect(() => {
+    if (!containerRef.current) return;
+    
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Type a message and press Enter...";
+    input.autocomplete = "off";
+    input.setAttribute("data-testid", "input-message");
+    input.style.cssText = `
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid #555;
+      border-radius: 8px;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      font-size: 14px;
+      outline: none;
+      box-sizing: border-box;
+    `;
+    
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const message = input.value.trim();
+        if (message && !isSendingRef.current) {
+          onSendRef.current(message);
+          input.value = "";
         }
       }
+    });
+    
+    input.addEventListener("focus", () => {
+      input.style.borderColor = "#3b82f6";
+    });
+    
+    input.addEventListener("blur", () => {
+      input.style.borderColor = "#555";
+    });
+    
+    containerRef.current.appendChild(input);
+    inputRef.current = input;
+    
+    return () => {
+      if (input.parentNode) {
+        input.parentNode.removeChild(input);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.disabled = isSending;
     }
-  };
+  }, [isSending]);
 
   return (
-    <div style={{ borderTop: "1px solid #333", padding: "12px" }}>
-      <input
-        ref={inputRef}
-        type="text"
-        placeholder="Type a message and press Enter..."
-        onKeyDown={handleKeyDown}
-        disabled={isSending}
-        style={{
-          width: "100%",
-          padding: "12px 16px",
-          border: "1px solid #555",
-          borderRadius: "8px",
-          backgroundColor: "#1a1a1a",
-          color: "#ffffff",
-          fontSize: "14px",
-          outline: "none",
-        }}
-        data-testid="input-message"
-        autoComplete="off"
-      />
-    </div>
+    <div 
+      ref={containerRef}
+      style={{ borderTop: "1px solid #333", padding: "12px" }}
+    />
   );
-});
+}
