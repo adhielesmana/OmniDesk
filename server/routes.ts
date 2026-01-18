@@ -2432,8 +2432,19 @@ wa.me/6208991066262`;
   // Webhook handler (POST request from Meta)
   app.post("/api/webhook/:platform", async (req, res) => {
     try {
-      const platform = req.params.platform as Platform;
+      let platform = req.params.platform as Platform;
       let webhookMessage: WebhookMessage | null = null;
+
+      // Auto-detect platform from webhook body (handles case where Instagram uses Facebook webhook URL)
+      const webhookObject = req.body?.object;
+      if (webhookObject === "instagram") {
+        platform = "instagram";
+        console.log("[Webhook] Auto-detected Instagram webhook from object field");
+      } else if (webhookObject === "page") {
+        platform = "facebook";
+      } else if (webhookObject === "whatsapp_business_account") {
+        platform = "whatsapp";
+      }
 
       switch (platform) {
         case "whatsapp":
