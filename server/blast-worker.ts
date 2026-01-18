@@ -278,10 +278,17 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
     return;
   }
 
-  const waStatus = whatsappService.getConnectionState();
-  if (waStatus !== "connected") {
-    console.log("WhatsApp not connected, skipping message send");
-    return;
+  // Check if Twilio is available (preferred for blast)
+  const { isTwilioConfigured, sendWhatsAppMessage: twilioSend } = await import("./twilio");
+  const twilioAvailable = await isTwilioConfigured();
+
+  // If Twilio not available, check Baileys connection
+  if (!twilioAvailable) {
+    const waStatus = whatsappService.getConnectionState();
+    if (waStatus !== "connected") {
+      console.log("Neither Twilio nor WhatsApp Baileys connected, skipping message send");
+      return;
+    }
   }
 
   try {
@@ -292,9 +299,29 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
       throw new Error("No phone number for contact");
     }
 
-    const jid = phoneNumber.includes("@") ? phoneNumber : `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
-    
-    const sendResult = await whatsappService.sendMessage(jid, messageToSend);
+    // Shorten any URLs in the message to avoid WhatsApp detection
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : process.env.APP_URL || "https://omnidesk.maxnetplus.id";
+    const shortenedMessage = await shortenUrlsInText(messageToSend, baseUrl);
+
+    let sendResult: { success: boolean; messageId?: string; rateLimited?: boolean; waitMs?: number; error?: string };
+
+    if (twilioAvailable) {
+      // Use Twilio (official API) for blast messages
+      console.log(`Blast: Sending via Twilio to ${recipient.contact.name || phoneNumber}`);
+      const twilioResult = await twilioSend(phoneNumber.replace(/\D/g, ""), shortenedMessage);
+      sendResult = {
+        success: twilioResult.success,
+        messageId: twilioResult.messageId,
+        error: twilioResult.error
+      };
+    } else {
+      // Fallback to Baileys (unofficial)
+      const jid = phoneNumber.includes("@") ? phoneNumber : `${phoneNumber.replace(/\D/g, "")}@s.whatsapp.net`;
+      console.log(`Blast: Sending via Baileys to ${recipient.contact.name || phoneNumber}`);
+      sendResult = await whatsappService.sendMessage(jid, shortenedMessage);
+    }
 
     // Check for rate limiting - set back to approved to retry (message already generated)
     if (sendResult.rateLimited) {
@@ -309,7 +336,7 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
 
     // Check for failure
     if (!sendResult.success) {
-      throw new Error("WhatsApp send failed");
+      throw new Error(sendResult.error || "WhatsApp send failed");
     }
 
     await storage.updateBlastRecipient(recipient.id, {
@@ -318,7 +345,7 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
     });
     await storage.incrementBlastCampaignSentCount(recipient.campaignId);
 
-    console.log(`Blast message sent to ${recipient.contact.name || phoneNumber}`);
+    console.log(`Blast message sent to ${recipient.contact.name || phoneNumber} via ${twilioAvailable ? 'Twilio' : 'Baileys'}`);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     const retryCount = (recipient.retryCount || 0) + 1;
