@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface MessageComposerProps {
   onSendMessage: (content: string, mediaUrl?: string) => void;
@@ -18,16 +20,25 @@ export function MessageComposer({
   onSendRef.current = onSendMessage;
   isSendingRef.current = isSending;
 
+  const handleSend = () => {
+    if (!inputRef.current) return;
+    const message = inputRef.current.value.trim();
+    if (message && !isSendingRef.current) {
+      onSendRef.current(message);
+      inputRef.current.value = "";
+    }
+  };
+
   useEffect(() => {
     if (!containerRef.current) return;
     
     const input = document.createElement("input");
     input.type = "text";
-    input.placeholder = "Type a message and press Enter...";
+    input.placeholder = "Type a message...";
     input.autocomplete = "off";
     input.setAttribute("data-testid", "input-message");
     input.style.cssText = `
-      width: 100%;
+      flex: 1;
       padding: 12px 16px;
       border: 1px solid #555;
       border-radius: 8px;
@@ -57,7 +68,7 @@ export function MessageComposer({
       input.style.borderColor = "#555";
     });
     
-    containerRef.current.appendChild(input);
+    containerRef.current.insertBefore(input, containerRef.current.firstChild);
     inputRef.current = input;
     
     return () => {
@@ -74,9 +85,21 @@ export function MessageComposer({
   }, [isSending]);
 
   return (
-    <div 
-      ref={containerRef}
-      style={{ borderTop: "1px solid #333", padding: "12px" }}
-    />
+    <div style={{ borderTop: "1px solid #333", padding: "12px" }}>
+      <div 
+        ref={containerRef}
+        style={{ display: "flex", gap: "8px", alignItems: "center" }}
+      >
+        <Button
+          size="icon"
+          onClick={handleSend}
+          disabled={isSending}
+          className="h-10 w-10 rounded-full shrink-0"
+          data-testid="button-send"
+        >
+          <Send className="h-5 w-5" />
+        </Button>
+      </div>
+    </div>
   );
 }
