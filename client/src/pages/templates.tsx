@@ -80,9 +80,14 @@ export default function TemplatesPage() {
     }
   };
 
-  const { data: templates = [], isLoading } = useQuery<MessageTemplate[]>({
+  const { data: templates = [], isLoading, isError, error } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/admin/templates"],
   });
+
+  // Log any errors for debugging
+  if (isError) {
+    console.error("[Templates] Query error:", error);
+  }
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: Partial<MessageTemplate> & { id: string }) => {
@@ -382,6 +387,24 @@ export default function TemplatesPage() {
                 <div className="flex items-center justify-center h-48">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
+              ) : isError ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center h-48 text-center">
+                    <XCircle className="h-12 w-12 text-destructive mb-4" />
+                    <p className="text-destructive font-medium">Failed to load templates</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {error instanceof Error ? error.message : "Please check your connection and try again"}
+                    </p>
+                    <Button 
+                      variant="outline" 
+                      className="mt-4"
+                      onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] })}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Retry
+                    </Button>
+                  </CardContent>
+                </Card>
               ) : templates.length === 0 ? (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center h-48 text-center">
