@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2, Download, Upload, RefreshCw, CloudUpload, CheckCircle2, XCircle, Clock } from "lucide-react";
-import type { Platform, MessageTemplate, TriggerRule } from "@shared/schema";
+import type { Platform, MessageTemplate } from "@shared/schema";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function TemplatesPage() {
@@ -427,21 +427,6 @@ export default function TemplatesPage() {
                             {template.category && (
                               <Badge variant="outline">{template.category}</Badge>
                             )}
-                            {(template as any).messageType && (
-                              <Badge variant="outline" className="bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30">
-                                Type: {(template as any).messageType}
-                              </Badge>
-                            )}
-                            {(template as any).triggerRules?.length > 0 && (
-                              <Badge variant="outline" className="bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30">
-                                Trigger: {((template as any).triggerRules as TriggerRule[])[0]?.field}
-                              </Badge>
-                            )}
-                            {(template as any).isDefault && (
-                              <Badge variant="outline" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30">
-                                Default
-                              </Badge>
-                            )}
                             {getTwilioStatusBadge(template)}
                           </div>
                           <CardDescription className="mt-1">{template.description}</CardDescription>
@@ -690,29 +675,14 @@ function CreateTemplateForm({ onSubmit, isPending }: { onSubmit: (data: Partial<
   const [content, setContent] = useState("");
   const [category, setCategory] = useState("");
   const [variables, setVariables] = useState("");
-  const [messageType, setMessageType] = useState("");
-  const [triggerField, setTriggerField] = useState("");
-  const [triggerOperator, setTriggerOperator] = useState<TriggerRule["operator"]>("exists");
-  const [triggerValue, setTriggerValue] = useState("");
-  const [isDefault, setIsDefault] = useState(false);
-  const [priority, setPriority] = useState(0);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const triggerRules: TriggerRule[] = [];
-    if (triggerField) {
-      triggerRules.push({ field: triggerField, operator: triggerOperator, value: triggerValue || undefined });
-    }
     onSubmit({
       name,
       description,
       content,
       category: category || undefined,
       variables: variables.split(",").map((v) => v.trim()).filter(Boolean),
-      messageType: messageType || undefined,
-      triggerRules: triggerRules.length > 0 ? triggerRules : undefined,
-      isDefault,
-      priority,
     });
   };
 
@@ -737,61 +707,6 @@ function CreateTemplateForm({ onSubmit, isPending }: { onSubmit: (data: Partial<
         <Input id="variables" value={variables} onChange={(e) => setVariables(e.target.value)} placeholder="e.g., recipient_name, invoice_number, grand_total" data-testid="input-template-variables" />
       </div>
       
-      <div className="border rounded-md p-4 space-y-4">
-        <h4 className="font-medium text-sm">Template Matching (3-tier priority)</h4>
-        <p className="text-xs text-muted-foreground">1. Message Type → 2. Trigger Rules → 3. Default</p>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="messageType">Message Type (Priority 1)</Label>
-            <Select value={messageType} onValueChange={setMessageType}>
-              <SelectTrigger data-testid="select-message-type">
-                <SelectValue placeholder="Select type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                <SelectItem value="new_invoice">New Invoice</SelectItem>
-                <SelectItem value="reminder_invoices">Invoice Reminder</SelectItem>
-                <SelectItem value="overdue">Overdue Notice</SelectItem>
-                <SelectItem value="payment_confirmation">Payment Confirmation</SelectItem>
-                <SelectItem value="welcome">Welcome Message</SelectItem>
-                <SelectItem value="notification">Notification</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="priority">Priority (higher = checked first)</Label>
-            <Input id="priority" type="number" value={priority} onChange={(e) => setPriority(parseInt(e.target.value) || 0)} data-testid="input-template-priority" />
-          </div>
-        </div>
-        
-        <div className="space-y-2">
-          <Label>Trigger Rule (Priority 2)</Label>
-          <div className="grid grid-cols-3 gap-2">
-            <Input value={triggerField} onChange={(e) => setTriggerField(e.target.value)} placeholder="Field (e.g., variables.invoice_number)" data-testid="input-trigger-field" />
-            <Select value={triggerOperator} onValueChange={(v) => setTriggerOperator(v as TriggerRule["operator"])}>
-              <SelectTrigger data-testid="select-trigger-operator">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="exists">Exists</SelectItem>
-                <SelectItem value="equals">Equals</SelectItem>
-                <SelectItem value="contains">Contains</SelectItem>
-                <SelectItem value="startsWith">Starts With</SelectItem>
-                <SelectItem value="endsWith">Ends With</SelectItem>
-                <SelectItem value="regex">Regex</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} placeholder="Value" disabled={triggerOperator === "exists"} data-testid="input-trigger-value" />
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Switch id="isDefault" checked={isDefault} onCheckedChange={setIsDefault} data-testid="switch-is-default" />
-          <Label htmlFor="isDefault">Default Template (Priority 3 - fallback when no match)</Label>
-        </div>
-      </div>
-      
       <div className="space-y-2">
         <Label htmlFor="content">Template Content</Label>
         <Textarea id="content" value={content} onChange={(e) => setContent(e.target.value)} placeholder="Use {{variable_name}} for placeholders" rows={8} required data-testid="textarea-template-content" />
@@ -813,20 +728,9 @@ function EditTemplateForm({ template, onSubmit, isPending }: { template: Message
   const [category, setCategory] = useState(template.category || "");
   const [variables, setVariables] = useState(template.variables?.join(", ") || "");
   const [isActive, setIsActive] = useState(template.isActive ?? true);
-  const [messageType, setMessageType] = useState((template as any).messageType || "");
-  const existingRules = ((template as any).triggerRules as TriggerRule[] | null) || [];
-  const [triggerField, setTriggerField] = useState(existingRules[0]?.field || "");
-  const [triggerOperator, setTriggerOperator] = useState<TriggerRule["operator"]>(existingRules[0]?.operator || "exists");
-  const [triggerValue, setTriggerValue] = useState(existingRules[0]?.value || "");
-  const [isDefault, setIsDefault] = useState((template as any).isDefault ?? false);
-  const [priority, setPriority] = useState((template as any).priority ?? 0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const triggerRules: TriggerRule[] = [];
-    if (triggerField) {
-      triggerRules.push({ field: triggerField, operator: triggerOperator, value: triggerValue || undefined });
-    }
     onSubmit({
       name,
       description,
@@ -834,10 +738,6 @@ function EditTemplateForm({ template, onSubmit, isPending }: { template: Message
       category: category || undefined,
       variables: variables.split(",").map((v) => v.trim()).filter(Boolean),
       isActive,
-      messageType: messageType || undefined,
-      triggerRules: triggerRules.length > 0 ? triggerRules : undefined,
-      isDefault,
-      priority,
     });
   };
 
@@ -860,61 +760,6 @@ function EditTemplateForm({ template, onSubmit, isPending }: { template: Message
       <div className="space-y-2">
         <Label htmlFor="edit-variables">Variables (comma-separated)</Label>
         <Input id="edit-variables" value={variables} onChange={(e) => setVariables(e.target.value)} data-testid="input-edit-template-variables" />
-      </div>
-      
-      <div className="border rounded-md p-4 space-y-4">
-        <h4 className="font-medium text-sm">Template Matching (3-tier priority)</h4>
-        <p className="text-xs text-muted-foreground">1. Message Type → 2. Trigger Rules → 3. Default</p>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="edit-messageType">Message Type (Priority 1)</Label>
-            <Select value={messageType} onValueChange={setMessageType}>
-              <SelectTrigger data-testid="select-edit-message-type">
-                <SelectValue placeholder="Select type..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                <SelectItem value="new_invoice">New Invoice</SelectItem>
-                <SelectItem value="reminder_invoices">Invoice Reminder</SelectItem>
-                <SelectItem value="overdue">Overdue Notice</SelectItem>
-                <SelectItem value="payment_confirmation">Payment Confirmation</SelectItem>
-                <SelectItem value="welcome">Welcome Message</SelectItem>
-                <SelectItem value="notification">Notification</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="edit-priority">Priority (higher = checked first)</Label>
-            <Input id="edit-priority" type="number" value={priority} onChange={(e) => setPriority(parseInt(e.target.value) || 0)} data-testid="input-edit-template-priority" />
-          </div>
-        </div>
-        
-        <div className="space-y-2">
-          <Label>Trigger Rule (Priority 2)</Label>
-          <div className="grid grid-cols-3 gap-2">
-            <Input value={triggerField} onChange={(e) => setTriggerField(e.target.value)} placeholder="Field (e.g., variables.invoice_number)" data-testid="input-edit-trigger-field" />
-            <Select value={triggerOperator} onValueChange={(v) => setTriggerOperator(v as TriggerRule["operator"])}>
-              <SelectTrigger data-testid="select-edit-trigger-operator">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="exists">Exists</SelectItem>
-                <SelectItem value="equals">Equals</SelectItem>
-                <SelectItem value="contains">Contains</SelectItem>
-                <SelectItem value="startsWith">Starts With</SelectItem>
-                <SelectItem value="endsWith">Ends With</SelectItem>
-                <SelectItem value="regex">Regex</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input value={triggerValue} onChange={(e) => setTriggerValue(e.target.value)} placeholder="Value" disabled={triggerOperator === "exists"} data-testid="input-edit-trigger-value" />
-          </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-          <Switch id="edit-isDefault" checked={isDefault} onCheckedChange={setIsDefault} data-testid="switch-edit-is-default" />
-          <Label htmlFor="edit-isDefault">Default Template (Priority 3 - fallback when no match)</Label>
-        </div>
       </div>
       
       <div className="space-y-2">
