@@ -3748,7 +3748,7 @@ wa.me/6208991066262`;
   // Create blast campaign
   app.post("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent } = req.body;
+      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent, variableMappings } = req.body;
       
       if (!name || !prompt) {
         return res.status(400).json({ error: "Name and prompt are required" });
@@ -3769,6 +3769,7 @@ wa.me/6208991066262`;
           description: `Auto-created template for blast campaign: ${name}`,
           content,
           variables,
+          variableMappings: variableMappings || null,
           category: "MARKETING",
           isActive: true,
           isSystemTemplate: false,
@@ -3814,7 +3815,7 @@ wa.me/6208991066262`;
   // Update blast campaign
   app.patch("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent } = req.body;
+      const { name, prompt, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate, templateContent, variableMappings } = req.body;
       
       let finalTemplateId = templateId;
       
@@ -3835,6 +3836,7 @@ wa.me/6208991066262`;
           description: `Auto-created template for blast campaign: ${existingCampaign.name}`,
           content,
           variables,
+          variableMappings: variableMappings || null,
           category: "MARKETING",
           isActive: true,
           isSystemTemplate: false,

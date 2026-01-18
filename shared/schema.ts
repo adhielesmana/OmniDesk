@@ -636,6 +636,14 @@ export type TriggerRule = {
   value?: string;      // Value to match (not needed for "exists")
 };
 
+// Variable mapping for templates - defines what each {{1}}, {{2}} etc. means
+export type VariableMapping = {
+  placeholder: string; // e.g., "1", "2"
+  type: "recipient_name" | "ai_prompt" | "phone_number" | "custom";
+  customValue?: string; // Used when type is "custom"
+  label?: string; // Human-readable label
+};
+
 // Message templates for external API - reusable templates with variables
 export const messageTemplates = pgTable("message_templates", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -643,6 +651,7 @@ export const messageTemplates = pgTable("message_templates", {
   description: text("description"), // Human-readable description
   content: text("content").notNull(), // Template content with {{variable}} placeholders
   variables: text("variables").array(), // List of required variable names
+  variableMappings: json("variable_mappings").$type<VariableMapping[]>(), // What each variable means
   category: varchar("category", { length: 50 }), // Category for organization (e.g., "billing", "notification")
   isActive: boolean("is_active").default(true),
   isSystemTemplate: boolean("is_system_template").default(false), // System templates cannot be deleted (e.g., blast template)

@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { MessageTemplate } from "@shared/schema";
+import type { MessageTemplate, VariableMapping } from "@shared/schema";
 import { 
   Plus, 
   Loader2, 
@@ -391,6 +391,28 @@ function CreateCampaignDialog({
   const [templateId, setTemplateId] = useState<string>("");
   const [templateMode, setTemplateMode] = useState<"none" | "existing" | "new">("none");
   const [newTemplateContent, setNewTemplateContent] = useState("Hi {{1}}, {{2}}");
+  const [variableMappings, setVariableMappings] = useState<VariableMapping[]>([
+    { placeholder: "1", type: "recipient_name", label: "Recipient Name" },
+    { placeholder: "2", type: "ai_prompt", label: "AI Message" },
+  ]);
+
+  // Extract variables from template content and sync with mappings
+  const updateVariableMappings = useCallback((content: string) => {
+    const matches = content.match(/\{\{(\d+)\}\}/g) || [];
+    const placeholders = [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort();
+    
+    setVariableMappings(prev => {
+      const newMappings: VariableMapping[] = placeholders.map(p => {
+        const existing = prev.find(m => m.placeholder === p);
+        if (existing) return existing;
+        // Default mapping based on position
+        if (p === "1") return { placeholder: p, type: "recipient_name", label: "Recipient Name" };
+        if (p === "2") return { placeholder: p, type: "ai_prompt", label: "AI Message" };
+        return { placeholder: p, type: "custom", label: `Variable ${p}`, customValue: "" };
+      });
+      return newMappings;
+    });
+  }, []);
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/templates"],
@@ -441,6 +463,7 @@ function CreateCampaignDialog({
         templateId: templateMode === "existing" ? templateId : undefined,
         createNewTemplate: templateMode === "new",
         templateContent: templateMode === "new" ? newTemplateContent : undefined,
+        variableMappings: templateMode === "new" ? variableMappings : undefined,
       });
       return res.json();
     },
@@ -456,6 +479,10 @@ function CreateCampaignDialog({
       setTemplateId("");
       setTemplateMode("none");
       setNewTemplateContent("Hi {{1}}, {{2}}");
+      setVariableMappings([
+        { placeholder: "1", type: "recipient_name", label: "Recipient Name" },
+        { placeholder: "2", type: "ai_prompt", label: "AI Message" },
+      ]);
       toast({ title: "Campaign created successfully" });
     },
     onError: () => {
@@ -619,16 +646,61 @@ function CreateCampaignDialog({
                   <Label className="text-sm">Template Content</Label>
                   <Textarea
                     value={newTemplateContent}
-                    onChange={(e) => setNewTemplateContent(e.target.value)}
+                    onChange={(e) => {
+                      setNewTemplateContent(e.target.value);
+                      updateVariableMappings(e.target.value);
+                    }}
                     placeholder="Hi {{1}}, {{2}}"
                     rows={3}
                     className="mt-1"
                     data-testid="input-create-template-content"
                   />
                 </div>
+                
+                {variableMappings.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">Variable Mappings</Label>
+                    {variableMappings.map((mapping, index) => (
+                      <div key={mapping.placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                        <span className="text-sm font-mono w-12">{`{{${mapping.placeholder}}}`}</span>
+                        <Select
+                          value={mapping.type}
+                          onValueChange={(value: VariableMapping["type"]) => {
+                            setVariableMappings(prev => prev.map((m, i) => 
+                              i === index ? { ...m, type: value, customValue: value === "custom" ? "" : undefined } : m
+                            ));
+                          }}
+                        >
+                          <SelectTrigger className="flex-1" data-testid={`select-var-type-${mapping.placeholder}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                            <SelectItem value="ai_prompt">AI Message</SelectItem>
+                            <SelectItem value="phone_number">Phone Number</SelectItem>
+                            <SelectItem value="custom">Custom Value</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {mapping.type === "custom" && (
+                          <Input
+                            value={mapping.customValue || ""}
+                            onChange={(e) => {
+                              setVariableMappings(prev => prev.map((m, i) =>
+                                i === index ? { ...m, customValue: e.target.value } : m
+                              ));
+                            }}
+                            placeholder="Enter value..."
+                            className="flex-1"
+                            data-testid={`input-custom-value-${mapping.placeholder}`}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 <div className="p-3 rounded-md bg-muted/50 border">
                   <p className="text-xs text-muted-foreground">
-                    Use {"{{1}}"} for recipient name and {"{{2}}"} for AI-generated message.
                     After creation, sync it to Twilio and wait for approval.
                   </p>
                 </div>
@@ -1035,6 +1107,27 @@ function CampaignDetail({
     campaign.templateId ? "existing" : "none"
   );
   const [newTemplateContent, setNewTemplateContent] = useState("Hi {{1}}, {{2}}");
+  const [variableMappings, setVariableMappings] = useState<VariableMapping[]>([
+    { placeholder: "1", type: "recipient_name", label: "Recipient Name" },
+    { placeholder: "2", type: "ai_prompt", label: "AI Message" },
+  ]);
+
+  // Extract variables from template content and sync with mappings
+  const updateVariableMappings = useCallback((content: string) => {
+    const matches = content.match(/\{\{(\d+)\}\}/g) || [];
+    const placeholders = [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort();
+    
+    setVariableMappings(prev => {
+      const newMappings: VariableMapping[] = placeholders.map(p => {
+        const existing = prev.find(m => m.placeholder === p);
+        if (existing) return existing;
+        if (p === "1") return { placeholder: p, type: "recipient_name", label: "Recipient Name" };
+        if (p === "2") return { placeholder: p, type: "ai_prompt", label: "AI Message" };
+        return { placeholder: p, type: "custom", label: `Variable ${p}`, customValue: "" };
+      });
+      return newMappings;
+    });
+  }, []);
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/templates"],
@@ -1054,7 +1147,7 @@ function CampaignDetail({
   }, [campaign.templateId, templatesData]);
 
   const updateTemplateMutation = useMutation({
-    mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean; templateContent?: string }) => {
+    mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean; templateContent?: string; variableMappings?: VariableMapping[] }) => {
       const res = await apiRequest("PATCH", `/api/blast-campaigns/${campaign.id}`, data);
       return res.json();
     },
@@ -1357,16 +1450,61 @@ function CampaignDetail({
                     <Label className="text-sm">Template Content</Label>
                     <Textarea
                       value={newTemplateContent}
-                      onChange={(e) => setNewTemplateContent(e.target.value)}
+                      onChange={(e) => {
+                        setNewTemplateContent(e.target.value);
+                        updateVariableMappings(e.target.value);
+                      }}
                       placeholder="Hi {{1}}, {{2}}"
                       rows={3}
                       className="mt-1"
                       data-testid="input-new-template-content"
                     />
                   </div>
+                  
+                  {variableMappings.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm">Variable Mappings</Label>
+                      {variableMappings.map((mapping, index) => (
+                        <div key={mapping.placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                          <span className="text-sm font-mono w-12">{`{{${mapping.placeholder}}}`}</span>
+                          <Select
+                            value={mapping.type}
+                            onValueChange={(value: VariableMapping["type"]) => {
+                              setVariableMappings(prev => prev.map((m, i) => 
+                                i === index ? { ...m, type: value, customValue: value === "custom" ? "" : undefined } : m
+                              ));
+                            }}
+                          >
+                            <SelectTrigger className="flex-1" data-testid={`select-edit-var-type-${mapping.placeholder}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                              <SelectItem value="ai_prompt">AI Message</SelectItem>
+                              <SelectItem value="phone_number">Phone Number</SelectItem>
+                              <SelectItem value="custom">Custom Value</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {mapping.type === "custom" && (
+                            <Input
+                              value={mapping.customValue || ""}
+                              onChange={(e) => {
+                                setVariableMappings(prev => prev.map((m, i) =>
+                                  i === index ? { ...m, customValue: e.target.value } : m
+                                ));
+                              }}
+                              placeholder="Enter value..."
+                              className="flex-1"
+                              data-testid={`input-edit-custom-value-${mapping.placeholder}`}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
                   <div className="p-3 rounded-md bg-muted/50 border">
                     <p className="text-xs text-muted-foreground">
-                      Use {"{{1}}"} for recipient name and {"{{2}}"} for AI-generated message.
                       After creation, sync it to Twilio and wait for approval.
                     </p>
                   </div>
@@ -1385,7 +1523,8 @@ function CampaignDetail({
                     updateTemplateMutation.mutate({ 
                       templateId: null, 
                       createNewTemplate: true,
-                      templateContent: newTemplateContent 
+                      templateContent: newTemplateContent,
+                      variableMappings: variableMappings
                     });
                   } else if (templateMode === "existing" && selectedTemplateId) {
                     updateTemplateMutation.mutate({ templateId: selectedTemplateId });

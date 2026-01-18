@@ -321,13 +321,39 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
         template?.twilioApprovalStatus === "approved";
       
       if (hasApprovedTemplate) {
-        // Use approved template with AI message as variable
-        // Template format: "Hi {{1}}, {{2}}" where {{1}}=name, {{2}}=AI message
+        // Use approved template with variable mappings
         const recipientName = recipient.contact.name || "Pelanggan";
-        const contentVariables: Record<string, string> = {
-          "1": recipientName,
-          "2": shortenedMessage
-        };
+        const recipientPhone = recipient.contact.phoneNumber || "";
+        const contentVariables: Record<string, string> = {};
+        
+        // Check if template has variable mappings defined
+        const mappings = template!.variableMappings as Array<{ placeholder: string; type: string; customValue?: string }> | null;
+        
+        if (mappings && mappings.length > 0) {
+          // Use defined mappings
+          mappings.forEach(mapping => {
+            switch (mapping.type) {
+              case "recipient_name":
+                contentVariables[mapping.placeholder] = recipientName;
+                break;
+              case "ai_prompt":
+                contentVariables[mapping.placeholder] = shortenedMessage;
+                break;
+              case "phone_number":
+                contentVariables[mapping.placeholder] = recipientPhone;
+                break;
+              case "custom":
+                contentVariables[mapping.placeholder] = mapping.customValue || "";
+                break;
+              default:
+                contentVariables[mapping.placeholder] = "";
+            }
+          });
+        } else {
+          // Default fallback: {{1}}=name, {{2}}=AI message
+          contentVariables["1"] = recipientName;
+          contentVariables["2"] = shortenedMessage;
+        }
         
         console.log(`Blast: Sending via Twilio template "${template!.name}" to ${recipientName}`);
         const twilioResult = await sendWhatsAppTemplate(
