@@ -160,6 +160,11 @@ Preferred communication style: Simple, everyday language.
   - Verify WhatsApp connection after update
   - Check server logs for any protocol warnings
 
+## Recent Performance Fixes
+
+- **Conversation List Virtualization**: Implemented virtualization for the conversation list to prevent typing lag. Only 30 conversations render initially, with more loading on scroll. This fixed the issue where hundreds of DOM elements blocked the main thread during React reconciliation.
+- **Message Composer Optimization**: Input uses native DOM creation to bypass React rendering entirely, with React.memo and custom comparison to prevent unnecessary re-renders.
+
 ## Known Issues
 
 - **Profile Pictures**: WhatsApp profile picture URLs are temporary and expire. Users can click refresh button to update profile pictures, but they may become unavailable after some time.
