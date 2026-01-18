@@ -367,43 +367,61 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     let matchedBy: string | null = null;
 
     // Import template functions
-    const { selectTemplate, renderTemplate } = await import('./template-selector');
+    const { renderTemplate } = await import('./template-selector');
     const meta = (metadata && typeof metadata === 'object') ? metadata as Record<string, any> : {};
     
-    // Priority 0: Check if client has a default template assigned
+    // API Client MUST have a linked template - use it directly
     let selectionResult: { template: any | null; matchedBy: string | null } = { template: null, matchedBy: null };
     
-    if (client.defaultTemplateId) {
-      // Client has a specific template assigned - use it directly
-      const { storage } = await import('./storage');
-      const clientTemplate = await storage.getMessageTemplateById(client.defaultTemplateId);
-      // Only use if template is active, has Twilio SID, and is approved
-      if (clientTemplate && clientTemplate.isActive && clientTemplate.twilioContentSid && clientTemplate.twilioApprovalStatus === 'approved') {
-        selectionResult = { template: clientTemplate, matchedBy: 'client_default' };
-        console.log(`API queue: Using client's default template "${clientTemplate.name}" for request ${request_id}`);
-      } else if (clientTemplate) {
-        console.log(`API queue: Client template "${clientTemplate.name}" not usable (active=${clientTemplate.isActive}, sid=${clientTemplate.twilioContentSid}, status=${clientTemplate.twilioApprovalStatus})`);
-      }
+    if (!client.defaultTemplateId) {
+      console.error(`API queue: Client "${client.name}" has no template linked`);
+      return res.status(400).json({
+        error: "No template linked",
+        message: `API client "${client.name}" does not have a message template linked. Please configure a template in Admin > API Message > API Clients.`,
+        request_id,
+      });
     }
     
-    // If no client template, use 3-tier selection: messageType → trigger rules → default
-    if (!selectionResult.template) {
-      const templateContext = {
-        messageType: meta.messageType,
-        message: message,
-        variables: {
-          recipient_name: recipient_name || meta.recipient_name || 'Pelanggan',
-          invoice_number: meta.invoice_number || '',
-          grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
-          invoice_url: message,
-          phone_number: phone_number,
-          ...meta,
-        }
-      };
-      
-      // Select template using 3-tier priority
-      selectionResult = await selectTemplate(templateContext);
+    // Get the linked template
+    const clientTemplate = await storage.getMessageTemplateById(client.defaultTemplateId);
+    
+    if (!clientTemplate) {
+      console.error(`API queue: Template ${client.defaultTemplateId} not found for client "${client.name}"`);
+      return res.status(400).json({
+        error: "Template not found",
+        message: `The linked template was deleted. Please configure a new template in Admin > API Message > API Clients.`,
+        request_id,
+      });
     }
+    
+    // Check if template is usable
+    if (!clientTemplate.isActive) {
+      return res.status(400).json({
+        error: "Template inactive",
+        message: `Template "${clientTemplate.name}" is inactive. Please activate it in the Templates page.`,
+        request_id,
+      });
+    }
+    
+    if (!clientTemplate.twilioContentSid) {
+      return res.status(400).json({
+        error: "Template not synced",
+        message: `Template "${clientTemplate.name}" is not synced to Twilio. Please sync it in the Templates page.`,
+        request_id,
+      });
+    }
+    
+    if (clientTemplate.twilioApprovalStatus !== 'approved') {
+      return res.status(400).json({
+        error: "Template not approved",
+        message: `Template "${clientTemplate.name}" is not approved by WhatsApp (status: ${clientTemplate.twilioApprovalStatus}). Please wait for approval or use an approved template.`,
+        request_id,
+      });
+    }
+    
+    // Template is valid - use it
+    selectionResult = { template: clientTemplate, matchedBy: 'client_linked' };
+    console.log(`API queue: Using client's linked template "${clientTemplate.name}" for request ${request_id}`);
     
     if (selectionResult.template) {
       const template = selectionResult.template;
@@ -452,14 +470,6 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       finalMessage = renderTemplate(template, templateVars);
       templateApplied = true;
       console.log(`API queue: Applied template "${template.name}" (matched by ${matchedBy}) for request ${request_id}`);
-    } else {
-      // Template is required for all external API messages
-      console.error(`API queue: No template matched for request ${request_id} - template required`);
-      return res.status(400).json({
-        error: "Template required",
-        message: "No applicable message template found. External API requires a valid message template to be configured or matched.",
-        request_id,
-      });
     }
 
     const queuedMessage = await storage.createApiMessage({
