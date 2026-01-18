@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { Search, Filter, MoreVertical, Pin, Archive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -158,7 +158,6 @@ export function ConversationList({
                   <div className="flex items-center gap-3">
                     <div className="relative shrink-0">
                       <Avatar className="h-12 w-12">
-                        <AvatarImage src={conv.contact.profilePictureUrl || undefined} />
                         <AvatarFallback className="bg-muted text-muted-foreground">
                           {getInitials(conv.contact.name)}
                         </AvatarFallback>

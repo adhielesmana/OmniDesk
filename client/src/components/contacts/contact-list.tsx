@@ -2,7 +2,7 @@ import { Search, Star } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -110,7 +110,6 @@ export function ContactList({
                 data-testid={`contact-item-${contact.id}`}
               >
                 <Avatar className="h-10 w-10">
-                  <AvatarImage src={contact.profilePictureUrl || undefined} />
                   <AvatarFallback>{getInitials(contact.name)}</AvatarFallback>
                 </Avatar>
 

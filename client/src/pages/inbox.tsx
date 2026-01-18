@@ -13,7 +13,7 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ArrowLeft, MessageCircle, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/hooks/use-websocket";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PlatformIcon } from "@/components/platform-icons";
 import type {
   Platform,
@@ -346,7 +346,6 @@ function InboxContent({
                       <>
                         <div className="relative shrink-0">
                           <Avatar className="h-9 w-9">
-                            <AvatarImage src={selectedConversation.contact.profilePictureUrl || undefined} />
                             <AvatarFallback className="bg-muted text-muted-foreground text-sm">
                               {getInitials(selectedConversation.contact.name)}
                             </AvatarFallback>

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -117,10 +117,10 @@ export const MessageThread = memo(function MessageThread({
 
     setIsLoadingMore(true);
     try {
-      const response = await apiRequest(
+      const response = await fetch(
         `/api/conversations/${conversation.id}/older-messages?before=${new Date(oldestMessage.timestamp).toISOString()}&beforeId=${oldestMessage.id}&limit=50`
       );
-      const data = response as { messages: Message[]; hasMore: boolean };
+      const data = await response.json() as { messages: Message[]; hasMore: boolean };
       
       if (data.messages && data.messages.length > 0) {
         // Dedupe when adding to prevent duplicates
@@ -227,7 +227,6 @@ export const MessageThread = memo(function MessageThread({
             )}
             <div className="relative shrink-0">
               <Avatar className="h-9 w-9">
-                <AvatarImage src={contact.profilePictureUrl || undefined} />
                 <AvatarFallback className="bg-muted text-muted-foreground text-sm">
                   {getInitials(contact.name)}
                 </AvatarFallback>
