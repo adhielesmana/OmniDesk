@@ -313,6 +313,122 @@ export class MetaApiService {
     }
   }
 
+  // Validate token using Meta's debug_token API
+  async validateToken(): Promise<{
+    valid: boolean;
+    error?: string;
+    isExpired?: boolean;
+    expiresAt?: Date | null;
+    scopes?: string[];
+    missingPermissions?: string[];
+    appId?: string;
+    userId?: string;
+  }> {
+    if (!this.config.accessToken) {
+      return { valid: false, error: "No access token provided" };
+    }
+
+    try {
+      // Use the token to debug itself - this works for Page Access Tokens
+      const url = `${GRAPH_API_BASE}/debug_token?input_token=${this.config.accessToken}&access_token=${this.config.accessToken}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        // If debug_token fails, try a simple /me call to check if token works
+        const meResponse = await fetch(`${GRAPH_API_BASE}/me?access_token=${this.config.accessToken}`);
+        const meData = await meResponse.json();
+        
+        if (!meResponse.ok) {
+          const errorCode = meData.error?.code;
+          const errorMessage = meData.error?.message || "Token validation failed";
+          
+          if (errorCode === 190) {
+            return { 
+              valid: false, 
+              error: "Access token has expired. Please generate a new token.",
+              isExpired: true 
+            };
+          }
+          
+          return { valid: false, error: errorMessage };
+        }
+        
+        // Token works but debug_token failed (common for some token types)
+        return { 
+          valid: true, 
+          userId: meData.id,
+          scopes: [] // Can't determine scopes without debug_token
+        };
+      }
+
+      const tokenData = data.data;
+      
+      // Check if token is valid
+      if (!tokenData.is_valid) {
+        return {
+          valid: false,
+          error: tokenData.error?.message || "Token is invalid",
+          isExpired: tokenData.error?.code === 190
+        };
+      }
+
+      // Check expiration
+      let expiresAt: Date | null = null;
+      let isExpired = false;
+      
+      if (tokenData.expires_at) {
+        expiresAt = new Date(tokenData.expires_at * 1000);
+        isExpired = expiresAt < new Date();
+      } else if (tokenData.data_access_expires_at) {
+        expiresAt = new Date(tokenData.data_access_expires_at * 1000);
+        isExpired = expiresAt < new Date();
+      }
+
+      if (isExpired) {
+        return {
+          valid: false,
+          error: `Token expired on ${expiresAt?.toLocaleDateString()}`,
+          isExpired: true,
+          expiresAt
+        };
+      }
+
+      // Check required permissions based on platform
+      const scopes = tokenData.scopes || [];
+      const requiredPermissions: string[] = [];
+      const missingPermissions: string[] = [];
+
+      if (this.platform === "facebook") {
+        requiredPermissions.push("pages_messaging", "pages_manage_metadata");
+      } else if (this.platform === "instagram") {
+        requiredPermissions.push("instagram_manage_messages", "instagram_basic");
+      }
+
+      for (const perm of requiredPermissions) {
+        if (!scopes.includes(perm)) {
+          missingPermissions.push(perm);
+        }
+      }
+
+      return {
+        valid: true,
+        isExpired: false,
+        expiresAt,
+        scopes,
+        missingPermissions: missingPermissions.length > 0 ? missingPermissions : undefined,
+        appId: tokenData.app_id,
+        userId: tokenData.user_id
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : "Token validation failed"
+      };
+    }
+  }
+
   // Fetch user profile info from Meta Graph API
   async getUserProfile(userId: string): Promise<{ name?: string; profilePicture?: string } | null> {
     try {

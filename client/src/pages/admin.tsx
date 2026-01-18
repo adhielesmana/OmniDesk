@@ -1255,6 +1255,46 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
     },
   });
 
+  // State for token validation results
+  const [tokenValidation, setTokenValidation] = useState<{
+    facebook?: { valid: boolean; status: string; error?: string; expiresAt?: string; missingPermissions?: string[] };
+    instagram?: { valid: boolean; status: string; error?: string; expiresAt?: string; missingPermissions?: string[] };
+  }>({});
+
+  const validateTokenMutation = useMutation({
+    mutationFn: async (platform: "facebook" | "instagram") => {
+      const res = await fetch(`/api/platform-settings/${platform}/validate-token`, { credentials: 'include' });
+      return res.json();
+    },
+    onSuccess: (data, platform) => {
+      setTokenValidation(prev => ({ ...prev, [platform]: data }));
+      
+      if (data.valid) {
+        if (data.missingPermissions && data.missingPermissions.length > 0) {
+          toast({ 
+            title: "Token Valid but Missing Permissions", 
+            description: `Missing: ${data.missingPermissions.join(", ")}`,
+            variant: "destructive"
+          });
+        } else {
+          const expiryMsg = data.expiresAt 
+            ? `Expires: ${new Date(data.expiresAt).toLocaleDateString()}`
+            : "No expiration date";
+          toast({ title: "Token is Valid", description: expiryMsg });
+        }
+      } else {
+        toast({ 
+          title: data.isExpired ? "Token Expired" : "Token Invalid", 
+          description: data.error || "Please update your access token",
+          variant: "destructive"
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Token validation failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       accessToken: "",
@@ -1376,7 +1416,31 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                         {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
                         Sync
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => validateTokenMutation.mutate("facebook")}
+                        disabled={validateTokenMutation.isPending}
+                        data-testid="button-validate-facebook"
+                      >
+                        {validateTokenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Shield className="h-4 w-4 mr-1" />}
+                        Validate Token
+                      </Button>
                     </div>
+                    {tokenValidation.facebook && (
+                      <div className={`text-xs p-2 rounded mt-2 ${tokenValidation.facebook.valid ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+                        <p className="font-medium">
+                          {tokenValidation.facebook.valid ? 'Token Valid' : tokenValidation.facebook.status === 'expired' ? 'Token Expired' : 'Token Invalid'}
+                        </p>
+                        {tokenValidation.facebook.error && <p>{tokenValidation.facebook.error}</p>}
+                        {tokenValidation.facebook.expiresAt && (
+                          <p>Expires: {new Date(tokenValidation.facebook.expiresAt).toLocaleDateString()}</p>
+                        )}
+                        {tokenValidation.facebook.missingPermissions && tokenValidation.facebook.missingPermissions.length > 0 && (
+                          <p>Missing: {tokenValidation.facebook.missingPermissions.join(", ")}</p>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -1467,7 +1531,31 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                         {syncMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
                         Sync
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => validateTokenMutation.mutate("instagram")}
+                        disabled={validateTokenMutation.isPending}
+                        data-testid="button-validate-instagram"
+                      >
+                        {validateTokenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Shield className="h-4 w-4 mr-1" />}
+                        Validate Token
+                      </Button>
                     </div>
+                    {tokenValidation.instagram && (
+                      <div className={`text-xs p-2 rounded mt-2 ${tokenValidation.instagram.valid ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'}`}>
+                        <p className="font-medium">
+                          {tokenValidation.instagram.valid ? 'Token Valid' : tokenValidation.instagram.status === 'expired' ? 'Token Expired' : 'Token Invalid'}
+                        </p>
+                        {tokenValidation.instagram.error && <p>{tokenValidation.instagram.error}</p>}
+                        {tokenValidation.instagram.expiresAt && (
+                          <p>Expires: {new Date(tokenValidation.instagram.expiresAt).toLocaleDateString()}</p>
+                        )}
+                        {tokenValidation.instagram.missingPermissions && tokenValidation.instagram.missingPermissions.length > 0 && (
+                          <p>Missing: {tokenValidation.instagram.missingPermissions.join(", ")}</p>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>

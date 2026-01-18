@@ -2169,6 +2169,60 @@ wa.me/6208991066262`;
     }
   });
 
+  // Validate platform token (requires admin) - checks if token is valid, expired, and has required permissions
+  app.get("/api/platform-settings/:platform/validate-token", requireAdmin, async (req, res) => {
+    try {
+      const platform = req.params.platform as Platform;
+      if (!["whatsapp", "instagram", "facebook"].includes(platform)) {
+        return res.status(400).json({ error: "Invalid platform" });
+      }
+
+      const settings = await storage.getPlatformSetting(platform);
+      if (!settings) {
+        return res.json({ 
+          valid: false, 
+          error: "Platform not configured",
+          status: "not_configured"
+        });
+      }
+      
+      if (!settings.accessToken) {
+        return res.json({ 
+          valid: false, 
+          error: "No access token provided",
+          status: "no_token"
+        });
+      }
+
+      const metaApi = new MetaApiService(platform, {
+        accessToken: settings.accessToken,
+        phoneNumberId: settings.phoneNumberId || undefined,
+        pageId: settings.pageId || undefined,
+        businessId: settings.businessId || undefined,
+      });
+
+      const result = await metaApi.validateToken();
+      
+      // Add status for easier UI handling
+      let status = "valid";
+      if (!result.valid) {
+        status = result.isExpired ? "expired" : "invalid";
+      } else if (result.missingPermissions && result.missingPermissions.length > 0) {
+        status = "missing_permissions";
+      }
+
+      res.json({
+        ...result,
+        status,
+        platform,
+        lastUpdated: settings.updatedAt
+      });
+    } catch (error) {
+      console.error("Error validating token:", error);
+      res.status(500).json({ valid: false, error: "Token validation failed", status: "error" });
+    }
+  });
+
   // Disconnect platform (requires admin)
   app.post("/api/platform-settings/:platform/disconnect", requireAdmin, async (req, res) => {
     try {
