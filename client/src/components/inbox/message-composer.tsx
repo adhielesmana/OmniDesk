@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, memo } from "react";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -8,7 +8,7 @@ interface MessageComposerProps {
   platform: string;
 }
 
-export function MessageComposer({
+export const MessageComposer = memo(function MessageComposer({
   onSendMessage,
   isSending,
 }: MessageComposerProps) {
@@ -30,7 +30,7 @@ export function MessageComposer({
   };
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || inputRef.current) return;
     
     const input = document.createElement("input");
     input.type = "text";
@@ -75,6 +75,7 @@ export function MessageComposer({
       if (input.parentNode) {
         input.parentNode.removeChild(input);
       }
+      inputRef.current = null;
     };
   }, []);
 
@@ -102,4 +103,6 @@ export function MessageComposer({
       </div>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  return prevProps.isSending === nextProps.isSending;
+});
