@@ -65,11 +65,32 @@ export class MetaApiService {
     return { valid: true };
   }
 
-  async sendMessage(recipientId: string, content: string): Promise<SendMessageResult> {
+  // Message tag types for sending outside 24-hour window (Facebook only)
+  // HUMAN_AGENT: Allows human agents to respond within 7 days
+  // CONFIRMED_EVENT_UPDATE: Event reminders/updates
+  // POST_PURCHASE_UPDATE: Order/shipping notifications  
+  // ACCOUNT_UPDATE: Account status changes
+  static readonly MESSAGE_TAGS = {
+    HUMAN_AGENT: "HUMAN_AGENT",
+    CONFIRMED_EVENT_UPDATE: "CONFIRMED_EVENT_UPDATE",
+    POST_PURCHASE_UPDATE: "POST_PURCHASE_UPDATE",
+    ACCOUNT_UPDATE: "ACCOUNT_UPDATE",
+  } as const;
+
+  async sendMessage(
+    recipientId: string, 
+    content: string, 
+    options?: { 
+      messageTag?: keyof typeof MetaApiService.MESSAGE_TAGS;
+      retryWithHumanAgent?: boolean; // Auto-retry with HUMAN_AGENT if window error
+    }
+  ): Promise<SendMessageResult> {
     const validation = this.validateConfig();
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
+
+    const { messageTag, retryWithHumanAgent = true } = options || {};
 
     try {
       let url: string;
@@ -102,18 +123,37 @@ export class MetaApiService {
             recipient: { id: recipientId },
             message: { text: content },
           };
-          console.log(`Sending Instagram message to ${recipientId} via account ${instagramAccountId}`);
+          // Instagram also supports HUMAN_AGENT tag
+          if (messageTag === "HUMAN_AGENT") {
+            payload.messaging_type = "MESSAGE_TAG";
+            payload.tag = "HUMAN_AGENT";
+            console.log(`Sending Instagram message with HUMAN_AGENT tag to ${recipientId}`);
+          } else {
+            console.log(`Sending Instagram message to ${recipientId} via account ${instagramAccountId}`);
+          }
           break;
 
         case "facebook":
           // Facebook Send API uses /me/messages when using Page Access Token
           url = `${GRAPH_API_BASE}/me/messages`;
-          payload = {
-            recipient: { id: recipientId },
-            messaging_type: "RESPONSE",
-            message: { text: content },
-          };
-          console.log(`[Meta API] Sending Facebook message to ${recipientId} via page ${this.config.pageId}`);
+          
+          // Use message tag if specified (for sending outside 24-hour window)
+          if (messageTag) {
+            payload = {
+              recipient: { id: recipientId },
+              messaging_type: "MESSAGE_TAG",
+              tag: messageTag,
+              message: { text: content },
+            };
+            console.log(`[Meta API] Sending Facebook message with ${messageTag} tag to ${recipientId}`);
+          } else {
+            payload = {
+              recipient: { id: recipientId },
+              messaging_type: "RESPONSE",
+              message: { text: content },
+            };
+            console.log(`[Meta API] Sending Facebook message to ${recipientId} via page ${this.config.pageId}`);
+          }
           break;
 
         default:
@@ -137,8 +177,26 @@ export class MetaApiService {
         const errorSubcode = data.error?.error_subcode;
         let errorMessage = data.error?.message || `API Error: ${response.status}`;
         
+        // Check if this is a messaging window error (outside 24-hour window)
+        // Error code 10, subcode 2018278 = "message is being sent outside the allowed window"
+        const isWindowError = errorCode === 10 && (errorSubcode === 2018278 || errorSubcode === 2018065);
+        
+        // Auto-retry with HUMAN_AGENT tag if window error and retry enabled
+        if (isWindowError && retryWithHumanAgent && !messageTag && (this.platform === "facebook" || this.platform === "instagram")) {
+          console.log(`[Meta API] Message outside 24-hour window, retrying with HUMAN_AGENT tag...`);
+          return this.sendMessage(recipientId, content, { 
+            messageTag: "HUMAN_AGENT", 
+            retryWithHumanAgent: false // Don't retry again
+          });
+        }
+        
         // Add more helpful error context
-        if (errorCode === 10 || errorCode === 200) {
+        if (isWindowError) {
+          errorMessage = `Message failed: Outside 24-hour messaging window. The user's last message was more than 24 hours ago. They need to message you first.`;
+          if (messageTag === "HUMAN_AGENT") {
+            errorMessage = `Message failed: Outside 7-day messaging window. The HUMAN_AGENT tag only works within 7 days of user's last message.`;
+          }
+        } else if (errorCode === 10 || errorCode === 200) {
           errorMessage = `Permission denied: ${errorMessage}. Check that your access token has the 'pages_messaging' permission.`;
         } else if (errorCode === 190) {
           errorMessage = `Access token expired or invalid. Please update your Facebook access token in Settings.`;
