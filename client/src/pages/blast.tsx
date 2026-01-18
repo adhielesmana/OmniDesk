@@ -1015,6 +1015,45 @@ function CampaignDetail({
 }) {
   const [showEditPromptDialog, setShowEditPromptDialog] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState(campaign.prompt);
+  const [showEditTemplateDialog, setShowEditTemplateDialog] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(campaign.templateId || "");
+  const [templateMode, setTemplateMode] = useState<"none" | "existing" | "new">(
+    campaign.templateId ? "existing" : "none"
+  );
+
+  const { data: templatesData } = useQuery<MessageTemplate[]>({
+    queryKey: ["/api/templates"],
+  });
+
+  const approvedTemplates = useMemo(() => {
+    return (templatesData || []).filter(
+      (t) => t.isActive && t.twilioContentSid && t.twilioApprovalStatus === "approved"
+    );
+  }, [templatesData]);
+
+  const allTemplates = templatesData || [];
+
+  const linkedTemplate = useMemo(() => {
+    if (!campaign.templateId || !templatesData) return null;
+    return templatesData.find((t) => t.id === campaign.templateId);
+  }, [campaign.templateId, templatesData]);
+
+  const updateTemplateMutation = useMutation({
+    mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/blast-campaigns/${campaign.id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaign.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
+      toast({ title: "Template updated successfully" });
+      setShowEditTemplateDialog(false);
+    },
+    onError: () => {
+      toast({ title: "Failed to update template", variant: "destructive" });
+    },
+  });
 
   const updatePromptMutation = useMutation({
     mutationFn: async (newPrompt: string) => {
@@ -1188,6 +1227,148 @@ function CampaignDetail({
               >
                 {updatePromptMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Save Prompt
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle>WhatsApp Template</CardTitle>
+            {(campaign.status === "draft" || campaign.status === "paused") && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setSelectedTemplateId(campaign.templateId || "");
+                  setTemplateMode(campaign.templateId ? "existing" : "none");
+                  setShowEditTemplateDialog(true);
+                }}
+                data-testid="button-edit-template"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {linkedTemplate ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">{linkedTemplate.name}</span>
+                  {linkedTemplate.twilioApprovalStatus && (
+                    <Badge variant={linkedTemplate.twilioApprovalStatus === "approved" ? "default" : "secondary"}>
+                      {linkedTemplate.twilioApprovalStatus}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">{linkedTemplate.content}</p>
+                {linkedTemplate.twilioApprovalStatus !== "approved" && (
+                  <p className="text-xs text-amber-600">
+                    Template must be approved by Twilio before the campaign can send messages.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No template linked. This campaign will use Baileys (unofficial WhatsApp) to send messages.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={showEditTemplateDialog} onOpenChange={setShowEditTemplateDialog}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit Template</DialogTitle>
+              <DialogDescription>
+                Link a WhatsApp template to this campaign for Twilio messaging.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4 space-y-4">
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="editTemplateMode"
+                    checked={templateMode === "none"}
+                    onChange={() => { setTemplateMode("none"); setSelectedTemplateId(""); }}
+                    className="w-4 h-4"
+                    data-testid="radio-edit-template-none"
+                  />
+                  <span className="text-sm">No template (Baileys only)</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="editTemplateMode"
+                    checked={templateMode === "new"}
+                    onChange={() => { setTemplateMode("new"); setSelectedTemplateId(""); }}
+                    className="w-4 h-4"
+                    data-testid="radio-edit-template-new"
+                  />
+                  <span className="text-sm">Create new template for this campaign</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="editTemplateMode"
+                    checked={templateMode === "existing"}
+                    onChange={() => setTemplateMode("existing")}
+                    className="w-4 h-4"
+                    data-testid="radio-edit-template-existing"
+                  />
+                  <span className="text-sm">Use existing template</span>
+                </label>
+              </div>
+
+              {templateMode === "existing" && (
+                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                  <SelectTrigger data-testid="select-edit-template">
+                    <SelectValue placeholder="Select a template..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} {t.twilioApprovalStatus && `(${t.twilioApprovalStatus})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {templateMode === "new" && (
+                <div className="p-3 rounded-md bg-muted/50 border">
+                  <p className="text-sm text-muted-foreground">
+                    A new template will be created with format: <strong>Hi {"{{1}}"}, {"{{2}}"}</strong>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    After creation, sync it to Twilio and wait for approval.
+                  </p>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditTemplateDialog(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (templateMode === "none") {
+                    updateTemplateMutation.mutate({ templateId: null });
+                  } else if (templateMode === "new") {
+                    updateTemplateMutation.mutate({ templateId: null, createNewTemplate: true });
+                  } else if (templateMode === "existing" && selectedTemplateId) {
+                    updateTemplateMutation.mutate({ templateId: selectedTemplateId });
+                  }
+                }}
+                disabled={
+                  updateTemplateMutation.isPending ||
+                  (templateMode === "existing" && !selectedTemplateId)
+                }
+                data-testid="button-save-template"
+              >
+                {updateTemplateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Template
               </Button>
             </DialogFooter>
           </DialogContent>

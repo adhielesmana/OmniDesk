@@ -3809,13 +3809,38 @@ wa.me/6208991066262`;
   // Update blast campaign
   app.patch("/api/blast-campaigns/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, minIntervalSeconds, maxIntervalSeconds } = req.body;
-      const campaign = await storage.updateBlastCampaign(req.params.id, {
-        name,
-        prompt,
-        minIntervalSeconds,
-        maxIntervalSeconds,
-      });
+      const { name, prompt, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate } = req.body;
+      
+      let finalTemplateId = templateId;
+      
+      // Auto-create a new template for this campaign if requested
+      if (createNewTemplate) {
+        const existingCampaign = await storage.getBlastCampaign(req.params.id);
+        if (!existingCampaign) {
+          return res.status(404).json({ error: "Campaign not found" });
+        }
+        const templateName = `blast_${(existingCampaign.name || 'campaign').toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+        const newTemplate = await storage.createMessageTemplate({
+          name: templateName,
+          description: `Auto-created template for blast campaign: ${existingCampaign.name}`,
+          content: "Hi {{1}}, {{2}}",
+          variables: ["1", "2"],
+          category: "MARKETING",
+          isActive: true,
+          isSystemTemplate: false,
+          createdBy: req.session.userId,
+        });
+        finalTemplateId = newTemplate.id;
+      }
+      
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name;
+      if (prompt !== undefined) updateData.prompt = prompt;
+      if (minIntervalSeconds !== undefined) updateData.minIntervalSeconds = minIntervalSeconds;
+      if (maxIntervalSeconds !== undefined) updateData.maxIntervalSeconds = maxIntervalSeconds;
+      if (finalTemplateId !== undefined) updateData.templateId = finalTemplateId;
+      
+      const campaign = await storage.updateBlastCampaign(req.params.id, updateData);
       if (!campaign) {
         return res.status(404).json({ error: "Campaign not found" });
       }
