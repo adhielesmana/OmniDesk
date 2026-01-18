@@ -389,6 +389,7 @@ function CreateCampaignDialog({
   const [contactSearch, setContactSearch] = useState("");
   const [displayLimit, setDisplayLimit] = useState(50);
   const [templateId, setTemplateId] = useState<string>("");
+  const [templateMode, setTemplateMode] = useState<"none" | "existing" | "new">("none");
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/templates"],
@@ -436,12 +437,14 @@ function CreateCampaignDialog({
         contactIds: Array.from(selectedContacts),
         minIntervalSeconds: parseInt(minInterval),
         maxIntervalSeconds: parseInt(maxInterval),
-        templateId: templateId || undefined,
+        templateId: templateMode === "existing" ? templateId : undefined,
+        createNewTemplate: templateMode === "new",
       });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
       onOpenChange(false);
       setName("");
       setPrompt("");
@@ -449,6 +452,7 @@ function CreateCampaignDialog({
       setContactSearch("");
       setDisplayLimit(50);
       setTemplateId("");
+      setTemplateMode("none");
       toast({ title: "Campaign created successfully" });
     },
     onError: () => {
@@ -553,24 +557,72 @@ function CreateCampaignDialog({
             Messages will be sent with a random delay between these intervals to avoid detection.
           </p>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>WhatsApp Template (Required for Twilio)</Label>
-            <Select value={templateId} onValueChange={setTemplateId}>
-              <SelectTrigger data-testid="select-blast-template">
-                <SelectValue placeholder="Select an approved template..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">No template (Baileys only)</SelectItem>
-                {approvedTemplates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name} {t.category && `(${t.category})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex flex-col gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="templateMode"
+                  checked={templateMode === "none"}
+                  onChange={() => { setTemplateMode("none"); setTemplateId(""); }}
+                  className="w-4 h-4"
+                  data-testid="radio-template-none"
+                />
+                <span className="text-sm">No template (Baileys only)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="templateMode"
+                  checked={templateMode === "new"}
+                  onChange={() => { setTemplateMode("new"); setTemplateId(""); }}
+                  className="w-4 h-4"
+                  data-testid="radio-template-new"
+                />
+                <span className="text-sm">Create new template for this campaign</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="templateMode"
+                  checked={templateMode === "existing"}
+                  onChange={() => setTemplateMode("existing")}
+                  className="w-4 h-4"
+                  data-testid="radio-template-existing"
+                />
+                <span className="text-sm">Use existing approved template</span>
+              </label>
+            </div>
+            
+            {templateMode === "existing" && (
+              <Select value={templateId} onValueChange={setTemplateId}>
+                <SelectTrigger data-testid="select-blast-template">
+                  <SelectValue placeholder="Select an approved template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {approvedTemplates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name} {t.category && `(${t.category})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            
+            {templateMode === "new" && (
+              <div className="p-3 rounded-md bg-muted/50 border">
+                <p className="text-sm text-muted-foreground">
+                  A new template will be created automatically with format: <strong>Hi {"{{1}}"}, {"{{2}}"}</strong>
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  After creation, sync it to Twilio and wait for approval before starting the campaign.
+                </p>
+              </div>
+            )}
+            
             <p className="text-xs text-muted-foreground">
-              For Twilio: Create a template like "Hi {"{{1}}"}, {"{{2}}"}" where {"{{1}}"}=name, {"{{2}}"}=AI message. 
-              Without a template, only Baileys (unofficial) can send blast messages.
+              Templates use {"{{1}}"}=name, {"{{2}}"}=AI message. Templates must be approved by Twilio before sending.
             </p>
           </div>
 

@@ -645,6 +645,7 @@ export const messageTemplates = pgTable("message_templates", {
   variables: text("variables").array(), // List of required variable names
   category: varchar("category", { length: 50 }), // Category for organization (e.g., "billing", "notification")
   isActive: boolean("is_active").default(true),
+  isSystemTemplate: boolean("is_system_template").default(false), // System templates cannot be deleted (e.g., blast template)
   createdBy: varchar("created_by").references(() => users.id),
   // Template selection fields (3-tier priority: message type → trigger rules → default)
   messageType: varchar("message_type", { length: 50 }), // Message type this template handles (e.g., "invoice", "reminder")

@@ -811,10 +811,28 @@ export async function registerRoutes(
       // Get template to check if it has a Twilio ContentSid
       const template = await storage.getMessageTemplateById(id);
       
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      // Prevent deletion of system templates
+      if (template.isSystemTemplate) {
+        return res.status(403).json({ error: "Cannot delete system template. This template is required for blast campaigns." });
+      }
+      
+      // Check if template is linked to any blast campaigns
+      const linkedCampaigns = await storage.getBlastCampaignsByTemplateId(id);
+      if (linkedCampaigns.length > 0) {
+        const campaignNames = linkedCampaigns.map(c => c.name).join(", ");
+        return res.status(403).json({ 
+          error: `Cannot delete template. It is linked to ${linkedCampaigns.length} blast campaign(s): ${campaignNames}` 
+        });
+      }
+      
       let twilioDeleted = false;
       let twilioError: string | null = null;
       
-      if (template && template.twilioContentSid && deleteFromTwilio !== 'false') {
+      if (template.twilioContentSid && deleteFromTwilio !== 'false') {
         // Also delete from Twilio
         try {
           const { deleteTemplateFromTwilio } = await import("./twilio");
@@ -3730,10 +3748,28 @@ wa.me/6208991066262`;
   // Create blast campaign
   app.post("/api/blast-campaigns", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId } = req.body;
+      const { name, prompt, contactIds, minIntervalSeconds, maxIntervalSeconds, templateId, createNewTemplate } = req.body;
       
       if (!name || !prompt) {
         return res.status(400).json({ error: "Name and prompt are required" });
+      }
+
+      let finalTemplateId = templateId || null;
+
+      // Auto-create a new template for this campaign if requested
+      if (createNewTemplate) {
+        const templateName = `blast_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_${Date.now()}`;
+        const newTemplate = await storage.createMessageTemplate({
+          name: templateName,
+          description: `Auto-created template for blast campaign: ${name}`,
+          content: "Hi {{1}}, {{2}}",
+          variables: ["1", "2"],
+          category: "MARKETING",
+          isActive: true,
+          isSystemTemplate: false,
+          createdBy: req.session.userId,
+        });
+        finalTemplateId = newTemplate.id;
       }
 
       // Create campaign
@@ -3744,7 +3780,7 @@ wa.me/6208991066262`;
         totalRecipients: contactIds?.length || 0,
         minIntervalSeconds: minIntervalSeconds || 120,
         maxIntervalSeconds: maxIntervalSeconds || 180,
-        templateId: templateId || null,
+        templateId: finalTemplateId,
         createdBy: req.session.userId,
       });
 

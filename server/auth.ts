@@ -1,8 +1,10 @@
 import bcrypt from "bcrypt";
 import { db } from "./db";
-import { users, departments, userDepartments } from "@shared/schema";
+import { users, departments, userDepartments, messageTemplates } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import type { User, UserRole } from "@shared/schema";
+
+export const BLAST_TEMPLATE_NAME = "blast_campaign_default";
 
 const SALT_ROUNDS = 12;
 
@@ -79,6 +81,36 @@ export async function seedDefaultDepartment(): Promise<void> {
     console.log("Default department created");
   } catch (error) {
     console.error("Error seeding default department:", error);
+  }
+}
+
+export async function seedBlastTemplate(): Promise<string | null> {
+  try {
+    const existing = await db
+      .select()
+      .from(messageTemplates)
+      .where(eq(messageTemplates.name, BLAST_TEMPLATE_NAME));
+
+    if (existing.length > 0) {
+      console.log("Blast template already exists");
+      return existing[0].id;
+    }
+
+    const [template] = await db.insert(messageTemplates).values({
+      name: BLAST_TEMPLATE_NAME,
+      description: "Default template for blast campaigns. Format: Hi {{1}}, {{2}} where {{1}}=name and {{2}}=AI message",
+      content: "Hi {{1}}, {{2}}",
+      variables: ["1", "2"],
+      category: "MARKETING",
+      isActive: true,
+      isSystemTemplate: true,
+    }).returning();
+
+    console.log("Blast template created successfully");
+    return template.id;
+  } catch (error) {
+    console.error("Error seeding blast template:", error);
+    return null;
   }
 }
 

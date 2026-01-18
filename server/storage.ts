@@ -228,6 +228,9 @@ export interface IStorage {
   getAllMessageTemplates(): Promise<MessageTemplate[]>;
   updateMessageTemplate(id: string, updates: Partial<InsertMessageTemplate>): Promise<MessageTemplate | undefined>;
   deleteMessageTemplate(id: string): Promise<void>;
+  
+  // Blast Campaigns by Template
+  getBlastCampaignsByTemplateId(templateId: string): Promise<BlastCampaign[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1729,6 +1732,10 @@ export class DatabaseStorage implements IStorage {
 
   async deleteMessageTemplate(id: string): Promise<void> {
     await db.delete(messageTemplates).where(eq(messageTemplates.id, id));
+  }
+
+  async getBlastCampaignsByTemplateId(templateId: string): Promise<BlastCampaign[]> {
+    return await db.select().from(blastCampaigns).where(eq(blastCampaigns.templateId, templateId));
   }
 }
 
