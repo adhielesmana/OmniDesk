@@ -673,10 +673,14 @@ async function processApiMessageQueue(): Promise<void> {
       let result: { messageId?: string; success: boolean; rateLimited?: boolean; waitMs?: number; error?: string };
       
       if (twilioAvailable) {
-        // Check if we have an approved template to use
-        const invoiceTemplate = await storage.getMessageTemplateByName("invoice_reminder");
-        const hasApprovedTemplate = invoiceTemplate?.twilioContentSid && 
-          invoiceTemplate?.twilioApprovalStatus === "approved";
+        // Get the template that was selected when the message was queued
+        let template = null;
+        if (message.templateId) {
+          template = await storage.getMessageTemplateById(message.templateId);
+        }
+        
+        const hasApprovedTemplate = template?.twilioContentSid && 
+          template?.twilioApprovalStatus === "approved";
         
         if (hasApprovedTemplate && message.metadata) {
           // Use approved template with content variables
@@ -685,29 +689,59 @@ async function processApiMessageQueue(): Promise<void> {
             ? JSON.parse(message.metadata) 
             : message.metadata;
           
-          // Map payload to Twilio Content Template variables
-          // WhatsApp templates use numbered variables: {{1}}, {{2}}, {{3}}, {{4}}, {{5}}
-          // Order: 1=recipient_name, 2=message_type, 3=invoice_number, 4=grand_total, 5=invoice_url
-          // Note: recipient_name is at root level (message.recipientName), invoice_url comes from message.message field
-          const messageTypeText = metadata.messageType === "new_invoice" || metadata.message_type === "new_invoice"
-            ? "Berikut adalah tagihan baru untuk layanan internet Anda:"
-            : metadata.messageType === "reminder" || metadata.message_type === "reminder"
-            ? "Ini adalah pengingat untuk tagihan internet Anda yang belum dibayar:"
-            : "Berikut adalah informasi tagihan layanan internet Anda:";
+          // Build content variables based on template's variable mapping
+          // Template stores variables array like ["recipient_name", "invoice_number", "grand_total", "invoice_url", "message_type"]
+          // Each position maps to Twilio's {{1}}, {{2}}, {{3}}, etc.
+          const templateVariables = template!.variables || [];
+          const contentVariables: Record<string, string> = {};
           
-          const contentVariables: Record<string, string> = {
-            "1": message.recipientName || metadata.recipient_name || "Pelanggan",
-            "2": messageTypeText,
-            "3": metadata.invoice_number || "",
-            "4": metadata.grand_total || "",
-            "5": message.message || metadata.invoice_url || ""
-          };
+          // Generate messageType text
+          const messageTypeValue = metadata.messageType || metadata.message_type || "";
+          const messageTypeText = messageTypeValue === "new_invoice"
+            ? "Tagihan internet Anda telah terbit:"
+            : messageTypeValue === "reminder"
+            ? "Pengingat pembayaran untuk:"
+            : messageTypeValue === "overdue"
+            ? "Tagihan Anda telah melewati jatuh tempo:"
+            : messageTypeValue === "payment_confirmation"
+            ? "Terima kasih! Pembayaran Anda telah kami terima untuk:"
+            : "Informasi tagihan internet Anda:";
           
-          console.log(`API queue: Using approved template ${invoiceTemplate.twilioContentSid} for ${message.phoneNumber}`);
-          console.log(`API queue: Template variables:`, JSON.stringify(contentVariables));
+          // Format grand_total with thousand separators
+          const grandTotalRaw = metadata.grand_total || "";
+          const grandTotalFormatted = grandTotalRaw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+          
+          // Map each template variable position to Twilio placeholder
+          templateVariables.forEach((varName: string, index: number) => {
+            const twilioPosition = (index + 1).toString(); // Twilio uses 1-indexed
+            switch (varName) {
+              case "recipient_name":
+                contentVariables[twilioPosition] = message.recipientName || metadata.recipient_name || "Pelanggan";
+                break;
+              case "invoice_number":
+                contentVariables[twilioPosition] = metadata.invoice_number || "";
+                break;
+              case "grand_total":
+                contentVariables[twilioPosition] = grandTotalFormatted;
+                break;
+              case "invoice_url":
+                contentVariables[twilioPosition] = shortenedMessage || metadata.invoice_url || "";
+                break;
+              case "message_type":
+                contentVariables[twilioPosition] = messageTypeText;
+                break;
+              default:
+                // Try to get from metadata directly
+                contentVariables[twilioPosition] = metadata[varName] || "";
+            }
+          });
+          
+          console.log(`API queue: Using approved template "${template!.name}" (${template!.twilioContentSid}) for ${message.phoneNumber}`);
+          console.log(`API queue: Template variables mapping:`, JSON.stringify(templateVariables));
+          console.log(`API queue: Content variables:`, JSON.stringify(contentVariables));
           const twilioResult = await sendWhatsAppTemplate(
             message.phoneNumber,
-            invoiceTemplate.twilioContentSid!,
+            template!.twilioContentSid!,
             contentVariables
           );
           result = {
@@ -717,7 +751,11 @@ async function processApiMessageQueue(): Promise<void> {
           };
         } else {
           // No approved template - try free-form (may fail for business-initiated messages)
-          console.log(`API queue: No approved template, sending free-form to ${message.phoneNumber}`);
+          const reason = !message.templateId ? "no templateId stored" : 
+                        !template ? "template not found" :
+                        !template.twilioContentSid ? "no Twilio ContentSid" :
+                        !template.twilioApprovalStatus ? "not approved" : "unknown";
+          console.log(`API queue: No approved template (${reason}), sending free-form to ${message.phoneNumber}`);
           const twilioResult = await twilioSend(message.phoneNumber, shortenedMessage);
           result = {
             messageId: twilioResult.messageId,

@@ -375,7 +375,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
     if (client.defaultTemplateId) {
       // Client has a specific template assigned - use it directly
       const { storage } = await import('./storage');
-      const clientTemplate = await storage.getMessageTemplate(client.defaultTemplateId);
+      const clientTemplate = await storage.getMessageTemplateById(client.defaultTemplateId);
       // Only use if template is active, has Twilio SID, and is approved
       if (clientTemplate && clientTemplate.isActive && clientTemplate.twilioContentSid && clientTemplate.twilioApprovalStatus === 'approved') {
         selectionResult = { template: clientTemplate, matchedBy: 'client_default' };
@@ -469,6 +469,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       message: finalMessage,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
+      templateId: selectionResult?.template?.id || null,
       metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: message, templateApplied, matchedTemplateName, matchedBy }),
     });
 
@@ -603,6 +604,7 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           message: finalMessage,
           priority: msg.priority || 0,
           scheduledAt: msg.scheduled_at ? new Date(msg.scheduled_at) : null,
+          templateId: selectionResult?.template?.id || null,
           metadata: msg.metadata ? JSON.stringify({ ...msg.metadata, originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }),
         });
 

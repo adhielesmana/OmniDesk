@@ -497,6 +497,7 @@ export const apiMessageQueue = pgTable("api_message_queue", {
   priority: integer("priority").default(0), // Higher = processed first
   contactId: varchar("contact_id").references(() => contacts.id), // Linked contact if found
   conversationId: varchar("conversation_id").references(() => conversations.id), // Linked conversation if found
+  templateId: varchar("template_id").references(() => messageTemplates.id), // Template to use for sending (stores twilioContentSid)
   errorMessage: text("error_message"),
   externalMessageId: text("external_message_id"), // WhatsApp message ID after sending
   metadata: text("metadata"), // Optional JSON metadata from API caller
