@@ -413,7 +413,7 @@ function UserForm({
           </Select>
         </div>
 
-        {role !== "superadmin" && (
+        {role !== "superadmin" && role !== "admin" && (
           <div className="space-y-2">
             <Label>Departments</Label>
             <div className="flex flex-wrap gap-2 p-3 border rounded-md min-h-[60px]">
