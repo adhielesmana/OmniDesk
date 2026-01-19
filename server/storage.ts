@@ -1524,9 +1524,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteApiClient(id: string): Promise<void> {
-    // Delete related records first (message queue and request logs)
+    // Delete related records first (message queue, request logs, and shortened URLs)
     await db.delete(apiMessageQueue).where(eq(apiMessageQueue.clientId, id));
     await db.delete(apiRequestLogs).where(eq(apiRequestLogs.clientId, id));
+    await db.delete(shortenedUrls).where(eq(shortenedUrls.clientId, id));
     // Then delete the client
     await db.delete(apiClients).where(eq(apiClients.id, id));
   }
