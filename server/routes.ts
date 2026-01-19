@@ -475,6 +475,7 @@ export async function registerRoutes(
         requestCountToday: client.requestCountToday,
         lastRequestAt: client.lastRequestAt,
         ipWhitelist: client.ipWhitelist,
+        variableMappings: client.variableMappings,
         createdAt: client.createdAt,
       }));
       res.json(clientsWithStats);
