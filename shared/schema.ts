@@ -470,6 +470,7 @@ export const apiClients = pgTable("api_clients", {
   lastResetAt: timestamp("last_reset_at").defaultNow(),
   createdBy: varchar("created_by").references(() => users.id),
   ipWhitelist: text("ip_whitelist").array(), // Optional IP whitelist
+  variableMappings: json("variable_mappings").$type<ApiVariableMapping[]>(), // Maps API payload fields to template placeholders
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -642,6 +643,12 @@ export type VariableMapping = {
   type: "recipient_name" | "ai_prompt" | "phone_number" | "custom";
   customValue?: string; // Used when type is "custom"
   label?: string; // Human-readable label
+};
+
+// API Client variable mapping - maps API payload fields to template placeholders
+export type ApiVariableMapping = {
+  placeholder: string; // Template placeholder number e.g., "1", "2"
+  payloadField: string; // Field name from API payload e.g., "recipient_name", "invoice_number"
 };
 
 // Message templates for external API - reusable templates with variables
