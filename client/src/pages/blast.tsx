@@ -415,7 +415,7 @@ function CreateCampaignDialog({
   }, []);
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
-    queryKey: ["/api/templates"],
+    queryKey: ["/api/admin/templates"],
     enabled: open,
   });
 
@@ -469,7 +469,7 @@ function CreateCampaignDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
       onOpenChange(false);
       setName("");
       setPrompt("");
@@ -1130,7 +1130,7 @@ function CampaignDetail({
   }, []);
 
   const { data: templatesData } = useQuery<MessageTemplate[]>({
-    queryKey: ["/api/templates"],
+    queryKey: ["/api/admin/templates"],
   });
 
   const approvedTemplates = useMemo(() => {
@@ -1154,7 +1154,7 @@ function CampaignDetail({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns"] });
       queryClient.invalidateQueries({ queryKey: ["/api/blast-campaigns", campaign.id] });
-      queryClient.invalidateQueries({ queryKey: ["/api/templates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/templates"] });
       toast({ title: "Template updated successfully" });
       setShowEditTemplateDialog(false);
     },
