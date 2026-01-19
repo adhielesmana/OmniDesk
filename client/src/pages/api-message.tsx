@@ -20,6 +20,11 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 
+interface ApiVariableMapping {
+  placeholder: string;
+  payloadField: string;
+}
+
 interface ApiClient {
   id: string;
   name: string;
@@ -28,6 +33,7 @@ interface ApiClient {
   aiPrompt: string | null;
   defaultTemplateId: string | null;
   ipWhitelist: string[] | null;
+  variableMappings: ApiVariableMapping[] | null;
   rateLimitPerMinute: number;
   rateLimitPerDay: number;
   createdAt: Date;
@@ -132,6 +138,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     rateLimitPerMinute: 60,
     rateLimitPerDay: 1000,
     isActive: true,
+    variableMappings: [] as ApiVariableMapping[],
   });
 
   const { data: apiClients = [], isLoading } = useQuery<ApiClient[]>({
@@ -152,7 +159,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
       setShowCreateDialog(false);
       setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
-      setFormData({ name: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
+      setFormData({ name: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true, variableMappings: [] });
       toast({ title: "API client created successfully" });
     },
     onError: () => {
@@ -161,7 +168,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name?: string; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; variableMappings?: ApiVariableMapping[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
       return res.json();
     },
@@ -232,10 +239,44 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       name: formData.name,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : null,
       ipWhitelist,
+      variableMappings: formData.variableMappings.length > 0 ? formData.variableMappings : null,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
       isActive: formData.isActive,
     });
+  };
+
+  // Extract template placeholders from template content (e.g., {{1}}, {{2}})
+  const getTemplatePlaceholders = (templateId: string): string[] => {
+    const template = templates.find(t => t.id === templateId);
+    if (!template) return [];
+    const matches = template.content.match(/\{\{(\d+)\}\}/g) || [];
+    return [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort((a, b) => parseInt(a) - parseInt(b));
+  };
+
+  // Update variable mapping for a placeholder
+  const updateVariableMapping = (placeholder: string, payloadField: string) => {
+    setFormData(prev => {
+      const existingIndex = prev.variableMappings.findIndex(m => m.placeholder === placeholder);
+      const newMappings = [...prev.variableMappings];
+      if (payloadField === "") {
+        // Remove mapping if empty
+        if (existingIndex >= 0) {
+          newMappings.splice(existingIndex, 1);
+        }
+      } else if (existingIndex >= 0) {
+        newMappings[existingIndex] = { placeholder, payloadField };
+      } else {
+        newMappings.push({ placeholder, payloadField });
+      }
+      return { ...prev, variableMappings: newMappings };
+    });
+  };
+
+  // Get mapping for a specific placeholder
+  const getMappingForPlaceholder = (placeholder: string): string => {
+    const mapping = formData.variableMappings.find(m => m.placeholder === placeholder);
+    return mapping?.payloadField || "";
   };
 
   const openEditDialog = (client: ApiClient) => {
@@ -246,6 +287,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       rateLimitPerMinute: client.rateLimitPerMinute,
       rateLimitPerDay: client.rateLimitPerDay,
       isActive: client.isActive,
+      variableMappings: client.variableMappings || [],
     });
     setEditingClient(client);
   };
@@ -490,7 +532,19 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
               <Label htmlFor="edit-defaultTemplate">Message Template *</Label>
               <Select
                 value={formData.defaultTemplateId || "none"}
-                onValueChange={(value) => setFormData({ ...formData, defaultTemplateId: value === "none" ? "" : value })}
+                onValueChange={(value) => {
+                  const newTemplateId = value === "none" ? "" : value;
+                  // When template changes, filter variable mappings to only include placeholders that exist in the new template
+                  const newPlaceholders = newTemplateId ? getTemplatePlaceholders(newTemplateId) : [];
+                  const filteredMappings = formData.variableMappings.filter(m => 
+                    newPlaceholders.includes(m.placeholder)
+                  );
+                  setFormData({ 
+                    ...formData, 
+                    defaultTemplateId: newTemplateId,
+                    variableMappings: filteredMappings
+                  });
+                }}
               >
                 <SelectTrigger data-testid="select-edit-api-default-template">
                   <SelectValue placeholder="Select a template..." />
@@ -526,6 +580,41 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
               )}
               <p className="text-xs text-muted-foreground">API payload must include matching variable values</p>
             </div>
+            
+            {/* Variable Mapping Section */}
+            {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && getTemplatePlaceholders(formData.defaultTemplateId).length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Variable Mappings</Label>
+                  <Badge variant="outline" className="text-xs">API Payload → Template</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Map API payload field names to template placeholders. When the API sends a field like "recipient_name", it will fill in the corresponding template variable.
+                </p>
+                <div className="space-y-2">
+                  {getTemplatePlaceholders(formData.defaultTemplateId).map(placeholder => (
+                    <div key={placeholder} className="flex items-center gap-2">
+                      <div className="w-16 flex-shrink-0">
+                        <Badge variant="secondary" className="font-mono">{`{{${placeholder}}}`}</Badge>
+                      </div>
+                      <span className="text-muted-foreground">=</span>
+                      <Input
+                        placeholder="API payload field name (e.g., recipient_name)"
+                        value={getMappingForPlaceholder(placeholder)}
+                        onChange={(e) => updateVariableMapping(placeholder, e.target.value)}
+                        className="flex-1"
+                        data-testid={`input-variable-mapping-${placeholder}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground p-2 bg-blue-500/10 rounded-md">
+                  <strong>Example:</strong> If you map <code className="bg-muted px-1 rounded">{`{{1}}`}</code> to <code className="bg-muted px-1 rounded">recipient_name</code>, 
+                  when API sends <code className="bg-muted px-1 rounded">{`"recipient_name": "John"`}</code>, template will show "John" for {`{{1}}`}.
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="edit-ipWhitelist">Allowed IP Addresses</Label>
               <Input

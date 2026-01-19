@@ -780,13 +780,13 @@ async function processApiMessageQueue(): Promise<void> {
             ? JSON.parse(message.metadata) 
             : message.metadata;
           
-          // Build content variables based on template's variable mapping
-          // Template stores variables array like ["recipient_name", "invoice_number", "grand_total", "invoice_url", "message_type"]
-          // Each position maps to Twilio's {{1}}, {{2}}, {{3}}, etc.
-          const templateVariables = template!.variables || [];
+          // Get the API client to check for variable mappings
+          const apiClient = await storage.getApiClient(message.clientId);
+          const clientVariableMappings = apiClient?.variableMappings || [];
+          
           const contentVariables: Record<string, string> = {};
           
-          // Generate messageType text
+          // Generate messageType text (for legacy support)
           const messageTypeValue = metadata.messageType || metadata.message_type || "";
           const messageTypeText = messageTypeValue === "new_invoice"
             ? "Tagihan internet Anda telah terbit:"
@@ -798,37 +798,70 @@ async function processApiMessageQueue(): Promise<void> {
             ? "Terima kasih! Pembayaran Anda telah kami terima untuk:"
             : "Informasi tagihan internet Anda:";
           
-          // Format grand_total with thousand separators
+          // Format grand_total with thousand separators (for legacy support)
           const grandTotalRaw = metadata.grand_total || "";
           const grandTotalFormatted = grandTotalRaw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
           
-          // Map each template variable position to Twilio placeholder
-          templateVariables.forEach((varName: string, index: number) => {
-            const twilioPosition = (index + 1).toString(); // Twilio uses 1-indexed
-            switch (varName) {
-              case "recipient_name":
-                contentVariables[twilioPosition] = message.recipientName || metadata.recipient_name || "Pelanggan";
-                break;
-              case "invoice_number":
-                contentVariables[twilioPosition] = metadata.invoice_number || "";
-                break;
-              case "grand_total":
-                contentVariables[twilioPosition] = grandTotalFormatted;
-                break;
-              case "invoice_url":
-                contentVariables[twilioPosition] = shortenedMessage || metadata.invoice_url || "";
-                break;
-              case "message_type":
-                contentVariables[twilioPosition] = messageTypeText;
-                break;
-              default:
-                // Try to get from metadata directly
-                contentVariables[twilioPosition] = metadata[varName] || "";
-            }
-          });
+          // Check if API client has variable mappings configured
+          if (clientVariableMappings.length > 0) {
+            // Use API client's variable mappings: maps payload field names to template placeholders
+            // e.g., [{ placeholder: "1", payloadField: "recipient_name" }, { placeholder: "2", payloadField: "invoice_number" }]
+            console.log(`API queue: Using client variable mappings:`, JSON.stringify(clientVariableMappings));
+            
+            clientVariableMappings.forEach((mapping) => {
+              const { placeholder, payloadField } = mapping;
+              let value = "";
+              
+              // Special handling for certain field names
+              if (payloadField === "recipient_name") {
+                value = message.recipientName || metadata.recipient_name || metadata[payloadField] || "Pelanggan";
+              } else if (payloadField === "grand_total") {
+                const raw = metadata.grand_total || metadata[payloadField] || "";
+                value = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+              } else if (payloadField === "invoice_url") {
+                // Use shortened URL if available
+                value = shortenedMessage || metadata.invoice_url || metadata[payloadField] || "";
+              } else if (payloadField === "message_type") {
+                value = messageTypeText;
+              } else {
+                // Get value from metadata using the payload field name
+                value = metadata[payloadField] || "";
+              }
+              
+              contentVariables[placeholder] = value;
+            });
+          } else {
+            // Fallback: Use template's variables array for legacy compatibility
+            // Template stores variables array like ["recipient_name", "invoice_number", "grand_total", "invoice_url", "message_type"]
+            // Each position maps to Twilio's {{1}}, {{2}}, {{3}}, etc.
+            const templateVariables = template!.variables || [];
+            
+            templateVariables.forEach((varName: string, index: number) => {
+              const twilioPosition = (index + 1).toString(); // Twilio uses 1-indexed
+              switch (varName) {
+                case "recipient_name":
+                  contentVariables[twilioPosition] = message.recipientName || metadata.recipient_name || "Pelanggan";
+                  break;
+                case "invoice_number":
+                  contentVariables[twilioPosition] = metadata.invoice_number || "";
+                  break;
+                case "grand_total":
+                  contentVariables[twilioPosition] = grandTotalFormatted;
+                  break;
+                case "invoice_url":
+                  contentVariables[twilioPosition] = shortenedMessage || metadata.invoice_url || "";
+                  break;
+                case "message_type":
+                  contentVariables[twilioPosition] = messageTypeText;
+                  break;
+                default:
+                  // Try to get from metadata directly
+                  contentVariables[twilioPosition] = metadata[varName] || "";
+              }
+            });
+          }
           
           console.log(`API queue: Using approved template "${template!.name}" (${template!.twilioContentSid}) for ${message.phoneNumber}`);
-          console.log(`API queue: Template variables mapping:`, JSON.stringify(templateVariables));
           console.log(`API queue: Content variables:`, JSON.stringify(contentVariables));
           const twilioResult = await sendWhatsAppTemplate(
             message.phoneNumber,

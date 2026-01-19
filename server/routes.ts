@@ -540,7 +540,7 @@ export async function registerRoutes(
   app.patch("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const { name, aiPrompt, defaultTemplateId, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      const { name, aiPrompt, defaultTemplateId, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist, variableMappings } = req.body;
 
       const client = await storage.getApiClient(id);
       if (!client) {
@@ -555,6 +555,7 @@ export async function registerRoutes(
       if (rateLimitPerMinute !== undefined) updateData.rateLimitPerMinute = rateLimitPerMinute;
       if (rateLimitPerDay !== undefined) updateData.rateLimitPerDay = rateLimitPerDay;
       if (ipWhitelist !== undefined) updateData.ipWhitelist = ipWhitelist;
+      if (variableMappings !== undefined) updateData.variableMappings = variableMappings;
 
       const updated = await storage.updateApiClient(id, updateData);
       res.json(updated);
