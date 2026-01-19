@@ -3925,10 +3925,15 @@ wa.me/6208991066262`;
         return res.status(400).json({ error: "Campaign has no recipients" });
       }
 
-      // Check WhatsApp connection
-      const waStatus = whatsappService.getConnectionState();
-      if (waStatus !== "connected") {
-        return res.status(400).json({ error: "WhatsApp is not connected" });
+      // Check WhatsApp connection - either Twilio or Baileys must be available
+      const { isTwilioConfigured } = await import("./twilio");
+      const twilioAvailable = await isTwilioConfigured();
+      const baileysConnected = whatsappService.getConnectionState() === "connected";
+      
+      if (!twilioAvailable && !baileysConnected) {
+        return res.status(400).json({ 
+          error: "WhatsApp is not connected. Please configure Twilio in Settings or scan QR code for Baileys." 
+        });
       }
 
       // Update campaign status to running
