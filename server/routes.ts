@@ -274,16 +274,6 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId || !req.session.user) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  if (req.session.user.role !== "superadmin") {
-    return res.status(403).json({ error: "Forbidden - Superadmin access required" });
-  }
-  next();
-}
-
 // Update service state
 interface UpdateStatus {
   isChecking: boolean;
@@ -462,7 +452,7 @@ export async function registerRoutes(
       username: user.username,
       role: user.role,
       displayName: user.displayName,
-      departments: user.role === "superadmin" ? "all" : departments,
+      departments: (user.role === "superadmin" || user.role === "admin") ? "all" : departments,
     });
   });
 
@@ -470,7 +460,7 @@ export async function registerRoutes(
   app.use("/api/external", externalApiRouter);
 
   // ============= ADMIN API CLIENTS MANAGEMENT =============
-  app.get("/api/admin/api-clients", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/api-clients", requireAdmin, async (req, res) => {
     try {
       const clients = await storage.getApiClients();
       const clientsWithStats = clients.map((client) => ({
@@ -494,7 +484,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/api-clients", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/api-clients", requireAdmin, async (req, res) => {
     try {
       const { name, aiPrompt, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
       
@@ -537,7 +527,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
+  app.patch("/api/admin/api-clients/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { name, aiPrompt, defaultTemplateId, isActive, rateLimitPerMinute, rateLimitPerDay, ipWhitelist, variableMappings } = req.body;
@@ -565,7 +555,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/api-clients/:id/regenerate-secret", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/api-clients/:id/regenerate-secret", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
 
@@ -590,7 +580,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/api-clients/:id", requireSuperadmin, async (req, res) => {
+  app.delete("/api/admin/api-clients/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
 
@@ -608,7 +598,7 @@ export async function registerRoutes(
   });
 
   // ============= API MESSAGE QUEUE ROUTES =============
-  app.get("/api/admin/api-message-queue", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/api-message-queue", requireAdmin, async (req, res) => {
     try {
       const messages = await storage.getApiMessageQueueWithClient();
       res.json(messages);
@@ -618,7 +608,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/api-message-queue/:id", requireSuperadmin, async (req, res) => {
+  app.delete("/api/admin/api-message-queue/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const message = await storage.getApiMessage(id);
@@ -637,7 +627,7 @@ export async function registerRoutes(
   });
 
   // Resend a failed queue message
-  app.post("/api/admin/api-message-queue/:id/resend", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/api-message-queue/:id/resend", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const message = await storage.getApiMessage(id);
@@ -659,7 +649,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/api-clients/:id/logs", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/api-clients/:id/logs", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const limit = parseInt(req.query.limit as string) || 100;
@@ -677,7 +667,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/admin/api-queue", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/api-queue", requireAdmin, async (req, res) => {
     try {
       const clientId = req.query.clientId as string | undefined;
       const messages = await storage.getApiMessageQueue(clientId);
@@ -689,7 +679,7 @@ export async function registerRoutes(
   });
 
   // ============= MESSAGE TEMPLATES MANAGEMENT =============
-  app.get("/api/admin/templates", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/templates", requireAdmin, async (req, res) => {
     try {
       const templates = await storage.getAllMessageTemplates();
       res.json(templates);
@@ -699,7 +689,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/templates", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates", requireAdmin, async (req, res) => {
     try {
       const { name, description, content, variables, category } = req.body;
       
@@ -754,7 +744,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/admin/templates/:id", requireSuperadmin, async (req, res) => {
+  app.put("/api/admin/templates/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { name, description, content, variables, category, isActive } = req.body;
@@ -804,7 +794,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/admin/templates/:id", requireSuperadmin, async (req, res) => {
+  app.delete("/api/admin/templates/:id", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { deleteFromTwilio } = req.query;
@@ -864,7 +854,7 @@ export async function registerRoutes(
   });
 
   // Sync template to Twilio Content API
-  app.post("/api/admin/templates/:id/sync-twilio", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/:id/sync-twilio", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const template = await storage.getMessageTemplateById(id);
@@ -934,7 +924,7 @@ export async function registerRoutes(
   });
 
   // Check Twilio template approval status
-  app.get("/api/admin/templates/:id/twilio-status", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/templates/:id/twilio-status", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const template = await storage.getMessageTemplateById(id);
@@ -982,7 +972,7 @@ export async function registerRoutes(
 
   // Recreate invoice_reminder template with proper numbered variables
   // This fixes templates that were created with [variable_name] instead of {{1}}
-  app.post("/api/admin/templates/recreate-invoice-template", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/recreate-invoice-template", requireAdmin, async (req, res) => {
     try {
       const { syncTemplateToTwilio, submitTemplateForApproval, deleteTemplateFromTwilio, getTemplateApprovalStatus } = await import("./twilio");
       
@@ -1107,7 +1097,7 @@ wa.me/6208991066262`;
 
   // Sync templates from Twilio to database (Twilio -> App)
   // deleteOrphans: if true, removes templates from app that no longer exist in Twilio
-  app.post("/api/admin/templates/sync-from-twilio", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/sync-from-twilio", requireAdmin, async (req, res) => {
     try {
       const { deleteOrphans = true } = req.body;
       const { syncTwilioToDatabase } = await import("./twilio");
@@ -1131,7 +1121,7 @@ wa.me/6208991066262`;
   });
 
   // Get template sync scheduler status
-  app.get("/api/admin/templates/sync-status", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/templates/sync-status", requireAdmin, async (req, res) => {
     try {
       const { getLastSyncResult, isSchedulerActive, getNextSyncTime, getMillisecondsUntilNextSync } = await import("./template-sync-scheduler");
       const lastSync = getLastSyncResult();
@@ -1155,7 +1145,7 @@ wa.me/6208991066262`;
   });
   
   // Manual bidirectional sync trigger via scheduler (with result persistence)
-  app.post("/api/admin/templates/manual-sync", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/manual-sync", requireAdmin, async (req, res) => {
     try {
       const { runManualSync } = await import("./template-sync-scheduler");
       const result = await runManualSync();
@@ -1180,7 +1170,7 @@ wa.me/6208991066262`;
 
   // Bulk sync all templates to Twilio (App -> Twilio) and optionally clean up orphans
   // forceResync=true means re-create all templates in Twilio (useful when content has changed)
-  app.post("/api/admin/templates/sync-to-twilio", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/sync-to-twilio", requireAdmin, async (req, res) => {
     try {
       const { deleteOrphans = false, forceResync = true } = req.body;
       const { bulkSyncDatabaseToTwilio } = await import("./twilio");
@@ -1213,7 +1203,7 @@ wa.me/6208991066262`;
   });
 
   // Sync a single template to Twilio (App -> Twilio)
-  app.post("/api/admin/templates/:id/sync-to-twilio", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/:id/sync-to-twilio", requireAdmin, async (req, res) => {
     try {
       const { syncDatabaseToTwilio } = await import("./twilio");
       const result = await syncDatabaseToTwilio(req.params.id);
@@ -1235,7 +1225,7 @@ wa.me/6208991066262`;
   });
 
   // Refresh template approval status from Twilio
-  app.post("/api/admin/templates/:id/refresh-status", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/:id/refresh-status", requireAdmin, async (req, res) => {
     try {
       const { refreshTemplateStatus } = await import("./twilio");
       const result = await refreshTemplateStatus(req.params.id);
@@ -1256,7 +1246,7 @@ wa.me/6208991066262`;
   });
 
   // List all templates from Twilio
-  app.get("/api/admin/twilio-templates", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/twilio-templates", requireAdmin, async (req, res) => {
     try {
       const { listTwilioTemplates } = await import("./twilio");
       const result = await listTwilioTemplates();
@@ -1276,7 +1266,7 @@ wa.me/6208991066262`;
   });
 
   // Export all templates as JSON
-  app.get("/api/admin/templates/export", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/templates/export", requireAdmin, async (req, res) => {
     try {
       const templates = await storage.getAllMessageTemplates();
       // Remove id field for export (will be regenerated on import)
@@ -1295,7 +1285,7 @@ wa.me/6208991066262`;
   });
 
   // Import templates from JSON
-  app.post("/api/admin/templates/import", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/templates/import", requireAdmin, async (req, res) => {
     try {
       const { templates, overwrite } = req.body;
       
@@ -1459,6 +1449,10 @@ wa.me/6208991066262`;
       if (!user.isDeletable) {
         return res.status(403).json({ error: "This user cannot be deleted" });
       }
+      // Prevent admins from deleting superadmin users
+      if (user.role === "superadmin" && req.session.user?.role !== "superadmin") {
+        return res.status(403).json({ error: "Only superadmins can delete other superadmin users" });
+      }
 
       await storage.deleteUser(req.params.id);
       res.json({ success: true });
@@ -1538,7 +1532,7 @@ wa.me/6208991066262`;
     }
   });
 
-  app.post("/api/admin/branding/logo", requireSuperadmin, upload.single("logo"), async (req, res) => {
+  app.post("/api/admin/branding/logo", requireAdmin, upload.single("logo"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ error: "No file uploaded" });
@@ -1574,7 +1568,7 @@ wa.me/6208991066262`;
     }
   });
 
-  app.delete("/api/admin/branding/logo", requireSuperadmin, async (req, res) => {
+  app.delete("/api/admin/branding/logo", requireAdmin, async (req, res) => {
     try {
       const logoSetting = await storage.getAppSetting("organization_logo");
       if (logoSetting?.value) {
@@ -1592,7 +1586,7 @@ wa.me/6208991066262`;
     }
   });
 
-  app.patch("/api/admin/branding", requireSuperadmin, async (req, res) => {
+  app.patch("/api/admin/branding", requireAdmin, async (req, res) => {
     try {
       const { organizationName } = req.body;
       if (organizationName !== undefined) {
@@ -1687,11 +1681,11 @@ wa.me/6208991066262`;
     }
   }
   
-  app.get("/api/admin/update/status", requireSuperadmin, async (req, res) => {
+  app.get("/api/admin/update/status", requireAdmin, async (req, res) => {
     res.json(updateStatus);
   });
 
-  app.post("/api/admin/update/check", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/update/check", requireAdmin, async (req, res) => {
     if (updateStatus.isChecking || updateStatus.isUpdating) {
       return res.status(409).json({ error: "Update operation already in progress" });
     }
@@ -1748,7 +1742,7 @@ wa.me/6208991066262`;
     }
   });
 
-  app.post("/api/admin/update/run", requireSuperadmin, async (req, res) => {
+  app.post("/api/admin/update/run", requireAdmin, async (req, res) => {
     if (updateStatus.isChecking || updateStatus.isUpdating) {
       return res.status(409).json({ error: "Update operation already in progress" });
     }
@@ -1843,7 +1837,7 @@ wa.me/6208991066262`;
         return res.status(401).json({ error: "Not authenticated" });
       }
 
-      if (req.session.user.role === "superadmin") {
+      if (req.session.user.role === "superadmin" || req.session.user.role === "admin") {
         const departments = await storage.getAllDepartments();
         return res.json(departments);
       }

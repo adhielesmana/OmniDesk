@@ -123,7 +123,8 @@ export function isSuperadmin(user: User): boolean {
 }
 
 export async function getUserDepartmentIds(userId: string, role: UserRole): Promise<string[] | "all"> {
-  if (role === "superadmin") {
+  // Both admin and superadmin have access to all departments
+  if (role === "superadmin" || role === "admin") {
     return "all";
   }
 
