@@ -536,7 +536,8 @@ export async function syncTemplateToTwilio(
 // Category should be: UTILITY, MARKETING, or AUTHENTICATION
 export async function submitTemplateForApproval(
   contentSid: string, 
-  category: string = 'UTILITY'
+  category: string = 'UTILITY',
+  templateName?: string
 ): Promise<{
   success: boolean;
   status?: string;
@@ -553,7 +554,19 @@ export async function submitTemplateForApproval(
     const validCategories = ['UTILITY', 'MARKETING', 'AUTHENTICATION'];
     const twilioCategory = validCategories.includes(normalizedCategory) ? normalizedCategory : 'UTILITY';
     
-    console.log(`[Twilio Content] Submitting template ${contentSid} for approval with category: ${twilioCategory}`);
+    // Build approval request payload
+    // According to Twilio docs, category is required, name is the WhatsApp template name
+    const payload: { category: string; name?: string } = {
+      category: twilioCategory
+    };
+    
+    // Use template name if provided (for WhatsApp template registration)
+    if (templateName) {
+      // WhatsApp template names must be lowercase with underscores
+      payload.name = templateName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    }
+    
+    console.log(`[Twilio Content] Submitting template ${contentSid} for approval with category: ${twilioCategory}${templateName ? `, name: ${payload.name}` : ''}`);
     
     // Submit for WhatsApp approval via HTTP with category
     const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests/whatsapp`, {
@@ -562,10 +575,7 @@ export async function submitTemplateForApproval(
         'Content-Type': 'application/json',
         'Authorization': `Basic ${auth.authString}`
       },
-      body: JSON.stringify({
-        category: twilioCategory,
-        name: contentSid // Template name for WhatsApp
-      })
+      body: JSON.stringify(payload)
     });
     
     const result = await response.json();
@@ -1083,19 +1093,21 @@ export async function syncDatabaseToTwilio(templateId: string): Promise<{
     }
     
     // Create new template in Twilio
+    const templateCategory = template.category || 'UTILITY';
     const createResult = await syncTemplateToTwilio(
       template.name,
       template.content,
       template.variables || [],
-      'id' // Indonesian
+      'id', // Indonesian
+      templateCategory
     );
     
     if (!createResult.success) {
       return { success: false, error: createResult.error };
     }
     
-    // Submit for WhatsApp approval
-    const approvalResult = await submitTemplateForApproval(createResult.contentSid!);
+    // Submit for WhatsApp approval with category and template name
+    const approvalResult = await submitTemplateForApproval(createResult.contentSid!, templateCategory, template.name);
     
     // Update database with new ContentSid
     await storage.updateMessageTemplate(templateId, {

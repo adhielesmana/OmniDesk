@@ -125,9 +125,9 @@ export async function initializeTwilioTemplates(): Promise<void> {
     const newContentSid = result.sid;
     console.log(`[Template Init] Template created: ${newContentSid}`);
 
-    // Submit for WhatsApp approval
-    console.log("[Template Init] Submitting for WhatsApp approval...");
-    const approvalResult = await submitTemplateForApproval(newContentSid);
+    // Submit for WhatsApp approval with UTILITY category (invoice templates are utility)
+    console.log("[Template Init] Submitting for WhatsApp approval with UTILITY category...");
+    const approvalResult = await submitTemplateForApproval(newContentSid, 'UTILITY', template.name);
     
     let approvalStatus = "pending";
     if (approvalResult.success && approvalResult.status) {

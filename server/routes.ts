@@ -736,12 +736,13 @@ export async function registerRoutes(
       });
       
       // Auto-sync to Twilio in background (don't block response)
+      const templateCategory = category || 'UTILITY';
       (async () => {
         try {
           const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
-          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || []);
+          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || [], 'en', templateCategory);
           if (syncResult.success && syncResult.contentSid) {
-            const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
+            const approvalResult = await submitTemplateForApproval(syncResult.contentSid, templateCategory, template.name);
             const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
             let approvalStatus = 'sync_only';
             if (approvalResult.success) {
@@ -753,7 +754,7 @@ export async function registerRoutes(
               twilioApprovalStatus: approvalStatus,
               twilioSyncedAt: new Date(),
             } as any);
-            console.log(`[Twilio] Auto-synced template ${template.id}, status: ${approvalStatus}`);
+            console.log(`[Twilio] Auto-synced template ${template.id} with category ${templateCategory}, status: ${approvalStatus}`);
           }
         } catch (err) {
           console.error(`[Twilio] Auto-sync failed for template ${template.id}:`, err);
@@ -786,12 +787,13 @@ export async function registerRoutes(
       }
       
       // Auto-sync to Twilio in background (don't block response)
+      const templateCategory = template.category || 'UTILITY';
       (async () => {
         try {
           const { syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
-          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || []);
+          const syncResult = await syncTemplateToTwilio(template.name, template.content, template.variables || [], 'en', templateCategory);
           if (syncResult.success && syncResult.contentSid) {
-            const approvalResult = await submitTemplateForApproval(syncResult.contentSid);
+            const approvalResult = await submitTemplateForApproval(syncResult.contentSid, templateCategory, template.name);
             const validStatuses = ['received', 'pending', 'approved', 'rejected', 'paused', 'disabled'];
             let approvalStatus = 'sync_only';
             if (approvalResult.success) {
@@ -803,7 +805,7 @@ export async function registerRoutes(
               twilioApprovalStatus: approvalStatus,
               twilioSyncedAt: new Date(),
             } as any);
-            console.log(`[Twilio] Auto-synced template ${id}, status: ${approvalStatus}`);
+            console.log(`[Twilio] Auto-synced template ${id} with category ${templateCategory}, status: ${approvalStatus}`);
           }
         } catch (err) {
           console.error(`[Twilio] Auto-sync failed for template ${id}:`, err);
@@ -896,19 +898,21 @@ export async function registerRoutes(
       }
       
       // Create template in Twilio
+      const templateCategory = template.category || 'UTILITY';
       const syncResult = await syncTemplateToTwilio(
         template.name,
         template.content,
         template.variables || [],
-        'en' // Default to English
+        'en', // Default to English
+        templateCategory
       );
       
       if (!syncResult.success) {
         return res.status(400).json({ error: syncResult.error });
       }
       
-      // Submit for WhatsApp approval
-      const approvalResult = await submitTemplateForApproval(syncResult.contentSid!);
+      // Submit for WhatsApp approval with category and template name
+      const approvalResult = await submitTemplateForApproval(syncResult.contentSid!, templateCategory, template.name);
       
       // Determine approval status:
       // - If submission failed, use 'sync_only'
@@ -1085,9 +1089,10 @@ wa.me/6208991066262`;
       const newContentSid = result.sid;
       console.log(`[Template Recreate] Template created: ${newContentSid}`);
       
-      // Submit for WhatsApp approval
-      console.log(`[Template Recreate] Submitting for WhatsApp approval...`);
-      const approvalResult = await submitTemplateForApproval(newContentSid);
+      // Submit for WhatsApp approval with category and template name
+      const templateCategory = template.category || 'UTILITY';
+      console.log(`[Template Recreate] Submitting for WhatsApp approval with category ${templateCategory}...`);
+      const approvalResult = await submitTemplateForApproval(newContentSid, templateCategory, template.name);
       
       let approvalStatus = "pending";
       if (approvalResult.success && approvalResult.status) {
