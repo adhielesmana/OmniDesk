@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, ExternalLink, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
@@ -79,6 +79,10 @@ export default function AdminPage() {
               <MessageSquare className="h-4 w-4 mr-2" />
               Platforms
             </TabsTrigger>
+            <TabsTrigger value="shortened-urls" data-testid="tab-shortened-urls">
+              <Link2 className="h-4 w-4 mr-2" />
+              Short URLs
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -110,6 +114,10 @@ export default function AdminPage() {
 
           <TabsContent value="platforms" className="space-y-4">
             <PlatformsTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="shortened-urls" className="space-y-4">
+            <ShortenedUrlsTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1691,6 +1699,159 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface ShortenedUrl {
+  id: string;
+  shortCode: string;
+  originalUrl: string;
+  clickCount: number;
+  expiresAt: Date | null;
+  createdAt: Date;
+  clientId: string | null;
+}
+
+function ShortenedUrlsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const queryClient = useQueryClient();
+  
+  const { data: urls = [], isLoading } = useQuery<ShortenedUrl[]>({
+    queryKey: ["/api/admin/shortened-urls"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/admin/shortened-urls/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/shortened-urls"] });
+      toast({
+        title: "URL deleted",
+        description: "The shortened URL has been removed.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete URL",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: "Copied",
+      description: "URL copied to clipboard",
+    });
+  };
+
+  const baseUrl = window.location.origin;
+  const totalClicks = urls.reduce((sum, url) => sum + (url.clickCount || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="h-5 w-5" />
+            Shortened URLs
+          </CardTitle>
+          <CardDescription>
+            URLs are automatically shortened in API messages to avoid WhatsApp blocking. The redirect uses JavaScript to hide the final destination from link previews.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-3 gap-4 mb-6">
+            <Card>
+              <CardContent className="pt-4">
+                <div className="text-2xl font-bold">{urls.length}</div>
+                <div className="text-sm text-muted-foreground">Total URLs</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <div className="text-2xl font-bold">{totalClicks}</div>
+                <div className="text-sm text-muted-foreground">Total Clicks</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <div className="text-2xl font-bold">
+                  {urls.length > 0 ? (totalClicks / urls.length).toFixed(1) : "0"}
+                </div>
+                <div className="text-sm text-muted-foreground">Avg Clicks/URL</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : urls.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No shortened URLs yet. They will appear here when API messages with URLs are sent.
+            </div>
+          ) : (
+            <ScrollArea className="h-[400px]">
+              <div className="space-y-3">
+                {urls.map((url) => (
+                  <div
+                    key={url.id}
+                    className="flex items-center justify-between p-3 border rounded-lg"
+                    data-testid={`shortened-url-${url.id}`}
+                  >
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <code className="text-sm font-mono bg-muted px-2 py-0.5 rounded">
+                          {baseUrl}/s/{url.shortCode}
+                        </code>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6"
+                          onClick={() => copyToClipboard(`${baseUrl}/s/${url.shortCode}`)}
+                          data-testid={`copy-url-${url.id}`}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                        <a
+                          href={`${baseUrl}/s/${url.shortCode}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </a>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate" title={url.originalUrl}>
+                        → {url.originalUrl}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{url.clickCount || 0} clicks</span>
+                        <span>Created: {new Date(url.createdAt).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => deleteMutation.mutate(url.id)}
+                      disabled={deleteMutation.isPending}
+                      data-testid={`delete-url-${url.id}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
