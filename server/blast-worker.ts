@@ -861,6 +861,31 @@ async function processApiMessageQueue(): Promise<void> {
             });
           }
           
+          // Validate that all template placeholders are mapped
+          // Extract placeholders from template content (e.g., {{1}}, {{2}}, etc.)
+          const templateContent = template!.content || "";
+          const placeholderMatches = templateContent.match(/\{\{(\d+)\}\}/g) || [];
+          const requiredPlaceholders = [...new Set(placeholderMatches.map(p => p.replace(/[{}]/g, "")))];
+          
+          // Check if all required placeholders have values
+          const missingPlaceholders = requiredPlaceholders.filter(p => {
+            const value = contentVariables[p];
+            return value === undefined || value === null || value === "";
+          });
+          
+          if (missingPlaceholders.length > 0) {
+            // Variable mappings don't cover all template placeholders - fail the message
+            const errorMsg = `Variable mapping incomplete: placeholders ${missingPlaceholders.map(p => `{{${p}}}`).join(", ")} are not mapped or have empty values. Configure API client variable mappings.`;
+            console.log(`API queue: ${errorMsg}`);
+            await storage.updateApiMessage(message.id, {
+              status: "failed",
+              errorMessage: errorMsg,
+              processedAt: new Date(),
+            });
+            isApiQueueProcessing = false;
+            return;
+          }
+          
           console.log(`API queue: Using approved template "${template!.name}" (${template!.twilioContentSid}) for ${message.phoneNumber}`);
           console.log(`API queue: Content variables:`, JSON.stringify(contentVariables));
           const twilioResult = await sendWhatsAppTemplate(
