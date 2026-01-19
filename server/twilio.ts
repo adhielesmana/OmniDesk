@@ -464,7 +464,8 @@ export async function syncTemplateToTwilio(
   templateName: string,
   content: string,
   variables: string[] = [],
-  language: string = 'en'
+  language: string = 'en',
+  category: string = 'UTILITY'
 ): Promise<{
   success: boolean;
   contentSid?: string;
@@ -532,7 +533,11 @@ export async function syncTemplateToTwilio(
 
 // Submit template for WhatsApp approval
 // Uses direct HTTP request to Twilio Content API
-export async function submitTemplateForApproval(contentSid: string): Promise<{
+// Category should be: UTILITY, MARKETING, or AUTHENTICATION
+export async function submitTemplateForApproval(
+  contentSid: string, 
+  category: string = 'UTILITY'
+): Promise<{
   success: boolean;
   status?: string;
   error?: string;
@@ -543,13 +548,24 @@ export async function submitTemplateForApproval(contentSid: string): Promise<{
       return { success: false, error: 'Twilio credentials not configured' };
     }
     
-    // Submit for WhatsApp approval via HTTP
+    // Normalize category to uppercase for Twilio API
+    const normalizedCategory = category.toUpperCase();
+    const validCategories = ['UTILITY', 'MARKETING', 'AUTHENTICATION'];
+    const twilioCategory = validCategories.includes(normalizedCategory) ? normalizedCategory : 'UTILITY';
+    
+    console.log(`[Twilio Content] Submitting template ${contentSid} for approval with category: ${twilioCategory}`);
+    
+    // Submit for WhatsApp approval via HTTP with category
     const response = await fetch(`https://content.twilio.com/v1/Content/${contentSid}/ApprovalRequests/whatsapp`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Basic ${auth.authString}`
-      }
+      },
+      body: JSON.stringify({
+        category: twilioCategory,
+        name: contentSid // Template name for WhatsApp
+      })
     });
     
     const result = await response.json();
