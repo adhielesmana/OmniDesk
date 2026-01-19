@@ -220,6 +220,8 @@ export interface IStorage {
   createShortenedUrl(url: InsertShortenedUrl): Promise<ShortenedUrl>;
   getShortenedUrlByCode(shortCode: string): Promise<ShortenedUrl | undefined>;
   incrementShortenedUrlClickCount(shortCode: string): Promise<void>;
+  getAllShortenedUrls(): Promise<ShortenedUrl[]>;
+  deleteShortenedUrl(id: string): Promise<void>;
 
   // Message Templates
   createMessageTemplate(template: InsertMessageTemplate): Promise<MessageTemplate>;
@@ -1695,6 +1697,17 @@ export class DatabaseStorage implements IStorage {
       .update(shortenedUrls)
       .set({ clickCount: sql`${shortenedUrls.clickCount} + 1` })
       .where(eq(shortenedUrls.shortCode, shortCode));
+  }
+
+  async getAllShortenedUrls(): Promise<ShortenedUrl[]> {
+    return await db
+      .select()
+      .from(shortenedUrls)
+      .orderBy(desc(shortenedUrls.createdAt));
+  }
+
+  async deleteShortenedUrl(id: string): Promise<void> {
+    await db.delete(shortenedUrls).where(eq(shortenedUrls.id, id));
   }
 
   // Message Templates

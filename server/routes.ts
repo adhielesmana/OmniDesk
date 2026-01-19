@@ -679,6 +679,28 @@ export async function registerRoutes(
     }
   });
 
+  // ============= SHORTENED URLS MANAGEMENT =============
+  app.get("/api/admin/shortened-urls", requireAdmin, async (req, res) => {
+    try {
+      const urls = await storage.getAllShortenedUrls();
+      res.json(urls);
+    } catch (error) {
+      console.error("Error fetching shortened URLs:", error);
+      res.status(500).json({ error: "Failed to fetch shortened URLs" });
+    }
+  });
+
+  app.delete("/api/admin/shortened-urls/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteShortenedUrl(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting shortened URL:", error);
+      res.status(500).json({ error: "Failed to delete shortened URL" });
+    }
+  });
+
   // ============= MESSAGE TEMPLATES MANAGEMENT =============
   app.get("/api/admin/templates", requireAdmin, async (req, res) => {
     try {
