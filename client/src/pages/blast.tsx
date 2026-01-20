@@ -399,7 +399,7 @@ function CreateCampaignDialog({
   // Extract variables from template content and sync with mappings
   const updateVariableMappings = useCallback((content: string) => {
     const matches = content.match(/\{\{(\d+)\}\}/g) || [];
-    const placeholders = [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort();
+    const placeholders = Array.from(new Set(matches.map(m => m.replace(/[{}]/g, '')))).sort();
     
     setVariableMappings(prev => {
       const newMappings: VariableMapping[] = placeholders.map(p => {
@@ -463,7 +463,7 @@ function CreateCampaignDialog({
         templateId: templateMode === "existing" ? templateId : undefined,
         createNewTemplate: templateMode === "new",
         templateContent: templateMode === "new" ? newTemplateContent : undefined,
-        variableMappings: templateMode === "new" ? variableMappings : undefined,
+        variableMappings: (templateMode === "new" || templateMode === "existing") ? variableMappings : undefined,
       });
       return res.json();
     },
@@ -626,18 +626,83 @@ function CreateCampaignDialog({
             </div>
             
             {templateMode === "existing" && (
-              <Select value={templateId} onValueChange={setTemplateId}>
-                <SelectTrigger data-testid="select-blast-template">
-                  <SelectValue placeholder="Select an approved template..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {approvedTemplates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name} {t.category && `(${t.category})`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="space-y-3">
+                <Select 
+                  value={templateId} 
+                  onValueChange={(id) => {
+                    setTemplateId(id);
+                    const template = approvedTemplates.find(t => t.id === id);
+                    if (template?.content) {
+                      updateVariableMappings(template.content);
+                    }
+                  }}
+                >
+                  <SelectTrigger data-testid="select-blast-template">
+                    <SelectValue placeholder="Select an approved template..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {approvedTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} {t.category && `(${t.category})`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {templateId && (() => {
+                  const selectedTemplate = approvedTemplates.find(t => t.id === templateId);
+                  return selectedTemplate ? (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-md bg-muted/50 border">
+                        <p className="text-xs text-muted-foreground mb-2">Template Content:</p>
+                        <p className="text-sm font-mono">{selectedTemplate.content}</p>
+                      </div>
+                      
+                      {variableMappings.length > 0 && (
+                        <div className="space-y-2">
+                          <Label className="text-sm">Variable Mappings</Label>
+                          {variableMappings.map((mapping, index) => (
+                            <div key={mapping.placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                              <span className="text-sm font-mono w-12">{`{{${mapping.placeholder}}}`}</span>
+                              <Select
+                                value={mapping.type}
+                                onValueChange={(value: VariableMapping["type"]) => {
+                                  setVariableMappings(prev => prev.map((m, i) => 
+                                    i === index ? { ...m, type: value, customValue: value === "custom" ? "" : undefined } : m
+                                  ));
+                                }}
+                              >
+                                <SelectTrigger className="flex-1" data-testid={`select-existing-var-type-${mapping.placeholder}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                                  <SelectItem value="ai_prompt">AI Message</SelectItem>
+                                  <SelectItem value="phone_number">Phone Number</SelectItem>
+                                  <SelectItem value="custom">Custom Value</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              {mapping.type === "custom" && (
+                                <Input
+                                  value={mapping.customValue || ""}
+                                  onChange={(e) => {
+                                    setVariableMappings(prev => prev.map((m, i) =>
+                                      i === index ? { ...m, customValue: e.target.value } : m
+                                    ));
+                                  }}
+                                  placeholder="Enter value..."
+                                  className="flex-1"
+                                  data-testid={`input-existing-custom-value-${mapping.placeholder}`}
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
+              </div>
             )}
             
             {templateMode === "new" && (
@@ -1430,18 +1495,83 @@ function CampaignDetail({
               </div>
 
               {templateMode === "existing" && (
-                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                  <SelectTrigger data-testid="select-edit-template">
-                    <SelectValue placeholder="Select a template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allTemplates.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        {t.name} {t.twilioApprovalStatus && `(${t.twilioApprovalStatus})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-3">
+                  <Select 
+                    value={selectedTemplateId} 
+                    onValueChange={(id) => {
+                      setSelectedTemplateId(id);
+                      const template = allTemplates.find(t => t.id === id);
+                      if (template?.content) {
+                        updateVariableMappings(template.content);
+                      }
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-edit-template">
+                      <SelectValue placeholder="Select a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {allTemplates.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name} {t.twilioApprovalStatus && `(${t.twilioApprovalStatus})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  
+                  {selectedTemplateId && (() => {
+                    const selectedTemplate = allTemplates.find(t => t.id === selectedTemplateId);
+                    return selectedTemplate ? (
+                      <div className="space-y-3">
+                        <div className="p-3 rounded-md bg-muted/50 border">
+                          <p className="text-xs text-muted-foreground mb-2">Template Content:</p>
+                          <p className="text-sm font-mono">{selectedTemplate.content}</p>
+                        </div>
+                        
+                        {variableMappings.length > 0 && (
+                          <div className="space-y-2">
+                            <Label className="text-sm">Variable Mappings</Label>
+                            {variableMappings.map((mapping, index) => (
+                              <div key={mapping.placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                                <span className="text-sm font-mono w-12">{`{{${mapping.placeholder}}}`}</span>
+                                <Select
+                                  value={mapping.type}
+                                  onValueChange={(value: VariableMapping["type"]) => {
+                                    setVariableMappings(prev => prev.map((m, i) => 
+                                      i === index ? { ...m, type: value, customValue: value === "custom" ? "" : undefined } : m
+                                    ));
+                                  }}
+                                >
+                                  <SelectTrigger className="flex-1" data-testid={`select-edit-existing-var-type-${mapping.placeholder}`}>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                                    <SelectItem value="ai_prompt">AI Message</SelectItem>
+                                    <SelectItem value="phone_number">Phone Number</SelectItem>
+                                    <SelectItem value="custom">Custom Value</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                {mapping.type === "custom" && (
+                                  <Input
+                                    value={mapping.customValue || ""}
+                                    onChange={(e) => {
+                                      setVariableMappings(prev => prev.map((m, i) =>
+                                        i === index ? { ...m, customValue: e.target.value } : m
+                                      ));
+                                    }}
+                                    placeholder="Enter value..."
+                                    className="flex-1"
+                                    data-testid={`input-edit-existing-custom-value-${mapping.placeholder}`}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
               )}
 
               {templateMode === "new" && (
@@ -1527,7 +1657,10 @@ function CampaignDetail({
                       variableMappings: variableMappings
                     });
                   } else if (templateMode === "existing" && selectedTemplateId) {
-                    updateTemplateMutation.mutate({ templateId: selectedTemplateId });
+                    updateTemplateMutation.mutate({ 
+                      templateId: selectedTemplateId,
+                      variableMappings: variableMappings
+                    });
                   }
                 }}
                 disabled={

@@ -326,8 +326,22 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
         const recipientPhone = recipient.contact.phoneNumber || "";
         const contentVariables: Record<string, string> = {};
         
-        // Check if template has variable mappings defined
-        const mappings = template!.variableMappings as Array<{ placeholder: string; type: string; customValue?: string }> | null;
+        // First check campaign-level variableMappings, then fall back to template-level
+        let mappings: Array<{ placeholder: string; type: string; customValue?: string }> | null = null;
+        
+        // Try campaign-level variableMappings first (stored as JSON string)
+        if (recipient.campaign.variableMappings) {
+          try {
+            mappings = JSON.parse(recipient.campaign.variableMappings as string);
+          } catch (e) {
+            console.log("Failed to parse campaign variableMappings, falling back to template");
+          }
+        }
+        
+        // Fall back to template-level variableMappings
+        if (!mappings || mappings.length === 0) {
+          mappings = template!.variableMappings as Array<{ placeholder: string; type: string; customValue?: string }> | null;
+        }
         
         if (mappings && mappings.length > 0) {
           // Use defined mappings

@@ -3801,7 +3801,7 @@ wa.me/6208991066262`;
         finalTemplateId = newTemplate.id;
       }
 
-      // Create campaign
+      // Create campaign (store variableMappings for both new and existing templates)
       const campaign = await storage.createBlastCampaign({
         name,
         prompt,
@@ -3810,6 +3810,7 @@ wa.me/6208991066262`;
         minIntervalSeconds: minIntervalSeconds || 120,
         maxIntervalSeconds: maxIntervalSeconds || 180,
         templateId: finalTemplateId,
+        variableMappings: variableMappings ? JSON.stringify(variableMappings) : null,
         createdBy: req.session.userId,
       });
 
@@ -3874,6 +3875,7 @@ wa.me/6208991066262`;
       if (minIntervalSeconds !== undefined) updateData.minIntervalSeconds = minIntervalSeconds;
       if (maxIntervalSeconds !== undefined) updateData.maxIntervalSeconds = maxIntervalSeconds;
       if (finalTemplateId !== undefined) updateData.templateId = finalTemplateId;
+      if (variableMappings !== undefined) updateData.variableMappings = JSON.stringify(variableMappings);
       
       const campaign = await storage.updateBlastCampaign(req.params.id, updateData);
       if (!campaign) {
