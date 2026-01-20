@@ -404,6 +404,51 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
       throw new Error(sendResult.error || "WhatsApp send failed");
     }
 
+    // Create or update conversation and message for inbox visibility
+    try {
+      // Find or create conversation for this contact
+      let conversation = await storage.getConversationByContactId(recipient.contact.id);
+      
+      if (!conversation) {
+        // Create new conversation for this contact
+        conversation = await storage.createConversation({
+          platform: "whatsapp",
+          contactId: recipient.contact.id,
+          lastMessageAt: new Date(),
+          lastMessagePreview: shortenedMessage.slice(0, 100),
+          unreadCount: 0,
+          isArchived: false,
+        });
+        console.log(`Created new conversation for blast recipient ${recipient.contact.name || phoneNumber}`);
+      }
+      
+      // Create message record in conversation
+      await storage.createMessage({
+        conversationId: conversation.id,
+        externalId: sendResult.messageId || undefined,
+        direction: "outbound",
+        content: shortenedMessage,
+        status: "sent",
+        timestamp: new Date(),
+        metadata: JSON.stringify({
+          source: "blast_campaign",
+          campaignId: recipient.campaignId,
+          campaignName: recipient.campaign.name,
+        }),
+      });
+      
+      // Update conversation with latest message info
+      await storage.updateConversation(conversation.id, {
+        lastMessageAt: new Date(),
+        lastMessagePreview: shortenedMessage.slice(0, 100),
+      });
+      
+      console.log(`Created inbox message for blast recipient ${recipient.contact.name || phoneNumber}`);
+    } catch (inboxError) {
+      // Log error but don't fail the blast - message was still sent
+      console.error(`Failed to create inbox record for blast message:`, inboxError);
+    }
+
     await storage.updateBlastRecipient(recipient.id, {
       status: "sent",
       sentAt: new Date(),
@@ -866,7 +911,7 @@ async function processApiMessageQueue(): Promise<void> {
           // Extract placeholders from template content (e.g., {{1}}, {{2}}, etc.)
           const templateContent = template!.content || "";
           const placeholderMatches = templateContent.match(/\{\{(\d+)\}\}/g) || [];
-          const requiredPlaceholders = [...new Set(placeholderMatches.map(p => p.replace(/[{}]/g, "")))];
+          const requiredPlaceholders = Array.from(new Set(placeholderMatches.map(p => p.replace(/[{}]/g, ""))));
           
           // Check if all required placeholders have values
           const missingPlaceholders = requiredPlaceholders.filter(p => {
@@ -881,7 +926,6 @@ async function processApiMessageQueue(): Promise<void> {
             await storage.updateApiMessage(message.id, {
               status: "failed",
               errorMessage: errorMsg,
-              processedAt: new Date(),
             });
             isApiQueueProcessing = false;
             return;
@@ -939,6 +983,75 @@ async function processApiMessageQueue(): Promise<void> {
         if (!result.success) {
           throw new Error("Failed to send WhatsApp message via Baileys");
         }
+      }
+
+      // Create or update conversation and message for inbox visibility
+      try {
+        // If no contact, try to create one or find by phone
+        if (!contactId) {
+          const existingContact = await storage.getContactByPhoneNumber(message.phoneNumber);
+          if (existingContact) {
+            contactId = existingContact.id;
+          } else {
+            // Create a new contact for this phone number
+            const newContact = await storage.createContact({
+              platformId: message.phoneNumber,
+              phoneNumber: message.phoneNumber,
+              name: message.recipientName || message.phoneNumber,
+              platform: "whatsapp",
+            });
+            contactId = newContact.id;
+            console.log(`API queue: Created new contact for ${message.phoneNumber}`);
+          }
+        }
+        
+        // Find or create conversation
+        if (!conversationId && contactId) {
+          const existingConversation = await storage.getConversationByContactId(contactId);
+          if (existingConversation) {
+            conversationId = existingConversation.id;
+          } else {
+            // Create new conversation
+            const newConversation = await storage.createConversation({
+              platform: "whatsapp",
+              contactId: contactId,
+              lastMessageAt: new Date(),
+              lastMessagePreview: shortenedMessage.slice(0, 100),
+              unreadCount: 0,
+              isArchived: false,
+            });
+            conversationId = newConversation.id;
+            console.log(`API queue: Created new conversation for ${message.phoneNumber}`);
+          }
+        }
+        
+        // Create message record in conversation
+        if (conversationId) {
+          await storage.createMessage({
+            conversationId: conversationId,
+            externalId: result.messageId || undefined,
+            direction: "outbound",
+            content: shortenedMessage,
+            status: "sent",
+            timestamp: new Date(),
+            metadata: JSON.stringify({
+              source: "api_queue",
+              clientId: message.clientId,
+              requestId: message.requestId,
+            }),
+          });
+          
+          // Update conversation with latest message info
+          await storage.updateConversation(conversationId, {
+            lastMessageAt: new Date(),
+            lastMessagePreview: shortenedMessage.slice(0, 100),
+          });
+          
+          console.log(`API queue: Created inbox message for ${message.phoneNumber}`);
+        }
+      } catch (inboxError) {
+        // Log error but don't fail the API message - message was still sent
+        console.error(`API queue: Failed to create inbox record:`, inboxError);
       }
 
       // Update message as sent
