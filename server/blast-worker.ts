@@ -359,7 +359,8 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
         const twilioResult = await sendWhatsAppTemplate(
           phoneNumber.replace(/\D/g, ""),
           template!.twilioContentSid!,
-          contentVariables
+          contentVariables,
+          template!.content
         );
         sendResult = {
           success: twilioResult.success,
@@ -891,7 +892,8 @@ async function processApiMessageQueue(): Promise<void> {
           const twilioResult = await sendWhatsAppTemplate(
             message.phoneNumber,
             template!.twilioContentSid!,
-            contentVariables
+            contentVariables,
+            template!.content
           );
           result = {
             messageId: twilioResult.messageId,

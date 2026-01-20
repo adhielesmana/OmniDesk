@@ -207,12 +207,118 @@ export async function sendWhatsAppMessage(
   }
 }
 
+// Sanitize content variable values for Twilio WhatsApp templates
+// Twilio rejects: newlines, tabs, and more than 4 consecutive spaces
+// Note: Empty values should be rejected BEFORE calling this function
+function sanitizeContentVariable(value: string): string {
+  let sanitized = String(value);
+  
+  // Replace newlines and tabs with spaces
+  sanitized = sanitized.replace(/[\n\r\t]/g, ' ');
+  
+  // Replace more than 4 consecutive spaces with max 4
+  sanitized = sanitized.replace(/\s{5,}/g, '    ');
+  
+  // Trim whitespace
+  sanitized = sanitized.trim();
+  
+  return sanitized;
+}
+
+// Validate and prepare content variables for Twilio template
+// Returns sanitized variables or an error if validation fails
+function validateAndSanitizeContentVariables(
+  contentVariables: Record<string, string>,
+  templateContent?: string
+): { success: true; variables: Record<string, string> } | { success: false; error: string } {
+  // Require template content for proper validation
+  if (!templateContent) {
+    console.warn('[Twilio] Warning: No template content provided for validation, performing basic sanitization only');
+  }
+  
+  // Check for any empty values in provided variables (Twilio rejects empty strings)
+  const providedKeys = Object.keys(contentVariables).sort((a, b) => parseInt(a) - parseInt(b));
+  for (const key of providedKeys) {
+    if (contentVariables[key] === "" || contentVariables[key] === null || contentVariables[key] === undefined) {
+      return {
+        success: false,
+        error: `Template variable {{${key}}} has empty value. All variables must have non-empty values for Twilio.`
+      };
+    }
+  }
+  
+  // Extract required placeholders from template content if provided
+  let requiredPlaceholders: string[] = [];
+  if (templateContent) {
+    const matches = templateContent.match(/\{\{(\d+)\}\}/g) || [];
+    requiredPlaceholders = Array.from(new Set(matches.map(m => m.replace(/[{}]/g, '')))).sort((a, b) => parseInt(a) - parseInt(b));
+  }
+  
+  // If we have template content, validate against required placeholders
+  if (requiredPlaceholders.length > 0) {
+    // Check that all required placeholders have non-empty values
+    const missingOrEmptyPlaceholders = requiredPlaceholders.filter(p => {
+      const value = contentVariables[p];
+      return value === undefined || value === null || value === "";
+    });
+    
+    if (missingOrEmptyPlaceholders.length > 0) {
+      return {
+        success: false,
+        error: `Missing or empty required template variables: ${missingOrEmptyPlaceholders.map(p => `{{${p}}}`).join(', ')}. All template placeholders must have non-empty values.`
+      };
+    }
+    
+    // Check that provided keys exactly match required placeholders (no extras)
+    const extraKeys = providedKeys.filter(k => !requiredPlaceholders.includes(k));
+    if (extraKeys.length > 0) {
+      console.warn(`[Twilio] Warning: Extra variables provided that are not in template: ${extraKeys.join(', ')}`);
+      // Remove extra keys - don't include them in the sanitized variables
+    }
+  }
+  
+  // Check that we have sequential placeholders (no gaps)
+  // Twilio requires: if you have {{1}} and {{3}}, you must also have {{2}}
+  // Use template placeholders as source of truth if available
+  const keysToCheck = requiredPlaceholders.length > 0 ? requiredPlaceholders : providedKeys;
+  if (keysToCheck.length > 0) {
+    const maxKey = Math.max(...keysToCheck.map(k => parseInt(k)));
+    
+    for (let i = 1; i <= maxKey; i++) {
+      // Only check if it's a required placeholder
+      if (requiredPlaceholders.length > 0 && !requiredPlaceholders.includes(String(i))) {
+        continue; // Skip if not required by template
+      }
+      if (contentVariables[String(i)] === undefined || contentVariables[String(i)] === "") {
+        return {
+          success: false,
+          error: `Missing sequential variable {{${i}}}. Template requires all placeholders from 1 to ${maxKey}.`
+        };
+      }
+    }
+  }
+  
+  // Sanitize all values - remove newlines, tabs, excessive spaces
+  // Note: empty values already rejected above for required placeholders
+  const sanitizedVariables: Record<string, string> = {};
+  const keysToInclude = requiredPlaceholders.length > 0 ? requiredPlaceholders : providedKeys;
+  for (const key of keysToInclude) {
+    const value = contentVariables[key];
+    if (value !== undefined) {
+      sanitizedVariables[key] = sanitizeContentVariable(value);
+    }
+  }
+  
+  return { success: true, variables: sanitizedVariables };
+}
+
 // Send WhatsApp message using approved template (ContentSid)
 // Required for business-initiated messages outside 24-hour window
 export async function sendWhatsAppTemplate(
   to: string,
   contentSid: string,
-  contentVariables: Record<string, string>
+  contentVariables: Record<string, string>,
+  templateContent?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const client = await getTwilioClient();
@@ -222,17 +328,31 @@ export async function sendWhatsAppTemplate(
     const toWhatsApp = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
     const fromWhatsApp = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
     
+    // Validate and sanitize content variables
+    const validation = validateAndSanitizeContentVariables(contentVariables, templateContent);
+    if (!validation.success) {
+      console.error(`[Twilio] Content variable validation failed: ${validation.error}`);
+      return { success: false, error: validation.error };
+    }
+    
+    const sanitizedVariables = validation.variables;
+    
+    // Log the content variables being sent for debugging
+    console.log(`[Twilio] Sending WhatsApp template ${contentSid} to ${to}`);
+    console.log(`[Twilio] Content variables (sanitized):`, JSON.stringify(sanitizedVariables));
+    
     const message = await client.messages.create({
       from: fromWhatsApp,
       to: toWhatsApp,
       contentSid: contentSid,
-      contentVariables: JSON.stringify(contentVariables)
+      contentVariables: JSON.stringify(sanitizedVariables)
     });
     
     console.log(`[Twilio] WhatsApp template message sent: ${message.sid} (template: ${contentSid})`);
     return { success: true, messageId: message.sid };
   } catch (error: any) {
     console.error('[Twilio] Failed to send WhatsApp template:', error);
+    console.error('[Twilio] Template:', contentSid, 'Variables:', JSON.stringify(contentVariables));
     return { success: false, error: error.message };
   }
 }
