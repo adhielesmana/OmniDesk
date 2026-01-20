@@ -901,12 +901,52 @@ function MessageQueueCard({
   campaignStatus,
   queryClient,
   toast,
+  templateContent,
+  variableMappings,
 }: {
   campaignId: string;
   campaignStatus: string;
   queryClient: ReturnType<typeof useQueryClient>;
   toast: ReturnType<typeof useToast>["toast"];
+  templateContent?: string;
+  variableMappings?: VariableMapping[];
 }) {
+  // Function to render message with template
+  const renderMessageWithTemplate = (recipient: BlastRecipientWithContact) => {
+    const message = recipient.reviewedMessage || recipient.generatedMessage;
+    if (!message) return "No message";
+    
+    // If no template, just return the raw message
+    if (!templateContent) return message;
+    
+    // Replace template variables with actual values
+    let rendered = templateContent;
+    const mappings = variableMappings || [];
+    
+    mappings.forEach(mapping => {
+      const placeholder = `{{${mapping.placeholder}}}`;
+      let value = "";
+      
+      switch (mapping.type) {
+        case "recipient_name":
+          value = recipient.contact?.name || "Pelanggan";
+          break;
+        case "ai_prompt":
+          value = message;
+          break;
+        case "phone_number":
+          value = recipient.contact?.phoneNumber || "";
+          break;
+        case "custom":
+          value = mapping.customValue || "";
+          break;
+      }
+      
+      rendered = rendered.replace(placeholder, value);
+    });
+    
+    return rendered;
+  };
   const [editingRecipient, setEditingRecipient] = useState<BlastRecipientWithContact | null>(null);
   const [editedMessage, setEditedMessage] = useState("");
 
@@ -1123,7 +1163,7 @@ function MessageQueueCard({
                   </div>
                 ) : (
                   <div className="mt-2 p-2 bg-muted rounded text-sm whitespace-pre-wrap">
-                    {recipient.reviewedMessage || recipient.generatedMessage || "No message"}
+                    {renderMessageWithTemplate(recipient)}
                   </div>
                 )}
               </div>
@@ -1708,6 +1748,22 @@ function CampaignDetail({
           campaignStatus={campaign.status}
           queryClient={queryClient}
           toast={toast}
+          templateContent={linkedTemplate?.content}
+          variableMappings={(() => {
+            // Try to get campaign-level mappings first, then template-level
+            if (campaign.variableMappings) {
+              try {
+                return JSON.parse(campaign.variableMappings as string);
+              } catch {
+                // Fall through
+              }
+            }
+            // Fall back to template-level mappings
+            if (linkedTemplate?.variableMappings) {
+              return linkedTemplate.variableMappings as VariableMapping[];
+            }
+            return undefined;
+          })()}
         />
 
         <Card>
