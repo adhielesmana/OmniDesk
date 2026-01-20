@@ -1180,7 +1180,7 @@ function CampaignDetail({
   // Extract variables from template content and sync with mappings
   const updateVariableMappings = useCallback((content: string) => {
     const matches = content.match(/\{\{(\d+)\}\}/g) || [];
-    const placeholders = [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort();
+    const placeholders = Array.from(new Set(matches.map(m => m.replace(/[{}]/g, '')))).sort();
     
     setVariableMappings(prev => {
       const newMappings: VariableMapping[] = placeholders.map(p => {
@@ -1415,6 +1415,32 @@ function CampaignDetail({
                 onClick={() => {
                   setSelectedTemplateId(campaign.templateId || "");
                   setTemplateMode(campaign.templateId ? "existing" : "none");
+                  // Initialize variable mappings from linked template
+                  if (campaign.templateId && linkedTemplate?.content) {
+                    // Extract all placeholders from template content
+                    const matches = linkedTemplate.content.match(/\{\{(\d+)\}\}/g) || [];
+                    const placeholders = Array.from(new Set(matches.map((m: string) => m.replace(/[{}]/g, '')))).sort();
+                    
+                    // Try to load saved campaign-level mappings
+                    let savedMappings: VariableMapping[] = [];
+                    if (campaign.variableMappings) {
+                      try {
+                        savedMappings = JSON.parse(campaign.variableMappings as string) || [];
+                      } catch {
+                        savedMappings = [];
+                      }
+                    }
+                    
+                    // Merge: use saved mappings if available, otherwise generate defaults
+                    const newMappings: VariableMapping[] = placeholders.map(p => {
+                      const saved = savedMappings.find((m: VariableMapping) => m.placeholder === p);
+                      if (saved) return saved;
+                      if (p === "1") return { placeholder: p, type: "recipient_name" as const, label: "Recipient Name" };
+                      if (p === "2") return { placeholder: p, type: "ai_prompt" as const, label: "AI Message" };
+                      return { placeholder: p, type: "custom" as const, label: `Variable ${p}`, customValue: "" };
+                    });
+                    setVariableMappings(newMappings);
+                  }
                   setShowEditTemplateDialog(true);
                 }}
                 data-testid="button-edit-template"
