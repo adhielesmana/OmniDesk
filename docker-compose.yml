@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-unified_inbox}
       POSTGRES_USER: ${DB_USER:-inbox_user}
-      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required in .env file}
+      POSTGRES_PASSWORD: ${DB_PASS:-OmniDesk2024Secure}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -26,11 +26,11 @@ services:
       - "${APP_PORT:-5000}:5000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-inbox_user}:${DB_PASS}@postgres:5432/${DB_NAME:-unified_inbox}
-      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required in .env file}
+      DATABASE_URL: postgresql://${DB_USER:-inbox_user}:${DB_PASS:-OmniDesk2024Secure}@postgres:5432/${DB_NAME:-unified_inbox}
+      SESSION_SECRET: ${SESSION_SECRET:-omnidesk_session_secret_2024}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-adhielesmana}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in .env file}
+      ADMIN_USERNAME: adhielesmana
+      ADMIN_PASSWORD: admin123
     volumes:
       - ./whatsapp_auth:/app/whatsapp_auth
     depends_on:
