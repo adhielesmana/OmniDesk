@@ -127,15 +127,17 @@ export function SettingsModal({
   });
 
   // Load existing WhatsApp platform settings into form state
+  // Only update when we have valid data (not during refetch when array is empty)
   useEffect(() => {
+    if (platformSettings.length === 0) return; // Skip if no data yet
     const whatsapp = platformSettings.find(s => s.platform === "whatsapp");
     if (whatsapp) {
-      setWhatsappSettings({
-        accessToken: "", // Don't load masked token - user must re-enter
+      setWhatsappSettings(prev => ({
+        accessToken: prev.accessToken || "", // Keep user input if already entered
         phoneNumberId: whatsapp.phoneNumberId || "",
         businessId: whatsapp.businessId || "",
         webhookVerifyToken: whatsapp.webhookVerifyToken || "",
-      });
+      }));
     }
   }, [platformSettings]);
 
