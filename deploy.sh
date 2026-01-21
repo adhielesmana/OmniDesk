@@ -156,18 +156,18 @@ APP_PORT=$AVAILABLE_PORT
 
 echo ""
 echo -e "${BLUE}[4/7] Building and starting containers...${NC}"
-echo -e "  ${YELLOW}→${NC} Starting PostgreSQL database..."
 echo -e "  ${YELLOW}→${NC} Building application image (no cache)..."
 
 if docker compose version &> /dev/null; then
+    docker compose down --remove-orphans 2>/dev/null || true
     docker compose build --no-cache
     docker compose up -d
 else
+    docker-compose down --remove-orphans 2>/dev/null || true
     docker-compose build --no-cache
     docker-compose up -d
 fi
 
-echo -e "  ${GREEN}✓${NC} PostgreSQL database container started"
 echo -e "  ${GREEN}✓${NC} Application container started"
 
 # Restore WhatsApp session from backup if the folder is empty or missing
@@ -184,11 +184,10 @@ fi
 
 echo ""
 echo -e "${BLUE}[5/7] Running database setup...${NC}"
-echo -e "  ${YELLOW}→${NC} Waiting for PostgreSQL to be ready..."
-sleep 15
+echo -e "  ${YELLOW}→${NC} Waiting for application to be ready..."
+sleep 10
 
-echo -e "  ${YELLOW}→${NC} Creating database tables..."
-echo -e "  ${YELLOW}→${NC} Running migrations..."
+echo -e "  ${YELLOW}→${NC} Running database migrations..."
 
 if docker compose version &> /dev/null; then
     docker compose exec -T inbox-app npm run db:push 2>&1 | while read line; do
@@ -200,36 +199,7 @@ else
     done
 fi
 
-echo -e "  ${GREEN}✓${NC} Database tables created"
-echo -e "  ${GREEN}✓${NC} Migrations completed"
-
-echo -e "  ${YELLOW}→${NC} Ensuring session table exists..."
-if docker compose version &> /dev/null; then
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE TABLE IF NOT EXISTS session (sid VARCHAR NOT NULL COLLATE \"default\", sess JSON NOT NULL, expire TIMESTAMP(6) NOT NULL, CONSTRAINT session_pkey PRIMARY KEY (sid));" 2>/dev/null || true
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);" 2>/dev/null || true
-else
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE TABLE IF NOT EXISTS session (sid VARCHAR NOT NULL COLLATE \"default\", sess JSON NOT NULL, expire TIMESTAMP(6) NOT NULL, CONSTRAINT session_pkey PRIMARY KEY (sid));" 2>/dev/null || true
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "CREATE INDEX IF NOT EXISTS IDX_session_expire ON session (expire);" 2>/dev/null || true
-fi
-echo -e "  ${GREEN}✓${NC} Session table ready"
-
-echo -e "  ${YELLOW}→${NC} Cleaning up legacy admin user if exists..."
-if docker compose version &> /dev/null; then
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
-else
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "DELETE FROM users WHERE username='admin';" 2>/dev/null || true
-fi
-echo -e "  ${GREEN}✓${NC} Legacy admin cleanup complete"
-
-echo -e "  ${YELLOW}→${NC} Ensuring template messageType is set..."
-if docker compose version &> /dev/null; then
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET message_type = 'reminder_invoices' WHERE name LIKE 'invoice_reminder%' AND (message_type IS NULL OR message_type = '');" 2>/dev/null || true
-    docker compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "ALTER TABLE api_message_queue ADD COLUMN IF NOT EXISTS template_id VARCHAR REFERENCES message_templates(id);" 2>/dev/null || true
-else
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "UPDATE message_templates SET message_type = 'reminder_invoices' WHERE name LIKE 'invoice_reminder%' AND (message_type IS NULL OR message_type = '');" 2>/dev/null || true
-    docker-compose exec -T postgres psql -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox} -c "ALTER TABLE api_message_queue ADD COLUMN IF NOT EXISTS template_id VARCHAR REFERENCES message_templates(id);" 2>/dev/null || true
-fi
-echo -e "  ${GREEN}✓${NC} Template migrations complete"
+echo -e "  ${GREEN}✓${NC} Database migrations completed"
 
 echo -e "  ${YELLOW}→${NC} Restarting app to seed superadmin..."
 if docker compose version &> /dev/null; then
@@ -343,8 +313,7 @@ echo -e "${GREEN}   Deployment Complete!${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
 echo -e "Summary:"
-echo -e "  ${GREEN}✓${NC} PostgreSQL database running"
-echo -e "  ${GREEN}✓${NC} Database tables created"
+echo -e "  ${GREEN}✓${NC} Database connected"
 echo -e "  ${GREEN}✓${NC} Application running on port $APP_PORT"
 echo -e "  ${GREEN}✓${NC} Nginx reverse proxy configured"
 echo ""
@@ -361,7 +330,6 @@ echo ""
 echo "Useful commands:"
 echo "  View logs:      docker compose logs -f"
 echo "  View app logs:  docker compose logs -f inbox-app"
-echo "  View db logs:   docker compose logs -f postgres"
 echo "  Restart:        docker compose restart"
 echo "  Stop:           docker compose down"
 echo "  Rebuild:        ./deploy.sh"
