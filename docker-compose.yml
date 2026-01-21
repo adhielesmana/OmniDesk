@@ -4,9 +4,9 @@ services:
     container_name: inbox-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-unified_inbox}
-      POSTGRES_USER: ${DB_USER:-inbox_user}
-      POSTGRES_PASSWORD: ${DB_PASS:-OmniDesk2024Secure}
+      POSTGRES_DB: unified_inbox
+      POSTGRES_USER: inbox_user
+      POSTGRES_PASSWORD: OmniDesk2024Secure
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -23,11 +23,11 @@ services:
     container_name: unified-inbox
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-5000}:5000"
+      - "5000:5000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${DB_USER:-inbox_user}:${DB_PASS:-OmniDesk2024Secure}@postgres:5432/${DB_NAME:-unified_inbox}
-      SESSION_SECRET: ${SESSION_SECRET:-omnidesk_session_secret_2024}
+      DATABASE_URL: postgresql://inbox_user:OmniDesk2024Secure@postgres:5432/unified_inbox
+      SESSION_SECRET: omnidesk_session_secret_2024
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ADMIN_USERNAME: adhielesmana
       ADMIN_PASSWORD: admin123
