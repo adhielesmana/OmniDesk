@@ -490,13 +490,68 @@ export class MetaApiService {
   // Fetch user profile info from Meta Graph API
   async getUserProfile(userId: string): Promise<{ name?: string; profilePicture?: string } | null> {
     try {
-      let fields = "name";
+      // For Instagram, we need to look up the user via conversations
+      // Instagram-scoped IDs (IGSIDs) cannot be queried directly like Facebook PSIDs
+      if (this.platform === "instagram") {
+        const instagramAccountId = this.config.businessId || this.config.pageId;
+        if (!instagramAccountId) {
+          console.log("[Instagram] No business ID for profile lookup");
+          return null;
+        }
+        
+        // Use the conversations endpoint to find conversations with this user
+        // and extract participant info
+        const conversationsUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants,updated_time&user_id=${userId}`;
+        
+        const convResponse = await fetch(conversationsUrl, {
+          headers: {
+            Authorization: `Bearer ${this.config.accessToken}`,
+          },
+        });
+        
+        if (convResponse.ok) {
+          const convData = await convResponse.json();
+          if (convData.data && convData.data.length > 0) {
+            const participants = convData.data[0].participants?.data || [];
+            const userParticipant = participants.find((p: any) => p.id === userId);
+            if (userParticipant) {
+              return {
+                name: userParticipant.username || userParticipant.name,
+                profilePicture: userParticipant.profile_pic,
+              };
+            }
+          }
+        } else {
+          const errorText = await convResponse.text();
+          console.log("[Instagram] Conversation lookup response:", errorText);
+        }
+        
+        // Fallback: Try direct user lookup (may not work for all IGSIDs)
+        const directUrl = `${GRAPH_API_BASE}/${userId}?fields=name,username`;
+        const directResponse = await fetch(directUrl, {
+          headers: {
+            Authorization: `Bearer ${this.config.accessToken}`,
+          },
+        });
+        
+        if (directResponse.ok) {
+          const data = await directResponse.json();
+          if (data.name || data.username) {
+            return {
+              name: data.username || data.name,
+              profilePicture: undefined,
+            };
+          }
+        }
+        
+        console.log("[Instagram] Could not fetch profile for user:", userId);
+        return null;
+      }
       
-      // For Messenger/Instagram, we can try to get profile picture
+      // For Facebook Messenger
+      let fields = "name";
       if (this.platform === "facebook") {
         fields = "name,profile_pic";
-      } else if (this.platform === "instagram") {
-        fields = "name,username,profile_picture_url";
       }
 
       const url = `${GRAPH_API_BASE}/${userId}?fields=${fields}`;

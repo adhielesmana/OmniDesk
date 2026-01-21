@@ -2585,25 +2585,45 @@ wa.me/6208991066262`;
           webhookMessage.platform
         );
 
+        // Helper to fetch Meta profile (reused for create and update)
+        const fetchMetaProfile = async () => {
+          if (!["facebook", "instagram"].includes(webhookMessage.platform)) return null;
+          
+          let settings = await storage.getPlatformSetting(webhookMessage.platform);
+          
+          // For Instagram: Use Facebook Page Access Token (Instagram Messaging API requires it)
+          let instagramBusinessId: string | undefined;
+          if (webhookMessage.platform === "instagram") {
+            instagramBusinessId = settings?.businessId || undefined;
+            const fbSettings = await storage.getPlatformSetting("facebook");
+            if (fbSettings?.accessToken && fbSettings.isConnected) {
+              console.log("[Instagram Profile] Using Facebook Page Access Token");
+              settings = {
+                ...fbSettings,
+                businessId: instagramBusinessId || fbSettings.businessId,
+              };
+            }
+          }
+          
+          if (!settings?.accessToken) return null;
+          
+          const metaApi = new MetaApiService(webhookMessage.platform, {
+            accessToken: settings.accessToken,
+            pageId: settings.pageId || undefined,
+            businessId: settings.businessId || undefined,
+          });
+          return await metaApi.getUserProfile(customerId);
+        };
+        
         if (!contact) {
           let name = isEcho ? undefined : webhookMessage.senderName;
           let profilePictureUrl: string | undefined;
           
           // Try to fetch profile info from Meta for Facebook/Instagram
-          if (["facebook", "instagram"].includes(webhookMessage.platform)) {
-            const settings = await storage.getPlatformSetting(webhookMessage.platform);
-            if (settings?.accessToken) {
-              const metaApi = new MetaApiService(webhookMessage.platform, {
-                accessToken: settings.accessToken,
-                pageId: settings.pageId || undefined,
-                businessId: settings.businessId || undefined,
-              });
-              const profile = await metaApi.getUserProfile(customerId);
-              if (profile) {
-                name = profile.name || name;
-                profilePictureUrl = profile.profilePicture;
-              }
-            }
+          const profile = await fetchMetaProfile();
+          if (profile) {
+            name = profile.name || name;
+            profilePictureUrl = profile.profilePicture;
           }
           
           contact = await storage.createContact({
@@ -2612,6 +2632,16 @@ wa.me/6208991066262`;
             name,
             profilePictureUrl,
           });
+        } else if (!contact.name || contact.name === "Unknown" || contact.name.startsWith("Instagram User") || contact.name.startsWith("Facebook User")) {
+          // Try to update contact name if it's unknown
+          const profile = await fetchMetaProfile();
+          if (profile?.name) {
+            console.log(`[Profile Update] Updating contact ${contact.id} name from "${contact.name}" to "${profile.name}"`);
+            contact = await storage.updateContact(contact.id, {
+              name: profile.name,
+              profilePictureUrl: profile.profilePicture || contact.profilePictureUrl,
+            }) || contact;
+          }
         }
 
         // Find or create conversation
