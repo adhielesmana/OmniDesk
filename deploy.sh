@@ -195,9 +195,16 @@ docker network prune -f 2>/dev/null || true
 echo -e "  ${GREEN}✓${NC} Docker cleanup complete"
 
 echo -e "  ${YELLOW}→${NC} Setting up automatic daily cleanup..."
-CRON_JOB="0 3 * * * docker image prune -a --filter 'until=168h' -f && docker builder prune --filter 'until=168h' -f && docker volume prune -f && docker network prune -f"
+CRON_JOB="0 3 * * * docker image prune -a --filter 'until=168h' -f && docker builder prune --filter 'until=168h' -f && docker network prune -f"
 (crontab -l 2>/dev/null | grep -v "docker image prune" ; echo "$CRON_JOB") | crontab - 2>/dev/null || true
 echo -e "  ${GREEN}✓${NC} Daily cleanup scheduled (3 AM)"
+
+echo -e "  ${YELLOW}→${NC} Setting up automatic daily database backup..."
+BACKUP_DIR="/root/OmniDesk/backups"
+mkdir -p "$BACKUP_DIR"
+BACKUP_CRON="0 2 * * * docker exec inbox-postgres pg_dump -U inbox_user unified_inbox > $BACKUP_DIR/omnidesk_\$(date +\\%Y\\%m\\%d).sql && find $BACKUP_DIR -name '*.sql' -mtime +30 -delete"
+(crontab -l 2>/dev/null | grep -v "pg_dump.*inbox_user" ; echo "$BACKUP_CRON") | crontab - 2>/dev/null || true
+echo -e "  ${GREEN}✓${NC} Daily database backup scheduled (2 AM, keeps 30 days)"
 
 # Restore WhatsApp session from backup if the folder is empty or missing
 if [ -d "whatsapp_auth_backup" ] && [ "$(ls -A whatsapp_auth_backup 2>/dev/null)" ]; then
