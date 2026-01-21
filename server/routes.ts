@@ -2081,7 +2081,14 @@ wa.me/6208991066262`;
           businessId: settings.businessId || undefined,
         });
         
-        console.log(`[Meta API] Sending ${conversation.platform} message to recipient: ${conversation.contact.platformId}, pageId: ${settings.pageId}, businessId: ${settings.businessId}, using FB token: ${conversation.platform === "instagram"}`);
+        console.log(`[Meta API] Sending ${conversation.platform} message:`, {
+          recipientId: conversation.contact.platformId,
+          recipientName: conversation.contact.name,
+          pageId: settings.pageId,
+          businessId: settings.businessId,
+          conversationId: conversation.id,
+          usingFBToken: conversation.platform === "instagram"
+        });
         const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
         result = { success: metaResult.success, messageId: metaResult.messageId };
         
