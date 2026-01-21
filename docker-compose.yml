@@ -1,4 +1,25 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: inbox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: unified_inbox
+      POSTGRES_USER: inbox_user
+      POSTGRES_PASSWORD: OmniDesk2024Secure
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - inbox-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U inbox_user -d unified_inbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
   inbox-app:
     build: .
     container_name: unified-inbox
@@ -7,7 +28,7 @@ services:
       - "${APP_PORT:-5000}:5000"
     environment:
       NODE_ENV: production
-      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_URL: postgresql://inbox_user:OmniDesk2024Secure@postgres:5432/unified_inbox
       SESSION_SECRET: ${SESSION_SECRET:-omnidesk_session_secret_2024}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ADMIN_USERNAME: adhielesmana
@@ -16,9 +37,14 @@ services:
     volumes:
       - ./whatsapp_auth:/app/whatsapp_auth
       - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - inbox-network
+
+volumes:
+  postgres_data:
 
 networks:
   inbox-network:
