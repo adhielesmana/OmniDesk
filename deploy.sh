@@ -25,8 +25,20 @@ find_available_port() {
     local max_port=$((port + 100))
     
     while [ $port -lt $max_port ]; do
-        if ! ss -tuln 2>/dev/null | grep -q ":$port " && \
-           ! netstat -tuln 2>/dev/null | grep -q ":$port "; then
+        # Check if port is in use by system
+        local system_in_use=false
+        if ss -tuln 2>/dev/null | grep -q ":$port " || \
+           netstat -tuln 2>/dev/null | grep -q ":$port "; then
+            system_in_use=true
+        fi
+        
+        # Check if port is in use by any Docker container
+        local docker_in_use=false
+        if docker ps --format '{{.Ports}}' 2>/dev/null | grep -q "0.0.0.0:$port\|:::$port"; then
+            docker_in_use=true
+        fi
+        
+        if [ "$system_in_use" = false ] && [ "$docker_in_use" = false ]; then
             echo $port
             return 0
         fi
@@ -174,16 +186,18 @@ echo ""
 echo -e "${BLUE}[5/8] Cleaning up unused Docker resources...${NC}"
 echo -e "  ${YELLOW}→${NC} Removing unused images older than 7 days..."
 docker image prune -a --filter "until=168h" -f 2>/dev/null || true
+echo -e "  ${YELLOW}→${NC} Removing build cache older than 7 days..."
+docker builder prune --filter "until=168h" -f 2>/dev/null || true
 echo -e "  ${YELLOW}→${NC} Removing unused volumes..."
 docker volume prune -f 2>/dev/null || true
 echo -e "  ${YELLOW}→${NC} Removing unused networks..."
 docker network prune -f 2>/dev/null || true
 echo -e "  ${GREEN}✓${NC} Docker cleanup complete"
 
-echo -e "  ${YELLOW}→${NC} Setting up automatic weekly cleanup..."
-CRON_JOB="0 3 * * 0 docker image prune -a --filter 'until=168h' -f && docker volume prune -f && docker network prune -f"
+echo -e "  ${YELLOW}→${NC} Setting up automatic daily cleanup..."
+CRON_JOB="0 3 * * * docker image prune -a --filter 'until=168h' -f && docker builder prune --filter 'until=168h' -f && docker volume prune -f && docker network prune -f"
 (crontab -l 2>/dev/null | grep -v "docker image prune" ; echo "$CRON_JOB") | crontab - 2>/dev/null || true
-echo -e "  ${GREEN}✓${NC} Weekly cleanup scheduled (Sundays 3 AM)"
+echo -e "  ${GREEN}✓${NC} Daily cleanup scheduled (3 AM)"
 
 # Restore WhatsApp session from backup if the folder is empty or missing
 if [ -d "whatsapp_auth_backup" ] && [ "$(ls -A whatsapp_auth_backup 2>/dev/null)" ]; then
