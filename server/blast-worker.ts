@@ -364,12 +364,46 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
             }
           });
         } else {
-          // Default fallback: {{1}}=name, {{2}}=AI message
-          contentVariables["1"] = recipientName;
-          contentVariables["2"] = shortenedMessage;
+          // No mappings defined - extract all placeholders from template content
+          // and apply default logic based on placeholder number
+          const templateText = template!.content || "";
+          const placeholderRegex = /\{\{(\d+)\}\}/g;
+          const placeholders = new Set<string>();
+          let match;
+          while ((match = placeholderRegex.exec(templateText)) !== null) {
+            placeholders.add(match[1]);
+          }
+          
+          // Apply default mappings for each found placeholder
+          placeholders.forEach(placeholder => {
+            switch (placeholder) {
+              case "1":
+                // {{1}} is typically recipient name
+                contentVariables["1"] = recipientName;
+                break;
+              case "2":
+                // {{2}} is typically the main message/AI content
+                contentVariables["2"] = shortenedMessage;
+                break;
+              default:
+                // For other placeholders ({{3}}, {{4}}, etc.), leave empty
+                // These should ideally be configured in variableMappings
+                contentVariables[placeholder] = "";
+                console.log(`Blast: Warning - placeholder {{${placeholder}}} has no mapping, using empty string`);
+                break;
+            }
+          });
+          
+          // Fallback if no placeholders found - at minimum set 1 and 2
+          if (placeholders.size === 0) {
+            contentVariables["1"] = recipientName;
+            contentVariables["2"] = shortenedMessage;
+          }
         }
         
         console.log(`Blast: Sending via Twilio template "${template!.name}" to ${recipientName}`);
+        console.log(`Blast: Content variables being sent:`, JSON.stringify(contentVariables));
+        console.log(`Blast: Template content: "${template!.content?.substring(0, 100)}..."`);
         const twilioResult = await sendWhatsAppTemplate(
           phoneNumber.replace(/\D/g, ""),
           template!.twilioContentSid!,
