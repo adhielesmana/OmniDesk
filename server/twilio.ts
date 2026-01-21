@@ -452,7 +452,7 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     }
   }
   
-  // Create message
+  // Create message (storage.createMessage also updates conversation metadata)
   await storage.createMessage({
     conversationId: conversation.id,
     content: Body || '',
@@ -461,12 +461,6 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     externalId: MessageSid,
     mediaUrl,
     mediaType,
-  });
-  
-  // Update conversation
-  await storage.updateConversation(conversation.id, {
-    lastMessageAt: new Date(),
-    unreadCount: (conversation.unreadCount || 0) + 1,
   });
   
   console.log(`[Twilio] Message saved to conversation ${conversation.id}`);

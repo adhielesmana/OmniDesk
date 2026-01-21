@@ -1251,6 +1251,58 @@ function CampaignDetail({
     return templatesData.find((t) => t.id === campaign.templateId);
   }, [campaign.templateId, templatesData]);
 
+  // Get the effective variable mappings (campaign-level first, then template-level)
+  const effectiveVariableMappings = useMemo(() => {
+    if (campaign.variableMappings) {
+      try {
+        return JSON.parse(campaign.variableMappings as string) as VariableMapping[];
+      } catch {
+        // Fall through
+      }
+    }
+    if (linkedTemplate?.variableMappings) {
+      return linkedTemplate.variableMappings as VariableMapping[];
+    }
+    return undefined;
+  }, [campaign.variableMappings, linkedTemplate?.variableMappings]);
+
+  // Helper function to render full message with template
+  const renderRecipientMessage = useCallback((recipient: BlastRecipient & { contact: { name: string | null; phoneNumber: string | null } }) => {
+    const message = recipient.reviewedMessage || recipient.generatedMessage;
+    if (!message) return "No message generated";
+    
+    // If no template, just return the raw message
+    if (!linkedTemplate?.content) return message;
+    
+    // Replace template variables with actual values
+    let rendered = linkedTemplate.content;
+    const mappings = effectiveVariableMappings || [];
+    
+    mappings.forEach(mapping => {
+      const placeholder = `{{${mapping.placeholder}}}`;
+      let value = "";
+      
+      switch (mapping.type) {
+        case "recipient_name":
+          value = recipient.contact?.name || "Pelanggan";
+          break;
+        case "ai_prompt":
+          value = message;
+          break;
+        case "phone_number":
+          value = recipient.contact?.phoneNumber || "";
+          break;
+        case "custom":
+          value = mapping.customValue || "";
+          break;
+      }
+      
+      rendered = rendered.replace(placeholder, value);
+    });
+    
+    return rendered;
+  }, [linkedTemplate?.content, effectiveVariableMappings]);
+
   const updateTemplateMutation = useMutation({
     mutationFn: async (data: { templateId: string | null; createNewTemplate?: boolean; templateContent?: string; variableMappings?: VariableMapping[] }) => {
       const res = await apiRequest("PATCH", `/api/blast-campaigns/${campaign.id}`, data);
@@ -1814,8 +1866,8 @@ function CampaignDetail({
                     </div>
                     {recipient.generatedMessage && (
                       <div className="mt-3 p-3 bg-muted rounded-md">
-                        <p className="text-sm text-muted-foreground mb-1">Generated Message:</p>
-                        <p className="text-sm whitespace-pre-wrap">{recipient.generatedMessage}</p>
+                        <p className="text-sm text-muted-foreground mb-1">Message:</p>
+                        <p className="text-sm whitespace-pre-wrap">{renderRecipientMessage(recipient)}</p>
                       </div>
                     )}
                     {recipient.errorMessage && (
