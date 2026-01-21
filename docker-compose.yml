@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: OmniDesk2024Secure
       TZ: ${TZ:-Asia/Jakarta}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - omnidesk_postgres_data:/var/lib/postgresql/data
       - /etc/localtime:/etc/localtime:ro
     networks:
       - inbox-network
@@ -44,7 +44,8 @@ services:
       - inbox-network
 
 volumes:
-  postgres_data:
+  omnidesk_postgres_data:
+    external: true
 
 networks:
   inbox-network:
