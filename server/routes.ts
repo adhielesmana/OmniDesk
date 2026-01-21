@@ -997,6 +997,111 @@ export async function registerRoutes(
     }
   });
 
+  // Compare database template with actual Twilio template body
+  app.get("/api/admin/templates/:id/compare-twilio", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const template = await storage.getMessageTemplateById(id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      if (!template.twilioContentSid) {
+        return res.status(400).json({ 
+          error: "Template not synced to Twilio",
+          databaseContent: template.content,
+          twilioContent: null,
+          mismatch: true
+        });
+      }
+      
+      const { getTwilioTemplate } = await import("./twilio");
+      const twilioResult = await getTwilioTemplate(template.twilioContentSid);
+      
+      if (!twilioResult.success) {
+        return res.status(400).json({ error: twilioResult.error });
+      }
+      
+      const databaseContent = template.content || "";
+      const twilioContent = twilioResult.template?.body || "";
+      const mismatch = databaseContent.trim() !== twilioContent.trim();
+      
+      res.json({
+        databaseContent,
+        twilioContent,
+        mismatch,
+        twilioContentSid: template.twilioContentSid,
+        twilioStatus: twilioResult.template?.whatsappStatus,
+        message: mismatch 
+          ? "Template content differs between database and Twilio! You need to resync to Twilio and get approval."
+          : "Template content matches."
+      });
+    } catch (error: any) {
+      console.error("Error comparing templates:", error);
+      res.status(500).json({ error: error.message || "Failed to compare templates" });
+    }
+  });
+
+  // Force recreate a template in Twilio (delete and create new)
+  app.post("/api/admin/templates/:id/force-recreate-twilio", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const template = await storage.getMessageTemplateById(id);
+      
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+      
+      const { deleteTemplateFromTwilio, syncTemplateToTwilio, submitTemplateForApproval } = await import("./twilio");
+      
+      // Step 1: Delete existing Twilio template if exists
+      if (template.twilioContentSid) {
+        console.log(`[Force Recreate] Deleting old Twilio template: ${template.twilioContentSid}`);
+        await deleteTemplateFromTwilio(template.twilioContentSid);
+        
+        // Clear the old contentSid from database
+        await storage.updateMessageTemplate(id, {
+          twilioContentSid: null,
+          twilioApprovalStatus: null,
+          twilioRejectionReason: null,
+        } as any);
+      }
+      
+      // Step 2: Create new template in Twilio
+      const variables = template.variables as string[] || [];
+      const category = (template.metadata as any)?.category || 'MARKETING';
+      
+      console.log(`[Force Recreate] Creating new Twilio template with content: ${template.content?.substring(0, 100)}...`);
+      const createResult = await syncTemplateToTwilio(template.content || "", template.name, variables, template.language || 'id');
+      
+      if (!createResult.success || !createResult.contentSid) {
+        return res.status(400).json({ error: createResult.error || "Failed to create template in Twilio" });
+      }
+      
+      // Step 3: Submit for approval
+      console.log(`[Force Recreate] Submitting for approval: ${createResult.contentSid}`);
+      const approvalResult = await submitTemplateForApproval(createResult.contentSid, category, template.name);
+      
+      // Step 4: Update database with new contentSid
+      await storage.updateMessageTemplate(id, {
+        twilioContentSid: createResult.contentSid,
+        twilioApprovalStatus: approvalResult.status === 'approved' ? 'approved' : 'pending',
+        twilioSyncedAt: new Date(),
+      } as any);
+      
+      res.json({
+        success: true,
+        newContentSid: createResult.contentSid,
+        status: approvalResult.status,
+        message: `Template recreated in Twilio. New ContentSid: ${createResult.contentSid}. Status: ${approvalResult.status}. Please wait for WhatsApp approval.`
+      });
+    } catch (error: any) {
+      console.error("Error force recreating template:", error);
+      res.status(500).json({ error: error.message || "Failed to recreate template" });
+    }
+  });
+
   // Recreate invoice_reminder template with proper numbered variables
   // This fixes templates that were created with [variable_name] instead of {{1}}
   app.post("/api/admin/templates/recreate-invoice-template", requireAdmin, async (req, res) => {
