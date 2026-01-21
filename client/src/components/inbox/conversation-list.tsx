@@ -23,10 +23,11 @@ interface ConversationListProps {
   onPin: (id: string) => void;
   isLoading: boolean;
   selectedPlatform: Platform | "all";
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  totalCount?: number;
 }
-
-const INITIAL_VISIBLE = 30;
-const LOAD_MORE_COUNT = 20;
 
 export function ConversationList({
   conversations,
@@ -36,11 +37,15 @@ export function ConversationList({
   onPin,
   isLoading,
   selectedPlatform,
+  onLoadMore,
+  hasMore = false,
+  isLoadingMore = false,
+  totalCount,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Client-side filtering for platform (search is handled server-side or client-side)
   const filteredConversations = useMemo(() => {
     const query = searchQuery.toLowerCase();
     return conversations.filter((conv) => {
@@ -57,25 +62,15 @@ export function ConversationList({
     });
   }, [conversations, searchQuery, selectedPlatform]);
 
-  const visibleConversations = useMemo(() => {
-    return filteredConversations.slice(0, visibleCount);
-  }, [filteredConversations, visibleCount]);
-
-  const hasMore = filteredConversations.length > visibleCount;
-
-  useEffect(() => {
-    setVisibleCount(INITIAL_VISIBLE);
-  }, [searchQuery, selectedPlatform]);
-
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
-    if (!container || !hasMore) return;
+    if (!container || !hasMore || isLoadingMore) return;
 
     const { scrollTop, scrollHeight, clientHeight } = container;
     if (scrollHeight - scrollTop - clientHeight < 200) {
-      setVisibleCount(prev => Math.min(prev + LOAD_MORE_COUNT, filteredConversations.length));
+      onLoadMore?.();
     }
-  }, [hasMore, filteredConversations.length]);
+  }, [hasMore, isLoadingMore, onLoadMore]);
 
 
   const formatTime = useCallback((date: Date | null | undefined) => {
@@ -125,7 +120,7 @@ export function ConversationList({
         </div>
         <div className="flex items-center justify-between px-1">
           <span className="text-xs text-muted-foreground">
-            {filteredConversations.length} chat{filteredConversations.length !== 1 ? "s" : ""}
+            {totalCount !== undefined ? totalCount : filteredConversations.length} chat{(totalCount ?? filteredConversations.length) !== 1 ? "s" : ""}
           </span>
           <Button variant="ghost" size="sm" className="h-7 px-2" data-testid="button-filter">
             <Filter className="h-3.5 w-3.5" />
@@ -139,7 +134,7 @@ export function ConversationList({
         className="flex-1 overflow-y-auto"
       >
         <div className="p-1.5 space-y-0.5">
-          {visibleConversations.length === 0 ? (
+          {filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
               <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mb-4">
                 <Search className="h-7 w-7 text-muted-foreground" />
@@ -153,7 +148,7 @@ export function ConversationList({
             </div>
           ) : (
             <>
-              {visibleConversations.map((conv) => {
+              {filteredConversations.map((conv) => {
                 const isSelected = conv.id === selectedConversationId;
 
                 return (
@@ -261,17 +256,22 @@ export function ConversationList({
                 );
               })}
               
-              {hasMore && (
+              {(hasMore || isLoadingMore) && (
                 <div className="py-3 text-center">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setVisibleCount(prev => prev + LOAD_MORE_COUNT)}
-                    className="text-muted-foreground"
-                  >
-                    <ChevronDown className="h-4 w-4 mr-1" />
-                    Load more ({filteredConversations.length - visibleCount} remaining)
-                  </Button>
+                  {isLoadingMore ? (
+                    <span className="text-xs text-muted-foreground">Loading more...</span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onLoadMore}
+                      className="text-muted-foreground"
+                      data-testid="button-load-more"
+                    >
+                      <ChevronDown className="h-4 w-4 mr-1" />
+                      Load more
+                    </Button>
+                  )}
                 </div>
               )}
             </>

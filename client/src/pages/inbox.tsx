@@ -85,9 +85,13 @@ function InboxContent({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["/api/conversations"],
+    queryKey: ["/api/conversations", { platform: selectedPlatform }],
     queryFn: async ({ pageParam = 0 }) => {
-      const res = await fetch(`/api/conversations?limit=${CONVERSATIONS_LIMIT}&offset=${pageParam}`, {
+      const params = new URLSearchParams({
+        limit: String(CONVERSATIONS_LIMIT),
+        offset: String(pageParam),
+      });
+      const res = await fetch(`/api/conversations?${params}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch conversations");
@@ -355,6 +359,10 @@ function InboxContent({
                 onPin={(id) => pinMutation.mutate(id)}
                 isLoading={isLoadingConversations}
                 selectedPlatform={selectedPlatform}
+                onLoadMore={handleLoadMore}
+                hasMore={hasNextPage}
+                isLoadingMore={isFetchingNextPage}
+                totalCount={totalConversations}
               />
             </div>
 
@@ -434,6 +442,10 @@ function InboxContent({
               onPin={(id) => pinMutation.mutate(id)}
               isLoading={isLoadingConversations}
               selectedPlatform={selectedPlatform}
+              onLoadMore={handleLoadMore}
+              hasMore={hasNextPage}
+              isLoadingMore={isFetchingNextPage}
+              totalCount={totalConversations}
             />
           </div>
 

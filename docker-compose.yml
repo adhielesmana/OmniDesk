@@ -1,23 +1,22 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
     container_name: inbox-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=${DB_NAME:-unified_inbox}
-      - POSTGRES_USER=${DB_USER:-inbox_user}
-      - POSTGRES_PASSWORD=${DB_PASS}
+      POSTGRES_DB: ${DB_NAME:-unified_inbox}
+      POSTGRES_USER: ${DB_USER:-inbox_user}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required in .env file}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - inbox-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-inbox_user} -d ${DB_NAME:-unified_inbox}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   inbox-app:
     build: .
@@ -26,12 +25,12 @@ services:
     ports:
       - "${APP_PORT:-5000}:5000"
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=postgresql://${DB_USER:-inbox_user}:${DB_PASS}@postgres:5432/${DB_NAME:-unified_inbox}
-      - SESSION_SECRET=${SESSION_SECRET}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-adhielesmana}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-inbox_user}:${DB_PASS}@postgres:5432/${DB_NAME:-unified_inbox}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required in .env file}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-adhielesmana}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required in .env file}
     volumes:
       - ./whatsapp_auth:/app/whatsapp_auth
     depends_on:
