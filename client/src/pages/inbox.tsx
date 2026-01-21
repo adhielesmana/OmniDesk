@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { getCachedConversation, setCachedConversation } from "@/lib/conversationCache";
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar";
@@ -75,11 +75,46 @@ function InboxContent({
     onClose: () => console.log("WebSocket disconnected"),
   });
 
-  const { data: conversations = [], isLoading: isLoadingConversations } = useQuery<
-    ConversationWithContact[]
-  >({
+  // Paginated conversations with infinite scroll
+  const CONVERSATIONS_LIMIT = 30;
+  
+  const {
+    data: conversationsData,
+    isLoading: isLoadingConversations,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["/api/conversations"],
+    queryFn: async ({ pageParam = 0 }) => {
+      const res = await fetch(`/api/conversations?limit=${CONVERSATIONS_LIMIT}&offset=${pageParam}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch conversations");
+      return res.json() as Promise<{ conversations: ConversationWithContact[]; total: number; hasMore: boolean }>;
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      const totalLoaded = allPages.reduce((sum, page) => sum + page.conversations.length, 0);
+      return totalLoaded;
+    },
+    initialPageParam: 0,
   });
+
+  // Flatten paginated data into single array
+  const conversations = useMemo(() => {
+    if (!conversationsData?.pages) return [];
+    return conversationsData.pages.flatMap(page => page.conversations);
+  }, [conversationsData]);
+
+  const totalConversations = conversationsData?.pages[0]?.total ?? 0;
+
+  // Handle load more from conversation list
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Get cached conversation for instant loading
   const cachedConversation = selectedConversationId 

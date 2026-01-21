@@ -1990,7 +1990,9 @@ wa.me/6208991066262`;
       let departmentFilter: string[] | undefined;
       
       const userRole = req.session.user?.role;
-      console.log(`Fetching conversations for user ${req.session.userId} with role ${userRole}`);
+      const limit = parseInt(req.query.limit as string) || 30;
+      const offset = parseInt(req.query.offset as string) || 0;
+      const search = req.query.search as string | undefined;
 
       // Superadmin and admin can see all conversations, regular users only see their department's
       if (userRole !== "superadmin" && userRole !== "admin") {
@@ -1998,14 +2000,11 @@ wa.me/6208991066262`;
         if (userDepartmentIds !== "all") {
           departmentFilter = userDepartmentIds;
         }
-        console.log(`User ${req.session.userId} has departments: ${JSON.stringify(departmentFilter)}`);
-      } else {
-        console.log(`User ${req.session.userId} is ${userRole}, showing all conversations`);
       }
 
-      const conversations = await storage.getConversations(departmentFilter);
-      console.log(`Returning ${conversations.length} conversations`);
-      res.json(conversations);
+      const result = await storage.getConversations(departmentFilter, { limit, offset, search });
+      console.log(`Returning ${result.conversations.length} of ${result.total} conversations (offset: ${offset})`);
+      res.json(result);
     } catch (error) {
       console.error("Error fetching conversations:", error);
       res.status(500).json({ error: "Failed to fetch conversations" });

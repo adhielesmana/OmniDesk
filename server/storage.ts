@@ -129,7 +129,7 @@ export interface IStorage {
   getAllTags(): Promise<string[]>;
 
   // Conversations
-  getConversations(departmentIds?: string[]): Promise<ConversationWithContact[]>;
+  getConversations(departmentIds?: string[], options?: { limit?: number; offset?: number; search?: string }): Promise<{ conversations: ConversationWithContact[]; total: number; hasMore: boolean }>;
   getConversation(id: string): Promise<ConversationWithMessages | undefined>;
   getConversationByContactId(contactId: string): Promise<Conversation | undefined>;
   getConversationsByContactId(contactId: string): Promise<Conversation[]>;
@@ -685,12 +685,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Conversations
-  async getConversations(departmentIds?: string[]): Promise<ConversationWithContact[]> {
+  async getConversations(departmentIds?: string[], options?: { limit?: number; offset?: number; search?: string }): Promise<{ conversations: ConversationWithContact[]; total: number; hasMore: boolean }> {
+    const limit = options?.limit ?? 30;
+    const offset = options?.offset ?? 0;
+    const search = options?.search?.toLowerCase();
+
     let whereClause = eq(conversations.isArchived, false);
 
     if (departmentIds !== undefined) {
-      // If user has departments assigned, show their department's conversations + unassigned ones
-      // If user has NO departments assigned, only show unassigned conversations (NULL department)
       if (departmentIds.length === 0) {
         whereClause = and(
           eq(conversations.isArchived, false),
@@ -707,17 +709,44 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    // Add search filter if provided
+    if (search) {
+      const searchCondition = or(
+        sql`LOWER(${contacts.name}) LIKE ${'%' + search + '%'}`,
+        sql`${contacts.phoneNumber} LIKE ${'%' + search + '%'}`,
+        sql`LOWER(${conversations.lastMessagePreview}) LIKE ${'%' + search + '%'}`
+      );
+      whereClause = and(whereClause, searchCondition)!;
+    }
+
+    // Get total count
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(conversations)
+      .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+      .where(whereClause);
+    const total = Number(countResult?.count || 0);
+
+    // Get paginated results
     const result = await db
       .select()
       .from(conversations)
       .leftJoin(contacts, eq(conversations.contactId, contacts.id))
       .where(whereClause)
-      .orderBy(desc(conversations.lastMessageAt));
+      .orderBy(desc(conversations.lastMessageAt))
+      .limit(limit)
+      .offset(offset);
 
-    return result.map((row) => ({
+    const conversationsData = result.map((row) => ({
       ...row.conversations,
       contact: row.contacts!,
     }));
+
+    return {
+      conversations: conversationsData,
+      total,
+      hasMore: offset + conversationsData.length < total,
+    };
   }
 
   async getConversation(id: string, messageLimit: number = 20): Promise<ConversationWithMessages | undefined> {
