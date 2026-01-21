@@ -155,7 +155,7 @@ fi
 APP_PORT=$AVAILABLE_PORT
 
 echo ""
-echo -e "${BLUE}[4/7] Building and starting containers...${NC}"
+echo -e "${BLUE}[4/8] Building and starting containers...${NC}"
 echo -e "  ${YELLOW}→${NC} Building application image (no cache)..."
 
 if docker compose version &> /dev/null; then
@@ -170,6 +170,21 @@ fi
 
 echo -e "  ${GREEN}✓${NC} Application container started"
 
+echo ""
+echo -e "${BLUE}[5/8] Cleaning up unused Docker resources...${NC}"
+echo -e "  ${YELLOW}→${NC} Removing unused images older than 7 days..."
+docker image prune -a --filter "until=168h" -f 2>/dev/null || true
+echo -e "  ${YELLOW}→${NC} Removing unused volumes..."
+docker volume prune -f 2>/dev/null || true
+echo -e "  ${YELLOW}→${NC} Removing unused networks..."
+docker network prune -f 2>/dev/null || true
+echo -e "  ${GREEN}✓${NC} Docker cleanup complete"
+
+echo -e "  ${YELLOW}→${NC} Setting up automatic weekly cleanup..."
+CRON_JOB="0 3 * * 0 docker image prune -a --filter 'until=168h' -f && docker volume prune -f && docker network prune -f"
+(crontab -l 2>/dev/null | grep -v "docker image prune" ; echo "$CRON_JOB") | crontab - 2>/dev/null || true
+echo -e "  ${GREEN}✓${NC} Weekly cleanup scheduled (Sundays 3 AM)"
+
 # Restore WhatsApp session from backup if the folder is empty or missing
 if [ -d "whatsapp_auth_backup" ] && [ "$(ls -A whatsapp_auth_backup 2>/dev/null)" ]; then
     if [ ! -d "whatsapp_auth" ] || [ -z "$(ls -A whatsapp_auth 2>/dev/null)" ]; then
@@ -183,7 +198,7 @@ if [ -d "whatsapp_auth_backup" ] && [ "$(ls -A whatsapp_auth_backup 2>/dev/null)
 fi
 
 echo ""
-echo -e "${BLUE}[5/7] Running database setup...${NC}"
+echo -e "${BLUE}[6/8] Running database setup...${NC}"
 echo -e "  ${YELLOW}→${NC} Waiting for application to be ready..."
 sleep 10
 
@@ -211,7 +226,7 @@ sleep 5
 echo -e "  ${GREEN}✓${NC} Superadmin seeded"
 
 echo ""
-echo -e "${BLUE}[6/7] Configuring Nginx...${NC}"
+echo -e "${BLUE}[7/8] Configuring Nginx...${NC}"
 
 NGINX_CONF="/etc/nginx/sites-available/$DOMAIN"
 NGINX_ENABLED="/etc/nginx/sites-enabled/$DOMAIN"
@@ -259,7 +274,7 @@ EOF
 fi
 
 echo ""
-echo -e "${BLUE}[7/7] Setting up SSL...${NC}"
+echo -e "${BLUE}[8/8] Setting up SSL...${NC}"
 
 if [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     echo -e "  ${GREEN}✓${NC} SSL certificate already configured (skipped)"

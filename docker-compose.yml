@@ -12,8 +12,11 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ADMIN_USERNAME: adhielesmana
       ADMIN_PASSWORD: admin123
+      TZ: ${TZ:-Asia/Jakarta}
     volumes:
       - ./whatsapp_auth:/app/whatsapp_auth
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
     networks:
       - inbox-network
 
