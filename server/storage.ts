@@ -233,6 +233,15 @@ export interface IStorage {
   
   // Blast Campaigns by Template
   getBlastCampaignsByTemplateId(templateId: string): Promise<BlastCampaign[]>;
+
+  // Database Export/Import helpers
+  getAllMessages(): Promise<Message[]>;
+  getAllConversations(): Promise<Conversation[]>;
+  getAllPlatformSettings(): Promise<PlatformSettings[]>;
+  getAllApiClients(): Promise<ApiClient[]>;
+  clearAllContacts(): Promise<void>;
+  clearAllQuickReplies(): Promise<void>;
+  clearAllMessageTemplates(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1783,6 +1792,35 @@ export class DatabaseStorage implements IStorage {
 
   async getBlastCampaignsByTemplateId(templateId: string): Promise<BlastCampaign[]> {
     return await db.select().from(blastCampaigns).where(eq(blastCampaigns.templateId, templateId));
+  }
+
+  // Database Export/Import helpers
+  async getAllMessages(): Promise<Message[]> {
+    return await db.select().from(messages).orderBy(desc(messages.timestamp));
+  }
+
+  async getAllConversations(): Promise<Conversation[]> {
+    return await db.select().from(conversations).orderBy(desc(conversations.lastMessageAt));
+  }
+
+  async getAllPlatformSettings(): Promise<PlatformSettings[]> {
+    return await db.select().from(platformSettings);
+  }
+
+  async getAllApiClients(): Promise<ApiClient[]> {
+    return await db.select().from(apiClients);
+  }
+
+  async clearAllContacts(): Promise<void> {
+    await db.delete(contacts);
+  }
+
+  async clearAllQuickReplies(): Promise<void> {
+    await db.delete(quickReplies);
+  }
+
+  async clearAllMessageTemplates(): Promise<void> {
+    await db.delete(messageTemplates);
   }
 }
 

@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, ExternalLink, Copy } from "lucide-react";
+import { Plus, Pencil, Trash2, Users, Building2, Loader2, Shield, ShieldCheck, User, Download, RefreshCw, CheckCircle2, AlertCircle, ImageIcon, Upload, X, MessageSquare, Link2, Unlink, ExternalLink, Copy, Database, FileDown, FileUp } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
@@ -83,6 +83,10 @@ export default function AdminPage() {
               <Link2 className="h-4 w-4 mr-2" />
               Short URLs
             </TabsTrigger>
+            <TabsTrigger value="database" data-testid="tab-database">
+              <Database className="h-4 w-4 mr-2" />
+              Database
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="users" className="space-y-4">
@@ -118,6 +122,10 @@ export default function AdminPage() {
 
           <TabsContent value="shortened-urls" className="space-y-4">
             <ShortenedUrlsTab toast={toast} />
+          </TabsContent>
+
+          <TabsContent value="database" className="space-y-4">
+            <DatabaseTab toast={toast} />
           </TabsContent>
         </Tabs>
       </div>
@@ -1850,6 +1858,197 @@ function ShortenedUrlsTab({ toast }: { toast: ReturnType<typeof useToast>["toast
               </div>
             </ScrollArea>
           )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function DatabaseTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [clearExisting, setClearExisting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch("/api/admin/database/export", {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        throw new Error("Export failed");
+      }
+      
+      const data = await response.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `omnidesk-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Export successful",
+        description: "Database has been exported to a JSON file",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description: "Could not export database",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) {
+      toast({
+        title: "No file selected",
+        description: "Please select a backup file to import",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const fileContent = await importFile.text();
+      const importData = JSON.parse(fileContent);
+      
+      const response = await fetch("/api/admin/database/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          data: importData.data,
+          options: { clearExisting },
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Import failed");
+      }
+      
+      const result = await response.json();
+      
+      toast({
+        title: "Import successful",
+        description: `Imported: ${Object.entries(result.imported || {}).map(([k, v]) => `${v} ${k}`).join(", ")}`,
+      });
+      
+      setImportFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (error) {
+      toast({
+        title: "Import failed",
+        description: error instanceof Error ? error.message : "Could not import database",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileDown className="h-5 w-5" />
+            Export Database
+          </CardTitle>
+          <CardDescription>
+            Download a complete backup of your database including contacts, templates, settings, and API clients.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button 
+            onClick={handleExport} 
+            disabled={isExporting}
+            data-testid="button-export-database"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Exporting...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4 mr-2" />
+                Export Database
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileUp className="h-5 w-5" />
+            Import Database
+          </CardTitle>
+          <CardDescription>
+            Restore data from a previously exported backup file. Use this to transfer data from development to production.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="import-file">Select Backup File</Label>
+            <Input
+              ref={fileInputRef}
+              id="import-file"
+              type="file"
+              accept=".json"
+              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              data-testid="input-import-file"
+            />
+            {importFile && (
+              <p className="text-sm text-muted-foreground">
+                Selected: {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <Switch
+              id="clear-existing"
+              checked={clearExisting}
+              onCheckedChange={setClearExisting}
+              data-testid="switch-clear-existing"
+            />
+            <Label htmlFor="clear-existing" className="text-sm">
+              Clear existing data before import (contacts, templates, quick replies)
+            </Label>
+          </div>
+
+          <Button 
+            onClick={handleImport} 
+            disabled={isImporting || !importFile}
+            data-testid="button-import-database"
+          >
+            {isImporting ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Importing...
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Database
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
     </div>

@@ -701,6 +701,175 @@ export async function registerRoutes(
     }
   });
 
+  // ============= DATABASE EXPORT/IMPORT =============
+  app.get("/api/admin/database/export", requireAdmin, async (req, res) => {
+    try {
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        version: "1.0",
+        data: {
+          contacts: await storage.getAllContacts(),
+          conversations: await storage.getAllConversations(),
+          messages: await storage.getAllMessages(),
+          quickReplies: await storage.getQuickReplies(),
+          messageTemplates: await storage.getAllMessageTemplates(),
+          departments: await storage.getAllDepartments(),
+          platformSettings: await storage.getAllPlatformSettings(),
+          apiClients: await storage.getAllApiClients(),
+        }
+      };
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename=omnidesk-backup-${new Date().toISOString().split('T')[0]}.json`);
+      res.json(exportData);
+    } catch (error) {
+      console.error("Error exporting database:", error);
+      res.status(500).json({ error: "Failed to export database" });
+    }
+  });
+
+  app.post("/api/admin/database/import", requireAdmin, async (req, res) => {
+    try {
+      const { data, options } = req.body;
+      
+      if (!data) {
+        return res.status(400).json({ error: "No data provided" });
+      }
+
+      const results: Record<string, number> = {};
+      const clearExisting = options?.clearExisting ?? false;
+
+      // Import contacts
+      if (data.contacts && Array.isArray(data.contacts)) {
+        if (clearExisting) {
+          await storage.clearAllContacts();
+        }
+        for (const contact of data.contacts) {
+          try {
+            await storage.createContact({
+              name: contact.name,
+              phoneNumber: contact.phoneNumber,
+              email: contact.email,
+              platform: contact.platform,
+              platformId: contact.platformId,
+              notes: contact.notes,
+            });
+          } catch (e) {
+            // Skip duplicates
+          }
+        }
+        results.contacts = data.contacts.length;
+      }
+
+      // Import quick replies
+      if (data.quickReplies && Array.isArray(data.quickReplies)) {
+        if (clearExisting) {
+          await storage.clearAllQuickReplies();
+        }
+        for (const qr of data.quickReplies) {
+          try {
+            await storage.createQuickReply({
+              title: qr.title,
+              content: qr.content,
+              platform: qr.platform,
+            });
+          } catch (e) {
+            // Skip duplicates
+          }
+        }
+        results.quickReplies = data.quickReplies.length;
+      }
+
+      // Import message templates
+      if (data.messageTemplates && Array.isArray(data.messageTemplates)) {
+        if (clearExisting) {
+          await storage.clearAllMessageTemplates();
+        }
+        for (const template of data.messageTemplates) {
+          try {
+            await storage.createMessageTemplate({
+              name: template.name,
+              description: template.description,
+              content: template.content,
+              variables: template.variables,
+              category: template.category,
+              messageType: template.messageType,
+            });
+          } catch (e) {
+            // Skip duplicates
+          }
+        }
+        results.messageTemplates = data.messageTemplates.length;
+      }
+
+      // Import departments
+      if (data.departments && Array.isArray(data.departments)) {
+        const existingDepts = await storage.getAllDepartments();
+        const existingNames = new Set(existingDepts.map(d => d.name));
+        for (const dept of data.departments) {
+          try {
+            if (!existingNames.has(dept.name)) {
+              await storage.createDepartment({
+                name: dept.name,
+                description: dept.description,
+              });
+            }
+          } catch (e) {
+            // Skip errors
+          }
+        }
+        results.departments = data.departments.length;
+      }
+
+      // Import platform settings
+      if (data.platformSettings && Array.isArray(data.platformSettings)) {
+        for (const setting of data.platformSettings) {
+          try {
+            await storage.upsertPlatformSettings(setting.platform, {
+              apiKey: setting.apiKey,
+              apiSecret: setting.apiSecret,
+              accessToken: setting.accessToken,
+              pageId: setting.pageId,
+              webhookVerifyToken: setting.webhookVerifyToken,
+            });
+          } catch (e) {
+            // Skip errors
+          }
+        }
+        results.platformSettings = data.platformSettings.length;
+      }
+
+      // Import API clients
+      if (data.apiClients && Array.isArray(data.apiClients)) {
+        for (const client of data.apiClients) {
+          try {
+            await storage.createApiClient({
+              name: client.name,
+              clientId: client.clientId,
+              secretHash: client.secretHash,
+              isActive: client.isActive,
+              rateLimit: client.rateLimit,
+              dailyQuota: client.dailyQuota,
+              description: client.description,
+            });
+          } catch (e) {
+            // Skip duplicates
+          }
+        }
+        results.apiClients = data.apiClients.length;
+      }
+
+      res.json({ 
+        success: true, 
+        message: "Database imported successfully",
+        imported: results 
+      });
+    } catch (error) {
+      console.error("Error importing database:", error);
+      res.status(500).json({ error: "Failed to import database" });
+    }
+  });
+
   // ============= MESSAGE TEMPLATES MANAGEMENT =============
   app.get("/api/admin/templates", requireAdmin, async (req, res) => {
     try {
