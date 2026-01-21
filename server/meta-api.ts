@@ -738,14 +738,19 @@ export class MetaApiService {
         content = "[Unsupported message type]";
       }
 
+      // Handle echo messages (sent by page/bot)
+      const isEcho = message.is_echo === true;
+
       return {
         platform: "instagram",
         senderId: messaging.sender.id,
+        recipientId: messaging.recipient?.id,
         content,
         mediaUrl,
         mediaType,
         timestamp: new Date(messaging.timestamp),
         externalId: message.mid,
+        isEcho,
       };
     } catch (error) {
       console.error("Error parsing Instagram webhook:", error);

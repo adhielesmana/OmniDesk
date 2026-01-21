@@ -2580,8 +2580,17 @@ wa.me/6208991066262`;
         const isEcho = webhookMessage.isEcho === true;
         const customerId = isEcho ? webhookMessage.recipientId : webhookMessage.senderId;
         
+        console.log(`[Webhook ${webhookMessage.platform}] Received message:`, {
+          isEcho,
+          senderId: webhookMessage.senderId,
+          recipientId: webhookMessage.recipientId,
+          customerId,
+          content: webhookMessage.content?.substring(0, 50),
+          externalId: webhookMessage.externalId
+        });
+        
         if (!customerId) {
-          console.log("No customer ID found in webhook message, skipping");
+          console.log("[Webhook] No customer ID found in webhook message, skipping");
           res.sendStatus(200);
           return;
         }
@@ -2591,6 +2600,8 @@ wa.me/6208991066262`;
           customerId,
           webhookMessage.platform
         );
+        
+        console.log(`[Webhook ${webhookMessage.platform}] Contact lookup for ${customerId}:`, contact ? `Found: ${contact.name} (${contact.id})` : "Not found");
 
         // Helper to fetch Meta profile (reused for create and update)
         const fetchMetaProfile = async () => {
