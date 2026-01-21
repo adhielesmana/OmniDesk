@@ -303,7 +303,7 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
     const baseUrl = process.env.REPLIT_DEV_DOMAIN 
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : process.env.APP_URL || "https://omnidesk.maxnetplus.id";
-    const shortenedMessage = await shortenUrlsInText(messageToSend, baseUrl);
+    let shortenedMessage = await shortenUrlsInText(messageToSend, baseUrl);
 
     let sendResult: { success: boolean; messageId?: string; rateLimited?: boolean; waitMs?: number; error?: string };
 
@@ -404,6 +404,19 @@ async function sendApprovedMessage(recipient: BlastRecipient & { contact: Contac
         console.log(`Blast: Sending via Twilio template "${template!.name}" to ${recipientName}`);
         console.log(`Blast: Content variables being sent:`, JSON.stringify(contentVariables));
         console.log(`Blast: Template content: "${template!.content?.substring(0, 100)}..."`);
+        
+        // Reconstruct the full message from template for storage/display
+        // Replace {{1}}, {{2}}, {{3}} etc. with actual values
+        let fullRenderedMessage = template!.content || "";
+        Object.entries(contentVariables).forEach(([placeholder, value]) => {
+          const regex = new RegExp(`\\{\\{${placeholder}\\}\\}`, 'g');
+          fullRenderedMessage = fullRenderedMessage.replace(regex, value);
+        });
+        
+        // Override shortenedMessage with full rendered message for storage
+        shortenedMessage = fullRenderedMessage;
+        console.log(`Blast: Full rendered message for storage: "${fullRenderedMessage.substring(0, 100)}..."`);
+        
         const twilioResult = await sendWhatsAppTemplate(
           phoneNumber.replace(/\D/g, ""),
           template!.twilioContentSid!,
