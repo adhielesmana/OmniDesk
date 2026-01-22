@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { SiInstagram } from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -1870,6 +1871,10 @@ function DatabaseTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
   const [importFile, setImportFile] = useState<File | null>(null);
   const [clearExisting, setClearExisting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [isImportingInstagram, setIsImportingInstagram] = useState(false);
+  const [instagramFile, setInstagramFile] = useState<File | null>(null);
+  const instagramFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -2046,6 +2051,97 @@ function DatabaseTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
               <>
                 <Upload className="h-4 w-4 mr-2" />
                 Import Database
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <SiInstagram className="h-5 w-5 text-[#E4405F]" />
+            Import Instagram Messages
+          </CardTitle>
+          <CardDescription>
+            Upload your Instagram data export ZIP file to import historical messages into OmniDesk.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="instagram-file">Select Instagram Export ZIP</Label>
+            <Input
+              ref={instagramFileInputRef}
+              id="instagram-file"
+              type="file"
+              accept=".zip"
+              onChange={(e) => setInstagramFile(e.target.files?.[0] || null)}
+              data-testid="input-instagram-file"
+            />
+            {instagramFile && (
+              <p className="text-sm text-muted-foreground">
+                Selected: {instagramFile.name} ({(instagramFile.size / (1024 * 1024)).toFixed(2)} MB)
+              </p>
+            )}
+          </div>
+
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>The ZIP file should contain message JSON files from Instagram&apos;s data export.</p>
+            <p>Messages will be imported into Instagram conversations with contacts auto-created.</p>
+          </div>
+
+          <Button 
+            onClick={async () => {
+              if (!instagramFile) return;
+              setIsImportingInstagram(true);
+              try {
+                const formData = new FormData();
+                formData.append("file", instagramFile);
+                
+                const response = await fetch("/api/admin/import-instagram", {
+                  method: "POST",
+                  credentials: "include",
+                  body: formData,
+                });
+                
+                if (!response.ok) {
+                  const err = await response.json();
+                  throw new Error(err.error || "Import failed");
+                }
+                
+                const result = await response.json();
+                
+                toast({
+                  title: "Instagram import successful",
+                  description: `Imported ${result.imported?.messages || 0} messages from ${result.imported?.conversations || 0} conversations`,
+                });
+                
+                setInstagramFile(null);
+                if (instagramFileInputRef.current) {
+                  instagramFileInputRef.current.value = "";
+                }
+              } catch (error) {
+                toast({
+                  title: "Import failed",
+                  description: error instanceof Error ? error.message : "Could not import Instagram messages",
+                  variant: "destructive",
+                });
+              } finally {
+                setIsImportingInstagram(false);
+              }
+            }} 
+            disabled={isImportingInstagram || !instagramFile}
+            data-testid="button-import-instagram"
+          >
+            {isImportingInstagram ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Importing Instagram...
+              </>
+            ) : (
+              <>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Instagram Messages
               </>
             )}
           </Button>

@@ -6,6 +6,7 @@ import fs from "fs";
 import { z } from "zod";
 import multer from "multer";
 import Papa from "papaparse";
+import AdmZip from "adm-zip";
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
 import { storage } from "./storage";
@@ -22,6 +23,7 @@ import type { Contact } from "@shared/schema";
 const execAsync = promisify(exec);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const uploadLarge = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB for ZIP files
 
 function normalizeWhatsAppJid(jid: string): string {
   return jid
@@ -877,6 +879,178 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error importing database:", error);
       res.status(500).json({ error: "Failed to import database" });
+    }
+  });
+
+  // ============= INSTAGRAM MESSAGE IMPORT =============
+  app.post("/api/admin/import-instagram", requireAdmin, uploadLarge.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const zip = new AdmZip(req.file.buffer);
+      const zipEntries = zip.getEntries();
+      
+      // Find message JSON files in the ZIP
+      // Instagram exports messages in your_instagram_activity/messages/inbox/[conversation_name]/message_1.json
+      const messageFiles: { name: string; content: any }[] = [];
+      
+      for (const entry of zipEntries) {
+        const entryName = entry.entryName.toLowerCase();
+        if (entryName.includes("message") && entryName.endsWith(".json") && !entry.isDirectory) {
+          try {
+            const content = entry.getData().toString("utf8");
+            // Fix Instagram's weird encoding for non-ASCII characters
+            const fixedContent = content.replace(/\\u00([0-9a-fA-F]{2})/g, (match, hex) => {
+              return String.fromCharCode(parseInt(hex, 16));
+            });
+            const parsed = JSON.parse(fixedContent);
+            messageFiles.push({ name: entry.entryName, content: parsed });
+          } catch (e) {
+            console.log(`Failed to parse ${entry.entryName}:`, e);
+          }
+        }
+      }
+
+      if (messageFiles.length === 0) {
+        return res.status(400).json({ error: "No message JSON files found in the ZIP" });
+      }
+
+      let totalConversations = 0;
+      let totalMessages = 0;
+      let totalContacts = 0;
+
+      // Get platform settings for Instagram
+      const instagramSettings = await storage.getPlatformSettings("instagram");
+      const myUsername = instagramSettings?.pageId || "maxnetplus"; // Default or from settings
+
+      for (const file of messageFiles) {
+        const data = file.content;
+        
+        // Instagram export format has participants array and messages array
+        const participants = data.participants || [];
+        const messages = data.messages || [];
+        
+        if (participants.length === 0 || messages.length === 0) continue;
+
+        // Find the other participant (not us)
+        const otherParticipant = participants.find((p: any) => 
+          p.name?.toLowerCase() !== myUsername.toLowerCase()
+        ) || participants[0];
+
+        const participantName = otherParticipant?.name || "Unknown";
+        
+        // Extract conversation folder name as platform ID
+        const folderMatch = file.name.match(/inbox\/([^\/]+)\//i);
+        const platformId = folderMatch ? folderMatch[1] : participantName.replace(/\s+/g, "_").toLowerCase();
+
+        // Create or find contact
+        let contact = await storage.getContactByPlatformId("instagram", platformId);
+        if (!contact) {
+          contact = await storage.createContact({
+            name: participantName,
+            platform: "instagram",
+            platformId: platformId,
+          });
+          totalContacts++;
+        }
+
+        // Create or find conversation
+        let conversation = await storage.getConversationByContactId(contact.id);
+        if (!conversation) {
+          conversation = await storage.createConversation({
+            contactId: contact.id,
+            platform: "instagram",
+            platformConversationId: platformId,
+            status: "open",
+          });
+          totalConversations++;
+        }
+
+        // Import messages (Instagram exports in reverse chronological order)
+        const sortedMessages = [...messages].sort((a: any, b: any) => {
+          return (a.timestamp_ms || 0) - (b.timestamp_ms || 0);
+        });
+
+        for (const msg of sortedMessages) {
+          const senderName = msg.sender_name || "";
+          const isFromContact = senderName.toLowerCase() !== myUsername.toLowerCase();
+          const direction = isFromContact ? "inbound" : "outbound";
+          
+          // Get message content
+          let content = msg.content || "";
+          
+          // Fix Instagram's Latin-1 encoded UTF-8 issue
+          if (content) {
+            try {
+              // Instagram encodes UTF-8 as Latin-1, need to decode
+              content = decodeURIComponent(escape(content));
+            } catch (e) {
+              // Keep original if decoding fails
+            }
+          }
+          
+          // Handle different message types
+          if (msg.photos && msg.photos.length > 0) {
+            content = content || "[Photo]";
+          }
+          if (msg.videos && msg.videos.length > 0) {
+            content = content || "[Video]";
+          }
+          if (msg.audio_files && msg.audio_files.length > 0) {
+            content = content || "[Audio]";
+          }
+          if (msg.share && msg.share.link) {
+            content = content || `[Shared: ${msg.share.link}]`;
+          }
+          if (msg.sticker) {
+            content = content || "[Sticker]";
+          }
+          if (!content) {
+            content = "[Media/Attachment]";
+          }
+
+          const timestamp = msg.timestamp_ms ? new Date(msg.timestamp_ms) : new Date();
+          
+          // Check if message already exists (by timestamp and content)
+          const existingMessages = await storage.getMessages(conversation.id);
+          const isDuplicate = existingMessages.some(m => 
+            Math.abs(new Date(m.timestamp).getTime() - timestamp.getTime()) < 1000 &&
+            m.content === content
+          );
+          
+          if (!isDuplicate) {
+            await storage.createMessage({
+              conversationId: conversation.id,
+              content: content,
+              direction: direction,
+              status: "delivered",
+              platform: "instagram",
+              platformMessageId: `ig_import_${timestamp.getTime()}_${Math.random().toString(36).substr(2, 9)}`,
+              timestamp: timestamp,
+            });
+            totalMessages++;
+          }
+        }
+      }
+
+      // Broadcast update
+      broadcast({ type: "conversations_updated" });
+
+      res.json({
+        success: true,
+        message: "Instagram messages imported successfully",
+        imported: {
+          conversations: totalConversations,
+          messages: totalMessages,
+          contacts: totalContacts,
+          files: messageFiles.length,
+        },
+      });
+    } catch (error) {
+      console.error("Error importing Instagram messages:", error);
+      res.status(500).json({ error: "Failed to import Instagram messages: " + (error instanceof Error ? error.message : "Unknown error") });
     }
   });
 
