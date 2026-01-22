@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { SidebarProvider, SidebarTrigger, SidebarInset } from "@/components/ui/sidebar";
 import { ContactsSidebar } from "@/components/contacts/contacts-sidebar";
@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Platform, Contact } from "@shared/schema";
+
+const CONTACTS_PER_PAGE = 50;
 
 export default function ContactsPage() {
   const { toast } = useToast();
@@ -26,9 +28,16 @@ export default function ContactsPage() {
   const [isMobileListOpen, setIsMobileListOpen] = useState(true);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  const { data: contactsData, isLoading: isLoadingContacts } = useQuery<{
+  const {
+    data: contactsData,
+    isLoading: isLoadingContacts,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<{
     contacts: Contact[];
     total: number;
+    hasMore: boolean;
   }>({
     queryKey: [
       "/api/contacts",
@@ -40,7 +49,7 @@ export default function ContactsPage() {
         tag: selectedTag || undefined,
       },
     ],
-    queryFn: async () => {
+    queryFn: async ({ pageParam = 0 }) => {
       const params = new URLSearchParams();
       if (searchQuery) params.set("search", searchQuery);
       if (selectedPlatform !== "all") params.set("platform", selectedPlatform);
@@ -49,11 +58,23 @@ export default function ContactsPage() {
       if (selectedTag) params.set("tag", selectedTag);
       params.set("sortBy", "name");
       params.set("sortOrder", "asc");
+      params.set("limit", String(CONTACTS_PER_PAGE));
+      params.set("offset", String(pageParam));
       
       const res = await fetch(`/api/contacts?${params.toString()}`);
       if (!res.ok) throw new Error("Failed to fetch contacts");
-      return res.json();
+      const result = await res.json();
+      return {
+        contacts: result.contacts,
+        total: result.total,
+        hasMore: (pageParam as number) + CONTACTS_PER_PAGE < result.total,
+      };
     },
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      return allPages.length * CONTACTS_PER_PAGE;
+    },
+    initialPageParam: 0,
   });
 
   const { data: selectedContact, isLoading: isLoadingContact } = useQuery<Contact>({
@@ -172,8 +193,14 @@ export default function ContactsPage() {
     setIsMobileListOpen(true);
   };
 
-  const contacts = contactsData?.contacts || [];
-  const totalContacts = contactsData?.total || 0;
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const contacts = contactsData?.pages.flatMap(page => page.contacts) || [];
+  const totalContacts = contactsData?.pages[0]?.total || 0;
 
   const platformCounts: Record<Platform | "all", number> = {
     all: totalContacts,
@@ -236,6 +263,9 @@ export default function ContactsPage() {
                 searchQuery={searchQuery}
                 onSearchChange={setSearchQuery}
                 onToggleFavorite={(id: string) => toggleFavoriteMutation.mutate(id)}
+                onLoadMore={handleLoadMore}
+                hasMore={hasNextPage || false}
+                isLoadingMore={isFetchingNextPage}
               />
             </div>
 

@@ -1,4 +1,5 @@
-import { Search, Star } from "lucide-react";
+import { useRef, useCallback } from "react";
+import { Search, Star, Loader2 } from "lucide-react";
 import { SiWhatsapp, SiFacebook, SiInstagram } from "react-icons/si";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,9 @@ interface ContactListProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
   onToggleFavorite: (contactId: string) => void;
+  onLoadMore: () => void;
+  hasMore: boolean;
+  isLoadingMore: boolean;
 }
 
 function getPlatformIcon(platform: Platform) {
@@ -40,7 +44,21 @@ export function ContactList({
   searchQuery,
   onSearchChange,
   onToggleFavorite,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
 }: ContactListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement;
+    const { scrollTop, scrollHeight, clientHeight } = target;
+    
+    if (scrollHeight - scrollTop - clientHeight < 200 && hasMore && !isLoadingMore) {
+      onLoadMore();
+    }
+  }, [hasMore, isLoadingMore, onLoadMore]);
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
@@ -77,88 +95,103 @@ export function ContactList({
         </div>
       </div>
 
-      <ScrollArea className="flex-1">
-        {contacts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 text-muted-foreground p-4">
-            <p className="text-center">No contacts found</p>
-            {searchQuery && (
-              <p className="text-sm text-center mt-2">
-                Try a different search term
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="divide-y">
-            {contacts.map((contact) => (
-              <div
-                key={contact.id}
-                className={`flex items-center gap-3 p-4 cursor-pointer hover-elevate ${
-                  selectedContactId === contact.id
-                    ? "bg-accent"
-                    : ""
-                }`}
-                onClick={() => onSelectContact(contact.id)}
-                data-testid={`contact-item-${contact.id}`}
-              >
-                <Avatar className="h-10 w-10">
-                  <AvatarFallback
-                    style={{ 
-                      backgroundColor: getAvatarColor(contact.name).bg,
-                      color: getAvatarColor(contact.name).text 
-                    }}
-                  >
-                    {getInitials(contact.name)}
-                  </AvatarFallback>
-                </Avatar>
+      <ScrollArea className="flex-1" onScrollCapture={handleScroll}>
+        <div ref={scrollRef}>
+          {contacts.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-muted-foreground p-4">
+              <p className="text-center">No contacts found</p>
+              {searchQuery && (
+                <p className="text-sm text-center mt-2">
+                  Try a different search term
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="divide-y">
+              {contacts.map((contact) => (
+                <div
+                  key={contact.id}
+                  className={`flex items-center gap-3 p-4 cursor-pointer hover-elevate ${
+                    selectedContactId === contact.id
+                      ? "bg-accent"
+                      : ""
+                  }`}
+                  onClick={() => onSelectContact(contact.id)}
+                  data-testid={`contact-item-${contact.id}`}
+                >
+                  <Avatar className="h-10 w-10">
+                    <AvatarFallback
+                      style={{ 
+                        backgroundColor: getAvatarColor(contact.name).bg,
+                        color: getAvatarColor(contact.name).text 
+                      }}
+                    >
+                      {getInitials(contact.name)}
+                    </AvatarFallback>
+                  </Avatar>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium truncate">
-                      {contact.name || contact.phoneNumber || contact.platformId}
-                    </span>
-                    {getPlatformIcon(contact.platform)}
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {contact.phoneNumber && (
-                      <span className="truncate">{contact.phoneNumber}</span>
-                    )}
-                  </div>
-                  {contact.tags && contact.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {contact.tags.slice(0, 2).map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs px-1 py-0">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {contact.tags.length > 2 && (
-                        <Badge variant="outline" className="text-xs px-1 py-0">
-                          +{contact.tags.length - 2}
-                        </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium truncate">
+                        {contact.name || contact.phoneNumber || contact.platformId}
+                      </span>
+                      {getPlatformIcon(contact.platform)}
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      {contact.phoneNumber && (
+                        <span className="truncate">{contact.phoneNumber}</span>
                       )}
                     </div>
-                  )}
-                </div>
+                    {contact.tags && contact.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {contact.tags.slice(0, 2).map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-xs px-1 py-0">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {contact.tags.length > 2 && (
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            +{contact.tags.length - 2}
+                          </Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="flex-shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleFavorite(contact.id);
-                  }}
-                  data-testid={`button-favorite-${contact.id}`}
-                >
-                  <Star
-                    className={`h-4 w-4 ${
-                      contact.isFavorite ? "fill-yellow-400 text-yellow-400" : ""
-                    }`}
-                  />
-                </Button>
-              </div>
-            ))}
-          </div>
-        )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="flex-shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleFavorite(contact.id);
+                    }}
+                    data-testid={`button-favorite-${contact.id}`}
+                  >
+                    <Star
+                      className={`h-4 w-4 ${
+                        contact.isFavorite ? "fill-yellow-400 text-yellow-400" : ""
+                      }`}
+                    />
+                  </Button>
+                </div>
+              ))}
+              
+              {isLoadingMore && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <span className="ml-2 text-sm text-muted-foreground">Loading more...</span>
+                </div>
+              )}
+              
+              {!hasMore && contacts.length > 0 && (
+                <div className="py-4 text-center text-sm text-muted-foreground">
+                  {contacts.length} contacts loaded
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </ScrollArea>
     </div>
   );
