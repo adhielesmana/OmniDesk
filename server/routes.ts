@@ -746,9 +746,19 @@ export async function registerRoutes(
         }
         for (const contact of data.contacts) {
           try {
+            // Format Indonesian phone numbers
+            let phoneNumber = contact.phoneNumber;
+            if (phoneNumber) {
+              phoneNumber = phoneNumber.replace(/\s+/g, '').replace(/-/g, '');
+              if (phoneNumber.startsWith('0')) {
+                phoneNumber = '+62' + phoneNumber.substring(1);
+              } else if (!phoneNumber.startsWith('+')) {
+                phoneNumber = '+' + phoneNumber;
+              }
+            }
             await storage.createContact({
               name: contact.name,
-              phoneNumber: contact.phoneNumber,
+              phoneNumber: phoneNumber,
               email: contact.email,
               platform: contact.platform,
               platformId: contact.platformId,
