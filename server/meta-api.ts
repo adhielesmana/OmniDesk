@@ -495,9 +495,11 @@ export class MetaApiService {
       if (this.platform === "instagram") {
         const instagramAccountId = this.config.businessId || this.config.pageId;
         if (!instagramAccountId) {
-          console.log("[Instagram] No business ID for profile lookup");
+          console.log("[Instagram Profile] No business ID for profile lookup");
           return null;
         }
+        
+        console.log(`[Instagram Profile] Looking up user ${userId} via account ${instagramAccountId}`);
         
         // Use the conversations endpoint to find conversations with this user
         // and extract participant info
@@ -511,10 +513,13 @@ export class MetaApiService {
         
         if (convResponse.ok) {
           const convData = await convResponse.json();
+          console.log(`[Instagram Profile] Conversation lookup response:`, JSON.stringify(convData).substring(0, 500));
           if (convData.data && convData.data.length > 0) {
             const participants = convData.data[0].participants?.data || [];
+            console.log(`[Instagram Profile] Found ${participants.length} participants`);
             const userParticipant = participants.find((p: any) => p.id === userId);
             if (userParticipant) {
+              console.log(`[Instagram Profile] Found user participant:`, JSON.stringify(userParticipant));
               return {
                 name: userParticipant.username || userParticipant.name,
                 profilePicture: userParticipant.profile_pic,
@@ -523,7 +528,7 @@ export class MetaApiService {
           }
         } else {
           const errorText = await convResponse.text();
-          console.log("[Instagram] Conversation lookup response:", errorText);
+          console.log("[Instagram Profile] Conversation lookup error:", errorText);
         }
         
         // Fallback: Try direct user lookup (may not work for all IGSIDs)
@@ -740,11 +745,15 @@ export class MetaApiService {
 
       // Handle echo messages (sent by page/bot)
       const isEcho = message.is_echo === true;
+      
+      // Extract sender username if available (Instagram sometimes includes it)
+      const senderName = messaging.sender?.username || messaging.sender?.name;
 
       return {
         platform: "instagram",
         senderId: messaging.sender.id,
         recipientId: messaging.recipient?.id,
+        senderName,
         content,
         mediaUrl,
         mediaType,
