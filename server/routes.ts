@@ -3194,6 +3194,16 @@ wa.me/6208991066262`;
           });
         }
 
+        // Check for duplicate message by externalId to prevent duplicates
+        if (webhookMessage.externalId) {
+          const existingMessage = await storage.getMessageByExternalId(webhookMessage.externalId);
+          if (existingMessage) {
+            console.log(`[Webhook ${webhookMessage.platform}] Skipping duplicate message with externalId: ${webhookMessage.externalId}`);
+            res.sendStatus(200);
+            return;
+          }
+        }
+
         // Create message - echo messages are outbound, regular messages are inbound
         const message = await storage.createMessage({
           conversationId: conversation.id,
