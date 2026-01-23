@@ -3101,6 +3101,15 @@ wa.me/6208991066262`;
             profilePictureUrl = profile.profilePicture;
           }
           
+          // Provide a fallback name with platform identifier if name is still empty
+          if (!name && webhookMessage.platform === "instagram") {
+            name = `Instagram User ${customerId.slice(-6)}`;
+          } else if (!name && webhookMessage.platform === "facebook") {
+            name = `Facebook User ${customerId.slice(-6)}`;
+          }
+          
+          console.log(`[Webhook ${webhookMessage.platform}] Creating new contact: name="${name}", platformId="${customerId}"`);
+          
           contact = await storage.createContact({
             platformId: customerId,
             platform: webhookMessage.platform,
