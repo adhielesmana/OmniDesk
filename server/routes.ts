@@ -946,7 +946,7 @@ export async function registerRoutes(
         const platformId = folderMatch ? folderMatch[1] : participantName.replace(/\s+/g, "_").toLowerCase();
 
         // Create or find contact
-        let contact = await storage.getContactByPlatformId("instagram", platformId);
+        let contact = await storage.getContactByPlatformId(platformId, "instagram");
         if (!contact) {
           contact = await storage.createContact({
             name: participantName,
