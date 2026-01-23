@@ -190,10 +190,10 @@ function InboxContent({
       });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Failed to send message",
-        description: "Please try again.",
+        description: error.message || "Please try again.",
         variant: "destructive",
       });
     },
