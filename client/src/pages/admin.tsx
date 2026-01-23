@@ -1182,6 +1182,12 @@ interface PlatformSettings {
   businessId: string | null;
   webhookVerifyToken: string | null;
   lastSyncAt: string | null;
+  tokenStatus: string | null;
+  tokenError: string | null;
+  tokenExpiresAt: string | null;
+  tokenScopes: string | null;
+  tokenMissingPermissions: string | null;
+  lastTokenValidatedAt: string | null;
 }
 
 function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
@@ -1384,6 +1390,39 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                     <p className="text-sm text-muted-foreground">
                       Page ID: {facebookSettings.pageId || "Not set"}
                     </p>
+                    {facebookSettings?.tokenStatus && (
+                      <div 
+                        data-testid="status-token-facebook"
+                        className={`text-xs p-2 rounded ${
+                          facebookSettings.tokenStatus === 'valid' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+                          facebookSettings.tokenStatus === 'expired' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+                          facebookSettings.tokenStatus === 'missing_permissions' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' :
+                          'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 font-medium">
+                          {facebookSettings.tokenStatus === 'valid' ? 'Token Valid' :
+                           facebookSettings.tokenStatus === 'expired' ? 'Token Expired' :
+                           facebookSettings.tokenStatus === 'missing_permissions' ? 'Missing Permissions' :
+                           facebookSettings.tokenStatus === 'invalid' ? 'Token Invalid' :
+                           `Token Error: ${facebookSettings.tokenStatus}`}
+                        </div>
+                        {facebookSettings.tokenError && (
+                          <div className="mt-1">{facebookSettings.tokenError}</div>
+                        )}
+                        {facebookSettings.tokenMissingPermissions && (
+                          <div className="mt-1">Missing: {(() => {
+                            try {
+                              const perms = JSON.parse(facebookSettings.tokenMissingPermissions);
+                              return Array.isArray(perms) ? perms.join(', ') : facebookSettings.tokenMissingPermissions;
+                            } catch { return facebookSettings.tokenMissingPermissions; }
+                          })()}</div>
+                        )}
+                        {facebookSettings.lastTokenValidatedAt && (
+                          <div className="mt-1 opacity-70">Checked: {new Date(facebookSettings.lastTokenValidatedAt).toLocaleString()}</div>
+                        )}
+                      </div>
+                    )}
                     {facebookSettings.lastSyncAt && (
                       <p className="text-xs text-muted-foreground">
                         Last synced: {new Date(facebookSettings.lastSyncAt).toLocaleString()}
@@ -1499,6 +1538,39 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                     <p className="text-sm text-muted-foreground">
                       Business ID: {instagramSettings.businessId || "Not set"}
                     </p>
+                    {instagramSettings?.tokenStatus && (
+                      <div 
+                        data-testid="status-token-instagram"
+                        className={`text-xs p-2 rounded ${
+                          instagramSettings.tokenStatus === 'valid' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
+                          instagramSettings.tokenStatus === 'expired' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' :
+                          instagramSettings.tokenStatus === 'missing_permissions' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300' :
+                          'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 font-medium">
+                          {instagramSettings.tokenStatus === 'valid' ? 'Token Valid' :
+                           instagramSettings.tokenStatus === 'expired' ? 'Token Expired' :
+                           instagramSettings.tokenStatus === 'missing_permissions' ? 'Missing Permissions' :
+                           instagramSettings.tokenStatus === 'invalid' ? 'Token Invalid' :
+                           `Token Error: ${instagramSettings.tokenStatus}`}
+                        </div>
+                        {instagramSettings.tokenError && (
+                          <div className="mt-1">{instagramSettings.tokenError}</div>
+                        )}
+                        {instagramSettings.tokenMissingPermissions && (
+                          <div className="mt-1">Missing: {(() => {
+                            try {
+                              const perms = JSON.parse(instagramSettings.tokenMissingPermissions);
+                              return Array.isArray(perms) ? perms.join(', ') : instagramSettings.tokenMissingPermissions;
+                            } catch { return instagramSettings.tokenMissingPermissions; }
+                          })()}</div>
+                        )}
+                        {instagramSettings.lastTokenValidatedAt && (
+                          <div className="mt-1 opacity-70">Checked: {new Date(instagramSettings.lastTokenValidatedAt).toLocaleString()}</div>
+                        )}
+                      </div>
+                    )}
                     {instagramSettings.lastSyncAt && (
                       <p className="text-xs text-muted-foreground">
                         Last synced: {new Date(instagramSettings.lastSyncAt).toLocaleString()}

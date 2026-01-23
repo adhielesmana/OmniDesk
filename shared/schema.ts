@@ -88,6 +88,12 @@ export const platformSettings = pgTable("platform_settings", {
   businessId: text("business_id"),
   webhookVerifyToken: text("webhook_verify_token"),
   lastSyncAt: timestamp("last_sync_at"),
+  tokenStatus: text("token_status"), // 'valid', 'expired', 'invalid', 'missing_permissions', 'error'
+  tokenError: text("token_error"), // Detailed error message if token is invalid
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenScopes: text("token_scopes"), // JSON array of granted scopes
+  tokenMissingPermissions: text("token_missing_permissions"), // JSON array of missing permissions
+  lastTokenValidatedAt: timestamp("last_token_validated_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

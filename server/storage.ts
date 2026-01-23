@@ -150,6 +150,7 @@ export interface IStorage {
   getPlatformSettings(): Promise<PlatformSettings[]>;
   getPlatformSetting(platform: Platform): Promise<PlatformSettings | undefined>;
   upsertPlatformSettings(settings: InsertPlatformSettings): Promise<PlatformSettings>;
+  updatePlatformSetting(platform: Platform, updates: Partial<PlatformSettings>): Promise<PlatformSettings | undefined>;
 
   // Quick Replies
   getQuickReplies(): Promise<QuickReply[]>;
@@ -968,6 +969,15 @@ export class DatabaseStorage implements IStorage {
 
     const [newSettings] = await db.insert(platformSettings).values(settings).returning();
     return newSettings;
+  }
+
+  async updatePlatformSetting(platform: Platform, updates: Partial<PlatformSettings>): Promise<PlatformSettings | undefined> {
+    const [updated] = await db
+      .update(platformSettings)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(platformSettings.platform, platform))
+      .returning();
+    return updated || undefined;
   }
 
   // Quick Replies
