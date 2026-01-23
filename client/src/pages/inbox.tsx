@@ -276,6 +276,14 @@ function InboxContent({
     }
   };
 
+  // Prefetch conversation on hover for faster loading
+  const handlePrefetchConversation = useCallback((id: string) => {
+    queryClient.prefetchQuery({
+      queryKey: ["/api/conversations", id],
+      staleTime: 10000,
+    });
+  }, []);
+
   const handleCloseSheet = () => {
     setMobileSheetOpen(false);
   };
@@ -363,6 +371,7 @@ function InboxContent({
                 hasMore={hasNextPage}
                 isLoadingMore={isFetchingNextPage}
                 totalCount={totalConversations}
+                onPrefetch={handlePrefetchConversation}
               />
             </div>
 
@@ -446,6 +455,7 @@ function InboxContent({
               hasMore={hasNextPage}
               isLoadingMore={isFetchingNextPage}
               totalCount={totalConversations}
+              onPrefetch={handlePrefetchConversation}
             />
           </div>
 

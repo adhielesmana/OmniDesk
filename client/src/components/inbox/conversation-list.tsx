@@ -27,6 +27,7 @@ interface ConversationListProps {
   hasMore?: boolean;
   isLoadingMore?: boolean;
   totalCount?: number;
+  onPrefetch?: (id: string) => void;
 }
 
 export function ConversationList({
@@ -41,6 +42,7 @@ export function ConversationList({
   hasMore = false,
   isLoadingMore = false,
   totalCount,
+  onPrefetch,
 }: ConversationListProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -166,6 +168,7 @@ export function ConversationList({
                       e.stopPropagation();
                       onSelectConversation(conv.id);
                     }}
+                    onMouseEnter={() => onPrefetch?.(conv.id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
