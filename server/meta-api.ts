@@ -598,7 +598,7 @@ export class MetaApiService {
             if (userParticipant) {
               console.log(`[Instagram Profile] Found user in conversation:`, JSON.stringify(userParticipant));
               return {
-                name: userParticipant.username || userParticipant.name,
+                name: userParticipant.name || userParticipant.username,
                 profilePicture: userParticipant.profile_pic,
               };
             }
@@ -625,7 +625,7 @@ export class MetaApiService {
             if (userParticipant) {
               console.log(`[Instagram Profile] Found via user_id filter:`, JSON.stringify(userParticipant));
               return {
-                name: userParticipant.username || userParticipant.name,
+                name: userParticipant.name || userParticipant.username,
                 profilePicture: userParticipant.profile_pic,
               };
             }
@@ -645,7 +645,7 @@ export class MetaApiService {
           console.log(`[Instagram Profile] Direct lookup response:`, JSON.stringify(data));
           if (data.name || data.username) {
             return {
-              name: data.username || data.name,
+              name: data.name || data.username,
               profilePicture: undefined,
             };
           }
