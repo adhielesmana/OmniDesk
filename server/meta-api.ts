@@ -491,6 +491,79 @@ export class MetaApiService {
     }
   }
 
+  // Extend a short-lived token to a long-lived token
+  // For Page Access Tokens, the result is permanent (never expires)
+  static async extendToken(
+    shortLivedToken: string,
+    appId: string,
+    appSecret: string
+  ): Promise<{
+    success: boolean;
+    accessToken?: string;
+    expiresIn?: number;
+    error?: string;
+  }> {
+    try {
+      // First, exchange user token for long-lived user token
+      const url = `${GRAPH_API_BASE}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortLivedToken}`;
+      
+      console.log(`[Token Extension] Requesting long-lived token...`);
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        const errorMessage = data.error?.message || "Failed to extend token";
+        console.error(`[Token Extension] Error: ${errorMessage}`);
+        return { success: false, error: errorMessage };
+      }
+
+      console.log(`[Token Extension] Successfully extended token, expires_in: ${data.expires_in || 'never'}`);
+      return {
+        success: true,
+        accessToken: data.access_token,
+        expiresIn: data.expires_in, // seconds until expiration (0 or undefined = never expires)
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Token extension failed";
+      console.error(`[Token Extension] Exception: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  // Get a permanent Page Access Token using a long-lived user token
+  static async getPageToken(
+    pageId: string,
+    userAccessToken: string
+  ): Promise<{
+    success: boolean;
+    accessToken?: string;
+    error?: string;
+  }> {
+    try {
+      const url = `${GRAPH_API_BASE}/${pageId}?fields=access_token&access_token=${userAccessToken}`;
+      
+      console.log(`[Token Extension] Getting permanent page token for page ${pageId}...`);
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        const errorMessage = data.error?.message || "Failed to get page token";
+        console.error(`[Token Extension] Error: ${errorMessage}`);
+        return { success: false, error: errorMessage };
+      }
+
+      console.log(`[Token Extension] Successfully got permanent page token`);
+      return {
+        success: true,
+        accessToken: data.access_token,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to get page token";
+      console.error(`[Token Extension] Exception: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
+  }
+
   // Fetch user profile info from Meta Graph API
   async getUserProfile(userId: string): Promise<{ name?: string; profilePicture?: string } | null> {
     try {

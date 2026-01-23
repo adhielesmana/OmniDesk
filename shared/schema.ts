@@ -87,6 +87,8 @@ export const platformSettings = pgTable("platform_settings", {
   phoneNumberId: text("phone_number_id"),
   businessId: text("business_id"),
   webhookVerifyToken: text("webhook_verify_token"),
+  appId: text("app_id"), // Meta App ID for token extension
+  appSecret: text("app_secret"), // Meta App Secret for token extension
   lastSyncAt: timestamp("last_sync_at"),
   tokenStatus: text("token_status"), // 'valid', 'expired', 'invalid', 'missing_permissions', 'error'
   tokenError: text("token_error"), // Detailed error message if token is invalid

@@ -3,6 +3,74 @@ import { MetaApiService } from "./meta-api";
 import type { Platform } from "@shared/schema";
 
 const VALIDATION_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
+const TOKEN_EXTEND_THRESHOLD_DAYS = 7; // Auto-extend if expiring within 7 days
+
+// Extend a platform's token if App ID and Secret are configured
+export async function extendPlatformToken(platform: Platform): Promise<{
+  success: boolean;
+  error?: string;
+  newExpiresAt?: Date;
+}> {
+  const settings = await storage.getPlatformSetting(platform);
+  
+  if (!settings?.accessToken) {
+    return { success: false, error: "No access token configured" };
+  }
+  
+  if (!settings.appId || !settings.appSecret) {
+    return { success: false, error: "App ID and App Secret are required for token extension. Please configure them in platform settings." };
+  }
+  
+  console.log(`[Token Extension] Attempting to extend ${platform} token...`);
+  
+  // First, extend the token to get a long-lived version
+  const extendResult = await MetaApiService.extendToken(
+    settings.accessToken,
+    settings.appId,
+    settings.appSecret
+  );
+  
+  if (!extendResult.success || !extendResult.accessToken) {
+    return { success: false, error: extendResult.error || "Failed to extend token" };
+  }
+  
+  // If we have a page ID, get a permanent page token
+  let finalToken = extendResult.accessToken;
+  let expiresAt: Date | null = null;
+  
+  if (settings.pageId) {
+    const pageTokenResult = await MetaApiService.getPageToken(settings.pageId, extendResult.accessToken);
+    if (pageTokenResult.success && pageTokenResult.accessToken) {
+      finalToken = pageTokenResult.accessToken;
+      // Page tokens from long-lived user tokens don't expire
+      expiresAt = null;
+      console.log(`[Token Extension] Got permanent page token for ${platform}`);
+    } else {
+      // Fall back to extended token
+      if (extendResult.expiresIn) {
+        expiresAt = new Date(Date.now() + extendResult.expiresIn * 1000);
+      }
+    }
+  } else if (extendResult.expiresIn) {
+    expiresAt = new Date(Date.now() + extendResult.expiresIn * 1000);
+  }
+  
+  // Update the platform settings with the new token
+  await storage.updatePlatformSetting(platform, {
+    accessToken: finalToken,
+    tokenExpiresAt: expiresAt,
+    tokenStatus: "valid",
+    tokenError: null,
+    lastTokenValidatedAt: new Date(),
+  });
+  
+  console.log(`[Token Extension] Successfully extended ${platform} token${expiresAt ? `, expires: ${expiresAt.toISOString()}` : ' (permanent)'}`);
+  
+  return {
+    success: true,
+    newExpiresAt: expiresAt || undefined,
+  };
+}
 
 export async function validatePlatformToken(platform: Platform): Promise<{
   valid: boolean;
@@ -81,6 +149,14 @@ export async function validatePlatformToken(platform: Platform): Promise<{
     });
 
     console.log(`[Token Validator] ${platform}: status=${status}${result.error ? `, error=${result.error}` : ""}`);
+    
+    // Log warning if token is expiring soon
+    if (result.valid && result.expiresAt) {
+      const daysUntilExpiry = (result.expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+      if (daysUntilExpiry <= TOKEN_EXTEND_THRESHOLD_DAYS && daysUntilExpiry > 0) {
+        console.log(`[Token Validator] Warning: ${platform} token expires in ${daysUntilExpiry.toFixed(1)} days. Use "Extend Token" in Admin Panel to extend it.`);
+      }
+    }
     
     return {
       valid: result.valid,

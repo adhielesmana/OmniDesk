@@ -2596,10 +2596,11 @@ wa.me/6208991066262`;
   app.get("/api/platform-settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getPlatformSettings();
-      // Don't expose access tokens
+      // Don't expose access tokens or app secrets
       const sanitized = settings.map((s) => ({
         ...s,
         accessToken: s.accessToken ? "********" : null,
+        appSecret: s.appSecret ? "********" : null,
       }));
       res.json(sanitized);
     } catch (error) {
@@ -2616,7 +2617,7 @@ wa.me/6208991066262`;
         return res.status(400).json({ error: "Invalid platform" });
       }
 
-      const { accessToken, pageId, phoneNumberId, businessId, webhookVerifyToken } = req.body;
+      const { accessToken, pageId, phoneNumberId, businessId, webhookVerifyToken, appId, appSecret } = req.body;
 
       // Get existing settings to check if we need a new token
       const existingSettings = await storage.getPlatformSetting(platform);
@@ -2638,9 +2639,11 @@ wa.me/6208991066262`;
         return res.status(400).json({ error: "Phone Number ID is required for WhatsApp Business API" });
       }
 
-      // Use new token if provided, otherwise keep existing
+      // Use new values if provided, otherwise keep existing
       const finalAccessToken = accessToken || existingSettings?.accessToken;
       const finalPhoneNumberId = phoneNumberId || existingSettings?.phoneNumberId;
+      const finalAppId = appId || existingSettings?.appId;
+      const finalAppSecret = appSecret || existingSettings?.appSecret;
 
       const settings = await storage.upsertPlatformSettings({
         platform,
@@ -2649,12 +2652,15 @@ wa.me/6208991066262`;
         phoneNumberId: finalPhoneNumberId || null,
         businessId: businessId || null,
         webhookVerifyToken: webhookVerifyToken || null,
+        appId: finalAppId || null,
+        appSecret: finalAppSecret || null,
         isConnected: false,
       });
 
       res.json({
         ...settings,
         accessToken: settings.accessToken ? "********" : null,
+        appSecret: settings.appSecret ? "********" : null,
       });
     } catch (error) {
       console.error("Error saving platform settings:", error);
@@ -2755,6 +2761,34 @@ wa.me/6208991066262`;
     } catch (error) {
       console.error("Error validating token:", error);
       res.status(500).json({ valid: false, error: "Token validation failed", status: "error" });
+    }
+  });
+
+  // Extend platform token (requires admin) - extends short-lived token to long-lived/permanent
+  app.post("/api/platform-settings/:platform/extend-token", requireAdmin, async (req, res) => {
+    try {
+      const platform = req.params.platform as Platform;
+      if (!["instagram", "facebook"].includes(platform)) {
+        return res.status(400).json({ error: "Invalid platform. Token extension only works for Facebook and Instagram." });
+      }
+
+      const { extendPlatformToken } = await import("./token-validator");
+      const result = await extendPlatformToken(platform);
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.newExpiresAt 
+            ? `Token extended successfully. New expiry: ${result.newExpiresAt.toLocaleDateString()}`
+            : "Token extended to permanent (never expires)",
+          expiresAt: result.newExpiresAt || null,
+        });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      console.error("Error extending token:", error);
+      res.status(500).json({ success: false, error: "Token extension failed" });
     }
   });
 

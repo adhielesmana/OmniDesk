@@ -1203,6 +1203,8 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
     pageId: "",
     businessId: "",
     webhookVerifyToken: "",
+    appId: "",
+    appSecret: "",
   });
 
   const facebookSettings = platforms.find(p => p.platform === "facebook");
@@ -1318,12 +1320,32 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
     },
   });
 
+  const extendTokenMutation = useMutation({
+    mutationFn: async (platform: "facebook" | "instagram") => {
+      const res = await apiRequest("POST", `/api/platform-settings/${platform}/extend-token`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({ title: "Token Extended", description: data.message });
+        queryClient.invalidateQueries({ queryKey: ["/api/platform-settings"] });
+      } else {
+        toast({ title: "Extension Failed", description: data.error, variant: "destructive" });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ title: "Token extension failed", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       accessToken: "",
       pageId: "",
       businessId: "",
       webhookVerifyToken: "",
+      appId: "",
+      appSecret: "",
     });
   };
 
@@ -1334,6 +1356,8 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
       pageId: settings?.pageId || "",
       businessId: settings?.businessId || "",
       webhookVerifyToken: settings?.webhookVerifyToken || "",
+      appId: (settings as any)?.appId || "",
+      appSecret: "", // Don't pre-populate secret - user enters new one if changing
     });
     setSelectedPlatform(platform);
   };
@@ -1481,6 +1505,17 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                       >
                         {validateTokenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Shield className="h-4 w-4 mr-1" />}
                         Validate Token
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => extendTokenMutation.mutate("facebook")}
+                        disabled={extendTokenMutation.isPending || !(facebookSettings as any)?.appId}
+                        title={(facebookSettings as any)?.appId ? "Extend token to permanent" : "Configure App ID and Secret first"}
+                        data-testid="button-extend-facebook"
+                      >
+                        {extendTokenMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                        Extend Token
                       </Button>
                     </div>
                     {tokenValidation.facebook && (
@@ -1752,6 +1787,34 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
               <p className="text-xs text-muted-foreground">
                 Create a random string and use it when configuring webhooks in Meta Developer Portal.
               </p>
+            </div>
+            
+            <div className="border-t pt-4 mt-4">
+              <p className="text-sm font-medium mb-3">Auto Token Extension (Optional)</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Configure App ID and Secret to enable automatic token extension when tokens are about to expire.
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="appId">Meta App ID</Label>
+                <Input
+                  id="appId"
+                  placeholder="Your Meta App ID"
+                  value={formData.appId}
+                  onChange={(e) => setFormData({ ...formData, appId: e.target.value })}
+                  data-testid="input-app-id"
+                />
+              </div>
+              <div className="space-y-2 mt-2">
+                <Label htmlFor="appSecret">Meta App Secret</Label>
+                <Input
+                  id="appSecret"
+                  type="password"
+                  placeholder={((selectedPlatform === "facebook" ? facebookSettings : instagramSettings) as any)?.appSecret ? "Leave empty to keep existing" : "Your Meta App Secret"}
+                  value={formData.appSecret}
+                  onChange={(e) => setFormData({ ...formData, appSecret: e.target.value })}
+                  data-testid="input-app-secret"
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
