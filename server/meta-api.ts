@@ -501,9 +501,8 @@ export class MetaApiService {
         
         console.log(`[Instagram Profile] Looking up user ${userId} via account ${instagramAccountId}`);
         
-        // Use the conversations endpoint to find conversations with this user
-        // and extract participant info
-        const conversationsUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants,updated_time&user_id=${userId}`;
+        // Method 1: Get all recent conversations and find the user in participants
+        const conversationsUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants,updated_time&platform=instagram`;
         
         const convResponse = await fetch(conversationsUrl, {
           headers: {
@@ -513,25 +512,50 @@ export class MetaApiService {
         
         if (convResponse.ok) {
           const convData = await convResponse.json();
-          console.log(`[Instagram Profile] Conversation lookup response:`, JSON.stringify(convData).substring(0, 500));
-          if (convData.data && convData.data.length > 0) {
-            const participants = convData.data[0].participants?.data || [];
-            console.log(`[Instagram Profile] Found ${participants.length} participants`);
+          console.log(`[Instagram Profile] Found ${convData.data?.length || 0} conversations`);
+          
+          // Search through all conversations to find this user
+          for (const conv of convData.data || []) {
+            const participants = conv.participants?.data || [];
             const userParticipant = participants.find((p: any) => p.id === userId);
             if (userParticipant) {
-              console.log(`[Instagram Profile] Found user participant:`, JSON.stringify(userParticipant));
+              console.log(`[Instagram Profile] Found user in conversation:`, JSON.stringify(userParticipant));
               return {
                 name: userParticipant.username || userParticipant.name,
                 profilePicture: userParticipant.profile_pic,
               };
             }
           }
+          console.log(`[Instagram Profile] User ${userId} not found in any conversation participants`);
         } else {
           const errorText = await convResponse.text();
-          console.log("[Instagram Profile] Conversation lookup error:", errorText);
+          console.log("[Instagram Profile] Conversation list error:", errorText);
         }
         
-        // Fallback: Try direct user lookup (may not work for all IGSIDs)
+        // Method 2: Try user_id filter (may work on some API versions)
+        const userFilterUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants&user_id=${userId}`;
+        const userFilterResponse = await fetch(userFilterUrl, {
+          headers: {
+            Authorization: `Bearer ${this.config.accessToken}`,
+          },
+        });
+        
+        if (userFilterResponse.ok) {
+          const data = await userFilterResponse.json();
+          if (data.data && data.data.length > 0) {
+            const participants = data.data[0].participants?.data || [];
+            const userParticipant = participants.find((p: any) => p.id === userId);
+            if (userParticipant) {
+              console.log(`[Instagram Profile] Found via user_id filter:`, JSON.stringify(userParticipant));
+              return {
+                name: userParticipant.username || userParticipant.name,
+                profilePicture: userParticipant.profile_pic,
+              };
+            }
+          }
+        }
+        
+        // Method 3: Try direct user lookup (requires instagram_basic permission)
         const directUrl = `${GRAPH_API_BASE}/${userId}?fields=name,username`;
         const directResponse = await fetch(directUrl, {
           headers: {
@@ -541,15 +565,19 @@ export class MetaApiService {
         
         if (directResponse.ok) {
           const data = await directResponse.json();
+          console.log(`[Instagram Profile] Direct lookup response:`, JSON.stringify(data));
           if (data.name || data.username) {
             return {
               name: data.username || data.name,
               profilePicture: undefined,
             };
           }
+        } else {
+          const errorText = await directResponse.text();
+          console.log("[Instagram Profile] Direct lookup error:", errorText);
         }
         
-        console.log("[Instagram] Could not fetch profile for user:", userId);
+        console.log("[Instagram Profile] Could not fetch profile for user:", userId);
         return null;
       }
       
