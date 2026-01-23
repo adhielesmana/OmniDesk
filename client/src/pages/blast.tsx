@@ -437,7 +437,11 @@ function CreateCampaignDialog({
     enabled: open,
   });
 
-  const contacts = contactsData?.contacts || [];
+  // Only show WhatsApp contacts for blast campaigns (Instagram/Facebook not supported)
+  const contacts = useMemo(() => {
+    const allContacts = contactsData?.contacts || [];
+    return allContacts.filter(c => c.platform === 'whatsapp');
+  }, [contactsData]);
   
   const filteredContacts = useMemo(() => {
     if (!contactSearch) return contacts;
@@ -779,7 +783,7 @@ function CreateCampaignDialog({
 
           <div className="space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <Label>Select Recipients ({selectedContacts.size} selected)</Label>
+              <Label>Select Recipients ({selectedContacts.size} selected) <span className="text-xs text-muted-foreground font-normal ml-1">(WhatsApp only)</span></Label>
               <div className="flex gap-2">
                 {contactSearch && filteredContacts.length > 0 && (
                   <Button
@@ -819,7 +823,7 @@ function CreateCampaignDialog({
                 </div>
               ) : contacts.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
-                  No contacts available
+                  No WhatsApp contacts available
                 </p>
               ) : filteredContacts.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">
