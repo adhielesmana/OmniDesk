@@ -112,14 +112,14 @@ export class MetaApiService {
           break;
 
         case "instagram":
-          // Instagram uses Page ID or Instagram Business Account ID
-          // Fall back to pageId if businessId is not set (common when using same Page for both)
-          const instagramAccountId = this.config.businessId || this.config.pageId;
-          if (!instagramAccountId) {
-            console.error("[Instagram Send] No business ID or page ID configured");
-            return { success: false, error: "Instagram Business Account ID or Page ID is required" };
+          // Instagram Messaging API requires the Facebook Page ID, not Instagram Business Account ID
+          // The endpoint is /{page-id}/messages with Page Access Token
+          const instagramPageId = this.config.pageId;
+          if (!instagramPageId) {
+            console.error("[Instagram Send] No Page ID configured - Instagram requires Facebook Page ID");
+            return { success: false, error: "Facebook Page ID is required for Instagram messaging" };
           }
-          url = `${GRAPH_API_BASE}/${instagramAccountId}/messages`;
+          url = `${GRAPH_API_BASE}/${instagramPageId}/messages`;
           payload = {
             recipient: { id: recipientId },
             message: { text: content },
@@ -128,9 +128,9 @@ export class MetaApiService {
           if (messageTag === "HUMAN_AGENT") {
             payload.messaging_type = "MESSAGE_TAG";
             payload.tag = "HUMAN_AGENT";
-            console.log(`[Instagram Send] Sending with HUMAN_AGENT tag to ${recipientId} via ${instagramAccountId}`);
+            console.log(`[Instagram Send] Sending with HUMAN_AGENT tag to ${recipientId} via page ${instagramPageId}`);
           } else {
-            console.log(`[Instagram Send] Sending to ${recipientId} via account ${instagramAccountId}`);
+            console.log(`[Instagram Send] Sending to ${recipientId} via page ${instagramPageId}`);
           }
           console.log(`[Instagram Send] Request URL: ${url}`);
           console.log(`[Instagram Send] Payload:`, JSON.stringify(payload));
@@ -274,10 +274,11 @@ export class MetaApiService {
           messageId: data.messages?.[0]?.id,
         };
       } else if (this.platform === "facebook" || this.platform === "instagram") {
-        // Facebook Send API uses /me/messages when using Page Access Token
+        // Both Facebook and Instagram use Page ID for messaging
+        // Facebook can use /me/messages, Instagram requires /{page-id}/messages
         const url = this.platform === "facebook" 
           ? `${GRAPH_API_BASE}/me/messages`
-          : `${GRAPH_API_BASE}/${this.config.businessId || this.config.pageId}/messages`;
+          : `${GRAPH_API_BASE}/${this.config.pageId}/messages`;
         
         const payload = {
           recipient: { id: recipientId },
