@@ -2541,18 +2541,34 @@ wa.me/6208991066262`;
         console.log(`[Meta API] Sending ${conversation.platform} message:`, {
           recipientId: conversation.contact.platformId,
           recipientName: conversation.contact.name,
+          contactId: conversation.contact.id,
           pageId: settings.pageId,
           businessId: settings.businessId,
           conversationId: conversation.id,
-          usingFBToken: conversation.platform === "instagram"
+          usingFBToken: conversation.platform === "instagram",
+          hasAccessToken: !!settings.accessToken,
         });
+        
+        // Validate that we have a valid platformId before trying to send
+        if (!conversation.contact.platformId) {
+          console.error(`[Meta API] No platformId for contact ${conversation.contact.id} (${conversation.contact.name})`);
+          return res.status(400).json({ error: "Contact does not have a valid platform ID. Cannot send message." });
+        }
+        
         const metaResult = await metaApi.sendMessage(conversation.contact.platformId, content);
         result = { success: metaResult.success, messageId: metaResult.messageId };
         
         if (!metaResult.success) {
-          console.error(`[Meta API] Failed to send ${conversation.platform} message to ${conversation.contact.platformId}:`, metaResult.error);
+          console.error(`[Meta API] Failed to send ${conversation.platform} message:`, {
+            recipientId: conversation.contact.platformId,
+            error: metaResult.error,
+            contactId: conversation.contact.id
+          });
           return res.status(400).json({ error: metaResult.error || "Failed to send message" });
         }
+        
+        console.log(`[Meta API] Successfully sent ${conversation.platform} message to ${conversation.contact.platformId}`);
+      
       } else {
         return res.status(400).json({ error: `Unsupported platform: ${conversation.platform}` });
       }

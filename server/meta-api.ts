@@ -116,6 +116,7 @@ export class MetaApiService {
           // Fall back to pageId if businessId is not set (common when using same Page for both)
           const instagramAccountId = this.config.businessId || this.config.pageId;
           if (!instagramAccountId) {
+            console.error("[Instagram Send] No business ID or page ID configured");
             return { success: false, error: "Instagram Business Account ID or Page ID is required" };
           }
           url = `${GRAPH_API_BASE}/${instagramAccountId}/messages`;
@@ -127,10 +128,12 @@ export class MetaApiService {
           if (messageTag === "HUMAN_AGENT") {
             payload.messaging_type = "MESSAGE_TAG";
             payload.tag = "HUMAN_AGENT";
-            console.log(`Sending Instagram message with HUMAN_AGENT tag to ${recipientId}`);
+            console.log(`[Instagram Send] Sending with HUMAN_AGENT tag to ${recipientId} via ${instagramAccountId}`);
           } else {
-            console.log(`Sending Instagram message to ${recipientId} via account ${instagramAccountId}`);
+            console.log(`[Instagram Send] Sending to ${recipientId} via account ${instagramAccountId}`);
           }
+          console.log(`[Instagram Send] Request URL: ${url}`);
+          console.log(`[Instagram Send] Payload:`, JSON.stringify(payload));
           break;
 
         case "facebook":
