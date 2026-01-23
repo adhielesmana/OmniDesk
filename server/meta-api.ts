@@ -579,7 +579,8 @@ export class MetaApiService {
         console.log(`[Instagram Profile] Looking up user ${userId} via account ${instagramAccountId}`);
         
         // Method 1: Get all recent conversations and find the user in participants
-        const conversationsUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants,updated_time&platform=instagram`;
+        // Request name, username, id fields to maximize chances of getting display name
+        const conversationsUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants{id,name,username,email}&platform=instagram&limit=50`;
         
         const convResponse = await fetch(conversationsUrl, {
           headers: {
@@ -610,7 +611,7 @@ export class MetaApiService {
         }
         
         // Method 2: Try user_id filter (may work on some API versions)
-        const userFilterUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants&user_id=${userId}`;
+        const userFilterUrl = `${GRAPH_API_BASE}/${instagramAccountId}/conversations?fields=participants{id,name,username}&user_id=${userId}`;
         const userFilterResponse = await fetch(userFilterUrl, {
           headers: {
             Authorization: `Bearer ${this.config.accessToken}`,
