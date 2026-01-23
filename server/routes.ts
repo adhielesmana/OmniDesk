@@ -3166,15 +3166,30 @@ wa.me/6208991066262`;
             name,
             profilePictureUrl,
           });
-        } else if (!contact.name || contact.name === "Unknown" || contact.name.startsWith("Instagram User") || contact.name.startsWith("Facebook User")) {
-          // Try to update contact name if it's unknown
-          const profile = await fetchMetaProfile();
-          if (profile?.name) {
-            console.log(`[Profile Update] Updating contact ${contact.id} name from "${contact.name}" to "${profile.name}"`);
-            contact = await storage.updateContact(contact.id, {
-              name: profile.name,
-              profilePictureUrl: profile.profilePicture || contact.profilePictureUrl,
-            }) || contact;
+        } else {
+          // Check if name looks like a username (no spaces, likely lowercase) vs display name
+          const looksLikeUsername = contact.name && 
+            !contact.name.includes(" ") && 
+            contact.name === contact.name.toLowerCase() &&
+            !contact.name.startsWith("Instagram User") &&
+            !contact.name.startsWith("Facebook User");
+          
+          const needsUpdate = !contact.name || 
+            contact.name === "Unknown" || 
+            contact.name.startsWith("Instagram User") || 
+            contact.name.startsWith("Facebook User") ||
+            looksLikeUsername;
+          
+          if (needsUpdate) {
+            // Try to update contact name if it's unknown or looks like a username
+            const profile = await fetchMetaProfile();
+            if (profile?.name && profile.name !== contact.name) {
+              console.log(`[Profile Update] Updating contact ${contact.id} name from "${contact.name}" to "${profile.name}"`);
+              contact = await storage.updateContact(contact.id, {
+                name: profile.name,
+                profilePictureUrl: profile.profilePicture || contact.profilePictureUrl,
+              }) || contact;
+            }
           }
         }
 
