@@ -2568,6 +2568,26 @@ wa.me/6208991066262`;
         }
         
         console.log(`[Meta API] Successfully sent ${conversation.platform} message to ${conversation.contact.platformId}`);
+        
+        // Try to update contact name if it's still "Instagram User" or "Facebook User"
+        const needsProfileUpdate = conversation.contact.name?.startsWith("Instagram User") ||
+                                   conversation.contact.name?.startsWith("Facebook User") ||
+                                   conversation.contact.name === "Unknown";
+        
+        if (needsProfileUpdate) {
+          try {
+            const profile = await metaApi.getUserProfile(conversation.contact.platformId);
+            if (profile?.name && profile.name !== conversation.contact.name) {
+              await storage.updateContact(conversation.contact.id, { 
+                name: profile.name,
+                profilePictureUrl: profile.profilePicture || conversation.contact.profilePictureUrl
+              });
+              console.log(`[Meta API] Updated contact name from "${conversation.contact.name}" to "${profile.name}"`);
+            }
+          } catch (profileError) {
+            console.log(`[Meta API] Could not refresh profile for ${conversation.contact.platformId}:`, profileError);
+          }
+        }
       
       } else {
         return res.status(400).json({ error: `Unsupported platform: ${conversation.platform}` });

@@ -57,7 +57,8 @@ function InboxContent({
       debounceRef.current = setTimeout(() => {
         // Longer debounce to prevent typing lag from constant refetches
         if (pendingInvalidationsRef.current.has("conversations")) {
-          queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+          // Reset infinite query to force fresh data with correct sort order
+          queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
         }
         if (pendingInvalidationsRef.current.has("selected") && selectedConversationId) {
           queryClient.invalidateQueries({
@@ -189,7 +190,8 @@ function InboxContent({
       queryClient.invalidateQueries({
         queryKey: ["/api/conversations", variables.conversationId],
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      // Reset to ensure fresh sort order
+      queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
     },
     onError: (error: Error) => {
       toast({
@@ -207,7 +209,7 @@ function InboxContent({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
       toast({
         title: "Conversation archived",
       });
@@ -222,7 +224,7 @@ function InboxContent({
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+      queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
     },
   });
 

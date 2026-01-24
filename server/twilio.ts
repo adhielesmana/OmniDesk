@@ -390,6 +390,9 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     MediaUrl0,
     MediaContentType0,
     ProfileName,
+    Timestamp,
+    DateSent, // Alternative timestamp field
+    DateCreated, // Another possible timestamp field
   } = webhookData;
   
   // Determine if it's WhatsApp or SMS
@@ -452,6 +455,17 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     }
   }
   
+  // Parse timestamp from Twilio webhook (try multiple fields)
+  let messageTimestamp: Date | undefined;
+  const rawTimestamp = Timestamp || DateSent || DateCreated;
+  if (rawTimestamp) {
+    const parsed = new Date(rawTimestamp);
+    if (!isNaN(parsed.getTime())) {
+      messageTimestamp = parsed;
+      console.log(`[Twilio] Using webhook timestamp: ${messageTimestamp.toISOString()}`);
+    }
+  }
+  
   // Create message (storage.createMessage also updates conversation metadata)
   await storage.createMessage({
     conversationId: conversation.id,
@@ -461,6 +475,7 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     externalId: MessageSid,
     mediaUrl,
     mediaType,
+    timestamp: messageTimestamp,
   });
   
   console.log(`[Twilio] Message saved to conversation ${conversation.id}`);
