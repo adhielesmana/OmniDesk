@@ -847,9 +847,11 @@ export class MetaApiService {
       const messaging = entry.messaging?.[0];
       if (!messaging || !messaging.message) return null;
       
-      // Log the full sender object to see what Instagram actually provides
-      console.log("[Instagram Webhook] Full sender data:", JSON.stringify(messaging.sender));
-      console.log("[Instagram Webhook] Full messaging object keys:", Object.keys(messaging));
+      // Log the full messaging object to see what Instagram actually provides
+      // Per Meta docs, username is at TOP LEVEL of messaging object, not inside sender
+      console.log("[Instagram Webhook] Full messaging object:", JSON.stringify(messaging));
+      console.log("[Instagram Webhook] Top-level username:", messaging.username);
+      console.log("[Instagram Webhook] Sender object:", JSON.stringify(messaging.sender));
 
       const message = messaging.message;
       let content: string | undefined;
@@ -877,8 +879,13 @@ export class MetaApiService {
       // Handle echo messages (sent by page/bot)
       const isEcho = message.is_echo === true;
       
-      // Extract sender username if available (Instagram sometimes includes it)
-      const senderName = messaging.sender?.username || messaging.sender?.name;
+      // Extract sender username - per Meta docs, username is at TOP LEVEL of messaging object
+      // Priority: top-level username > sender.username > sender.name
+      const senderName = messaging.username || messaging.sender?.username || messaging.sender?.name;
+      
+      if (senderName) {
+        console.log(`[Instagram Webhook] Found username: ${senderName}`);
+      }
 
       return {
         platform: "instagram",

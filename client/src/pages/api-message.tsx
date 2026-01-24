@@ -18,6 +18,7 @@ import {
   Key, Plus, Copy, Trash2, RefreshCw, Pencil, Loader2, Eye, EyeOff,
   Send, Clock, CheckCircle2, XCircle, Phone, ArrowLeft, FileText
 } from "lucide-react";
+import { formatDateTime } from "@/lib/timezone";
 import { Link } from "wouter";
 
 interface ApiVariableMapping {
@@ -461,7 +462,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                             <p>Allowed IPs: {client.ipWhitelist.join(", ")}</p>
                           )}
                           {client.lastRequestAt && (
-                            <p>Last used: {new Date(client.lastRequestAt).toLocaleString()}</p>
+                            <p>Last used: {formatDateTime(client.lastRequestAt)}</p>
                           )}
                         </div>
                       </div>
@@ -894,11 +895,11 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
                             <span>Client: {msg.clientName}</span>
                             <span>-</span>
-                            <span>{new Date(msg.createdAt).toLocaleString()}</span>
+                            <span>{formatDateTime(msg.createdAt)}</span>
                             {msg.scheduledAt && (
                               <>
                                 <span>-</span>
-                                <span>Scheduled: {new Date(msg.scheduledAt).toLocaleString()}</span>
+                                <span>Scheduled: {formatDateTime(msg.scheduledAt)}</span>
                               </>
                             )}
                           </div>

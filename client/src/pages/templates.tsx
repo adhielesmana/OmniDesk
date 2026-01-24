@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { FileText, Plus, Edit, Trash2, Copy, Code, BookOpen, Loader2, Download, Upload, RefreshCw, CloudUpload, CheckCircle2, XCircle, Clock } from "lucide-react";
 import type { Platform, MessageTemplate } from "@shared/schema";
+import { formatDateTime } from "@/lib/timezone";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function TemplatesPage() {
@@ -369,7 +370,7 @@ export default function TemplatesPage() {
                       </span>
                       {syncStatus.lastSyncResult && (
                         <span className="text-muted-foreground/70">
-                          | Last: {new Date(syncStatus.lastSyncResult.timestamp).toLocaleString()} 
+                          | Last: {formatDateTime(syncStatus.lastSyncResult.timestamp)} 
                           ({syncStatus.lastSyncResult.source === 'auto' ? 'auto' : 'manual'})
                           {syncStatus.lastSyncResult.success ? (
                             <CheckCircle2 className="h-3 w-3 inline ml-1 text-green-500" />
