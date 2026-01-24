@@ -3721,6 +3721,78 @@ wa.me/6208991066262`;
     }
   });
 
+  // Refresh contact profile from Meta API (for Instagram/Facebook unknown contacts)
+  app.post("/api/contacts/:id/refresh-profile", requireAuth, async (req, res) => {
+    try {
+      const contact = await storage.getContact(req.params.id);
+      if (!contact) {
+        return res.status(404).json({ error: "Contact not found" });
+      }
+
+      if (!["instagram", "facebook"].includes(contact.platform)) {
+        return res.status(400).json({ error: "Profile refresh only works for Instagram and Facebook contacts" });
+      }
+
+      if (!contact.platformId) {
+        return res.status(400).json({ error: "Contact does not have a platform ID" });
+      }
+
+      // Get platform settings
+      let settings = await storage.getPlatformSetting(contact.platform);
+      
+      // For Instagram, use Facebook Page Access Token
+      let instagramBusinessId: string | undefined;
+      if (contact.platform === "instagram") {
+        instagramBusinessId = settings?.businessId || undefined;
+        const fbSettings = await storage.getPlatformSetting("facebook");
+        if (fbSettings?.accessToken && fbSettings.isConnected) {
+          console.log("[Profile Refresh] Using Facebook Page Access Token for Instagram");
+          settings = {
+            ...fbSettings,
+            businessId: instagramBusinessId || fbSettings.businessId,
+          };
+        }
+      }
+
+      if (!settings?.accessToken) {
+        return res.status(400).json({ error: `${contact.platform} is not configured` });
+      }
+
+      // Create Meta API service and fetch profile
+      const metaApi = new MetaApiService(contact.platform, {
+        accessToken: settings.accessToken,
+        pageId: settings.pageId || undefined,
+        businessId: settings.businessId || undefined,
+      });
+
+      console.log(`[Profile Refresh] Fetching profile for ${contact.platform} user ${contact.platformId}`);
+      const profile = await metaApi.getUserProfile(contact.platformId);
+
+      if (profile && (profile.name || profile.profilePicture)) {
+        const updates: any = {};
+        if (profile.name && profile.name !== contact.name) {
+          updates.name = profile.name;
+        }
+        if (profile.profilePicture && profile.profilePicture !== contact.profilePictureUrl) {
+          updates.profilePictureUrl = profile.profilePicture;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          const updated = await storage.updateContact(req.params.id, updates);
+          console.log(`[Profile Refresh] Updated contact ${contact.id} with:`, updates);
+          res.json({ success: true, contact: updated, message: "Profile updated successfully" });
+        } else {
+          res.json({ success: true, contact, message: "Profile already up to date" });
+        }
+      } else {
+        res.json({ success: false, contact, message: "Could not fetch profile from Meta API. The user may have privacy settings that prevent this." });
+      }
+    } catch (error) {
+      console.error("Error refreshing contact profile:", error);
+      res.status(500).json({ error: "Failed to refresh contact profile" });
+    }
+  });
+
   // Quick replies
   app.get("/api/quick-replies", async (req, res) => {
     try {

@@ -2,6 +2,7 @@ import type { Platform } from "@shared/schema";
 
 const GRAPH_API_VERSION = "v21.0";
 const GRAPH_API_BASE = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+const INSTAGRAM_GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 
 interface MetaApiConfig {
   accessToken: string;
@@ -633,7 +634,27 @@ export class MetaApiService {
           }
         }
         
-        // Method 3: Try direct user lookup (requires instagram_basic permission)
+        // Method 3: Try direct user lookup via Instagram Graph API (preferred for IGSIDs)
+        // Use graph.instagram.com which is specifically for Instagram Scoped User IDs
+        const instagramDirectUrl = `${INSTAGRAM_GRAPH_API_BASE}/${userId}?fields=id,username,name&access_token=${this.config.accessToken}`;
+        console.log(`[Instagram Profile] Trying Instagram Graph API: ${instagramDirectUrl.replace(this.config.accessToken, '[REDACTED]')}`);
+        const instagramDirectResponse = await fetch(instagramDirectUrl);
+        
+        if (instagramDirectResponse.ok) {
+          const data = await instagramDirectResponse.json();
+          console.log(`[Instagram Profile] Instagram Graph API response:`, JSON.stringify(data));
+          if (data.name || data.username) {
+            return {
+              name: data.name || data.username,
+              profilePicture: undefined,
+            };
+          }
+        } else {
+          const errorText = await instagramDirectResponse.text();
+          console.log("[Instagram Profile] Instagram Graph API error:", errorText);
+        }
+        
+        // Method 4: Try direct user lookup via Facebook Graph API (fallback)
         const directUrl = `${GRAPH_API_BASE}/${userId}?fields=name,username`;
         const directResponse = await fetch(directUrl, {
           headers: {
@@ -643,7 +664,7 @@ export class MetaApiService {
         
         if (directResponse.ok) {
           const data = await directResponse.json();
-          console.log(`[Instagram Profile] Direct lookup response:`, JSON.stringify(data));
+          console.log(`[Instagram Profile] Facebook Graph API response:`, JSON.stringify(data));
           if (data.name || data.username) {
             return {
               name: data.name || data.username,
@@ -652,7 +673,7 @@ export class MetaApiService {
           }
         } else {
           const errorText = await directResponse.text();
-          console.log("[Instagram Profile] Direct lookup error:", errorText);
+          console.log("[Instagram Profile] Facebook Graph API error:", errorText);
         }
         
         console.log("[Instagram Profile] Could not fetch profile for user:", userId);

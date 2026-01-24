@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState, useCallback, useMemo, memo } from "react";
 import { useLocation } from "wouter";
-import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2 } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { Phone, Video, MoreVertical, Check, CheckCheck, Clock, AlertCircle, User, ArrowLeft, Loader2, RefreshCw } from "lucide-react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getAvatarColor, getInitials } from "@/lib/avatar-colors";
@@ -77,11 +78,13 @@ export const MessageThread = memo(function MessageThread({
   hideHeader = false,
 }: MessageThreadProps) {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [olderMessages, setOlderMessages] = useState<Message[]>([]);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreToLoad, setHasMoreToLoad] = useState(false);
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false);
   const prevConversationId = useRef<string | null>(null);
 
   // Reset older messages when conversation changes
@@ -98,6 +101,45 @@ export const MessageThread = memo(function MessageThread({
       setLocation(`/contacts?selected=${conversation.contact.id}`);
     }
   };
+
+  const handleRefreshProfile = async () => {
+    if (!conversation?.contact?.id) return;
+    
+    setIsRefreshingProfile(true);
+    try {
+      const response = await apiRequest("POST", `/api/contacts/${conversation.contact.id}/refresh-profile`);
+      const result = await response.json();
+      
+      if (result.success && result.contact) {
+        toast({
+          title: "Profile Updated",
+          description: result.message || "Contact profile has been refreshed",
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/contacts"] });
+        if (conversation?.contact?.id) {
+          queryClient.invalidateQueries({ queryKey: ["/api/contacts", conversation.contact.id] });
+        }
+      } else {
+        toast({
+          title: "Could not refresh profile",
+          description: result.message || "Unable to get profile information from platform",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to refresh contact profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRefreshingProfile(false);
+    }
+  };
+
+  const isUnknownUser = conversation?.contact?.name?.startsWith("Instagram User") || 
+                        conversation?.contact?.name?.startsWith("Facebook User");
 
   // Combine older messages with current messages and dedupe by id
   const allMessages = useMemo(() => {
@@ -270,6 +312,16 @@ export const MessageThread = memo(function MessageThread({
                   <User className="h-4 w-4 mr-2" />
                   View Contact
                 </DropdownMenuItem>
+                {(conversation?.platform === "instagram" || conversation?.platform === "facebook") && conversation?.contact?.platformId && (
+                  <DropdownMenuItem 
+                    onClick={handleRefreshProfile} 
+                    disabled={isRefreshingProfile}
+                    data-testid="menu-refresh-profile"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${isRefreshingProfile ? 'animate-spin' : ''}`} />
+                    {isRefreshingProfile ? "Refreshing..." : "Refresh Profile"}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem>
                   <Phone className="h-4 w-4 mr-2 sm:hidden" />
                   Call
