@@ -246,6 +246,10 @@ function InboxContent({
 
   const handleSendMessage = useCallback((content: string, mediaUrl?: string) => {
     if (!selectedConversationId) return;
+    
+    // Debug: Log which conversation we're sending to
+    console.log("[SendMessage] Sending to conversationId:", selectedConversationId, "content:", content.substring(0, 50));
+    
     sendMessageMutationRef.current.mutate({
       conversationId: selectedConversationId,
       content,
@@ -269,6 +273,7 @@ function InboxContent({
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
   const handleSelectConversation = (id: string) => {
+    console.log("[SelectConversation] Selecting conversation:", id);
     setSelectedConversationId(id);
     // Only open sheet overlay on mobile (check window width directly for reliability)
     if (typeof window !== 'undefined' && window.innerWidth < 768) {
