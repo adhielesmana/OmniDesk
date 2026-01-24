@@ -2621,6 +2621,29 @@ wa.me/6208991066262`;
       const { isTwilioConfigured } = await import("./twilio");
       const twilioConnected = await isTwilioConfigured();
       
+      // Ensure WhatsApp entry exists if Twilio is connected
+      let whatsappExists = settings.some(s => s.platform === "whatsapp");
+      if (twilioConnected && !whatsappExists) {
+        // Add a virtual WhatsApp entry for Twilio
+        settings.push({
+          id: "twilio-virtual",
+          platform: "whatsapp",
+          accessToken: null,
+          pageId: null,
+          phoneNumberId: null,
+          businessId: null,
+          webhookVerifyToken: null,
+          isConnected: true,
+          appId: null,
+          appSecret: null,
+          tokenExpiresAt: null,
+          tokenStatus: null,
+          tokenMissingPermissions: null,
+          lastTokenValidatedAt: null,
+          lastSyncAt: null,
+        } as any);
+      }
+      
       // Don't expose access tokens or app secrets
       const sanitized = settings.map((s) => {
         // For WhatsApp, also consider Twilio connection status
