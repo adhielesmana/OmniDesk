@@ -6,7 +6,7 @@ interface MessageComposerProps {
   onSendMessage: (content: string, mediaUrl?: string) => void;
   isSending: boolean;
   platform: string;
-  conversationId?: string;
+  conversationId: string;
 }
 
 export const MessageComposer = memo(function MessageComposer({

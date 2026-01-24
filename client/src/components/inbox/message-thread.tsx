@@ -19,7 +19,7 @@ import { format, isToday, isYesterday, isSameDay } from "date-fns";
 
 interface MessageThreadProps {
   conversation: ConversationWithMessages | null;
-  onSendMessage: (content: string, mediaUrl?: string) => void;
+  onSendMessage: (conversationId: string, content: string, mediaUrl?: string) => void;
   isSending: boolean;
   isLoading: boolean;
   onBack?: () => void;
@@ -370,10 +370,15 @@ export const MessageThread = memo(function MessageThread({
       {/* Message Composer - key forces remount when conversation changes to prevent stale callbacks */}
       <MessageComposer
         key={conversation?.id || 'no-conversation'}
-        onSendMessage={onSendMessage}
+        onSendMessage={(content: string, mediaUrl?: string) => {
+          if (conversation?.id) {
+            console.log("[MessageThread] Sending to displayed conversation:", conversation.id, conversation.contact?.name);
+            onSendMessage(conversation.id, content, mediaUrl);
+          }
+        }}
         isSending={isSending}
         platform={platform}
-        conversationId={conversation?.id}
+        conversationId={conversation?.id || ''}
       />
     </div>
   );

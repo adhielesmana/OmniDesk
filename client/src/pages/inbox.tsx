@@ -184,9 +184,10 @@ function InboxContent({
         mediaUrl,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Use the conversationId from the mutation variables, not from state
       queryClient.invalidateQueries({
-        queryKey: ["/api/conversations", selectedConversationId],
+        queryKey: ["/api/conversations", variables.conversationId],
       });
       queryClient.invalidateQueries({ queryKey: ["/api/conversations"] });
     },
@@ -244,18 +245,18 @@ function InboxContent({
   const sendMessageMutationRef = useRef(sendMessageMutation);
   sendMessageMutationRef.current = sendMessageMutation;
 
-  const handleSendMessage = useCallback((content: string, mediaUrl?: string) => {
-    if (!selectedConversationId) return;
+  const handleSendMessage = useCallback((conversationId: string, content: string, mediaUrl?: string) => {
+    if (!conversationId) return;
     
     // Debug: Log which conversation we're sending to
-    console.log("[SendMessage] Sending to conversationId:", selectedConversationId, "content:", content.substring(0, 50));
+    console.log("[SendMessage] Sending to conversationId:", conversationId, "content:", content.substring(0, 50));
     
     sendMessageMutationRef.current.mutate({
-      conversationId: selectedConversationId,
+      conversationId,
       content,
       mediaUrl,
     });
-  }, [selectedConversationId]);
+  }, []);
 
   // Memoize isSending to prevent re-renders when other mutation state changes
   const isSending = sendMessageMutation.isPending;
