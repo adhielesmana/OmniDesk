@@ -846,6 +846,10 @@ export class MetaApiService {
 
       const messaging = entry.messaging?.[0];
       if (!messaging || !messaging.message) return null;
+      
+      // Log the full sender object to see what Instagram actually provides
+      console.log("[Instagram Webhook] Full sender data:", JSON.stringify(messaging.sender));
+      console.log("[Instagram Webhook] Full messaging object keys:", Object.keys(messaging));
 
       const message = messaging.message;
       let content: string | undefined;
