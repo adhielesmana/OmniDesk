@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PlatformIcon } from "@/components/platform-icons";
 import type { ConversationWithContact, Platform } from "@shared/schema";
-import { formatDistanceToNow } from "date-fns";
+import { formatRelativeTime } from "@/lib/timezone";
 
 interface ConversationListProps {
   conversations: ConversationWithContact[];
@@ -75,13 +75,8 @@ export function ConversationList({
   }, [hasMore, isLoadingMore, onLoadMore]);
 
 
-  const formatTime = useCallback((date: Date | null | undefined) => {
-    if (!date) return "";
-    try {
-      return formatDistanceToNow(new Date(date), { addSuffix: false });
-    } catch {
-      return "";
-    }
+  const formatTimeDisplay = useCallback((date: Date | null | undefined) => {
+    return formatRelativeTime(date);
   }, []);
 
   if (isLoading) {
@@ -200,7 +195,7 @@ export function ConversationList({
                             {conv.contact.name || conv.contact.phoneNumber || "Unknown"}
                           </span>
                           <span className="text-[10px] text-muted-foreground whitespace-nowrap shrink-0">
-                            {formatTime(conv.lastMessageAt)}
+                            {formatTimeDisplay(conv.lastMessageAt)}
                           </span>
                         </div>
 

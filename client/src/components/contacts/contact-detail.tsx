@@ -19,7 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { formatDateTime, formatShortDate } from "@/lib/timezone";
 import type { Contact, Platform, Conversation } from "@shared/schema";
 
 interface ContactDetailProps {
@@ -217,7 +217,7 @@ export function ContactDetail({
             )}
             {contact.lastContactedAt && (
               <div className="text-sm text-muted-foreground">
-                Last contacted: {format(new Date(contact.lastContactedAt), "PPp")}
+                Last contacted: {formatDateTime(contact.lastContactedAt)}
               </div>
             )}
           </CardContent>
@@ -345,7 +345,7 @@ export function ContactDetail({
                     </p>
                     {conv.lastMessageAt && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        {format(new Date(conv.lastMessageAt), "PPp")}
+                        {formatDateTime(conv.lastMessageAt)}
                       </p>
                     )}
                   </Link>
@@ -368,11 +368,11 @@ export function ContactDetail({
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Added</span>
-              <span>{contact.createdAt ? format(new Date(contact.createdAt), "PP") : "Unknown"}</span>
+              <span>{contact.createdAt ? formatShortDate(contact.createdAt) : "Unknown"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Updated</span>
-              <span>{contact.updatedAt ? format(new Date(contact.updatedAt), "PP") : "Unknown"}</span>
+              <span>{contact.updatedAt ? formatShortDate(contact.updatedAt) : "Unknown"}</span>
             </div>
           </CardContent>
         </Card>

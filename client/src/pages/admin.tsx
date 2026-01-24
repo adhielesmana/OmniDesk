@@ -20,6 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import type { Department, UserRole } from "@shared/schema";
+import { formatDateTime } from "@/lib/timezone";
 
 interface UserWithDepartments {
   id: string;
@@ -789,7 +790,7 @@ function UpdatesTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) 
 
           {status?.lastChecked && (
             <p className="text-sm text-muted-foreground">
-              Last checked: {new Date(status.lastChecked).toLocaleString()}
+              Last checked: {formatDateTime(status.lastChecked)}
             </p>
           )}
 
@@ -1443,13 +1444,13 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                           })()}</div>
                         )}
                         {facebookSettings.lastTokenValidatedAt && (
-                          <div className="mt-1 opacity-70">Checked: {new Date(facebookSettings.lastTokenValidatedAt).toLocaleString()}</div>
+                          <div className="mt-1 opacity-70">Checked: {formatDateTime(facebookSettings.lastTokenValidatedAt)}</div>
                         )}
                       </div>
                     )}
                     {facebookSettings.lastSyncAt && (
                       <p className="text-xs text-muted-foreground">
-                        Last synced: {new Date(facebookSettings.lastSyncAt).toLocaleString()}
+                        Last synced: {formatDateTime(facebookSettings.lastSyncAt)}
                       </p>
                     )}
                     <div className="flex gap-2 flex-wrap">
@@ -1602,13 +1603,13 @@ function PlatformsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }
                           })()}</div>
                         )}
                         {instagramSettings.lastTokenValidatedAt && (
-                          <div className="mt-1 opacity-70">Checked: {new Date(instagramSettings.lastTokenValidatedAt).toLocaleString()}</div>
+                          <div className="mt-1 opacity-70">Checked: {formatDateTime(instagramSettings.lastTokenValidatedAt)}</div>
                         )}
                       </div>
                     )}
                     {instagramSettings.lastSyncAt && (
                       <p className="text-xs text-muted-foreground">
-                        Last synced: {new Date(instagramSettings.lastSyncAt).toLocaleString()}
+                        Last synced: {formatDateTime(instagramSettings.lastSyncAt)}
                       </p>
                     )}
                     <div className="flex gap-2 flex-wrap">

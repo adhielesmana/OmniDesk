@@ -16,7 +16,8 @@ import { PlatformIcon, getPlatformName } from "@/components/platform-icons";
 import { MessageComposer } from "./message-composer";
 import { MessageContent } from "./message-content";
 import type { ConversationWithMessages, Message, MessageStatus } from "@shared/schema";
-import { format, isToday, isYesterday, isSameDay } from "date-fns";
+import { isSameDay } from "date-fns";
+import { formatTime, formatDate, toJakartaTime } from "@/lib/timezone";
 
 interface MessageThreadProps {
   conversation: ConversationWithMessages | null;
@@ -43,18 +44,11 @@ function MessageStatusIcon({ status }: { status: MessageStatus | null }) {
 }
 
 function formatMessageTime(date: Date | null | undefined): string {
-  if (!date) return "";
-  try {
-    return format(new Date(date), "h:mm a");
-  } catch {
-    return "";
-  }
+  return formatTime(date);
 }
 
 function formatDateSeparator(date: Date): string {
-  if (isToday(date)) return "Today";
-  if (isYesterday(date)) return "Yesterday";
-  return format(date, "MMMM d, yyyy");
+  return formatDate(date);
 }
 
 function shouldShowDateSeparator(
