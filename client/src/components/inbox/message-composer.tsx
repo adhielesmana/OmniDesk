@@ -6,24 +6,29 @@ interface MessageComposerProps {
   onSendMessage: (content: string, mediaUrl?: string) => void;
   isSending: boolean;
   platform: string;
+  conversationId?: string;
 }
 
 export const MessageComposer = memo(function MessageComposer({
   onSendMessage,
   isSending,
+  conversationId,
 }: MessageComposerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const onSendRef = useRef(onSendMessage);
   const isSendingRef = useRef(isSending);
+  const conversationIdRef = useRef(conversationId);
   
   onSendRef.current = onSendMessage;
   isSendingRef.current = isSending;
+  conversationIdRef.current = conversationId;
 
   const handleSend = () => {
     if (!inputRef.current) return;
     const message = inputRef.current.value.trim();
     if (message && !isSendingRef.current) {
+      console.log("[MessageComposer] Sending message for conversationId:", conversationId, "message:", message.substring(0, 30));
       onSendRef.current(message);
       inputRef.current.value = "";
     }
@@ -54,6 +59,7 @@ export const MessageComposer = memo(function MessageComposer({
         e.preventDefault();
         const message = input.value.trim();
         if (message && !isSendingRef.current) {
+          console.log("[MessageComposer:Enter] Sending for conversationId:", conversationIdRef.current, "message:", message.substring(0, 30));
           onSendRef.current(message);
           input.value = "";
         }

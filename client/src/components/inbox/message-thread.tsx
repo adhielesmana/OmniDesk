@@ -367,11 +367,13 @@ export const MessageThread = memo(function MessageThread({
         </div>
       </div>
 
-      {/* Message Composer */}
+      {/* Message Composer - key forces remount when conversation changes to prevent stale callbacks */}
       <MessageComposer
+        key={conversation?.id || 'no-conversation'}
         onSendMessage={onSendMessage}
         isSending={isSending}
         platform={platform}
+        conversationId={conversation?.id}
       />
     </div>
   );
