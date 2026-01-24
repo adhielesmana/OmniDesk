@@ -2596,12 +2596,26 @@ wa.me/6208991066262`;
   app.get("/api/platform-settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getPlatformSettings();
+      
+      // Check Twilio status for WhatsApp
+      const { isTwilioConfigured } = await import("./twilio");
+      const twilioConnected = await isTwilioConfigured();
+      
       // Don't expose access tokens or app secrets
-      const sanitized = settings.map((s) => ({
-        ...s,
-        accessToken: s.accessToken ? "********" : null,
-        appSecret: s.appSecret ? "********" : null,
-      }));
+      const sanitized = settings.map((s) => {
+        // For WhatsApp, also consider Twilio connection status
+        let isConnected = s.isConnected;
+        if (s.platform === "whatsapp" && twilioConnected) {
+          isConnected = true;
+        }
+        
+        return {
+          ...s,
+          isConnected,
+          accessToken: s.accessToken ? "********" : null,
+          appSecret: s.appSecret ? "********" : null,
+        };
+      });
       res.json(sanitized);
     } catch (error) {
       console.error("Error fetching platform settings:", error);
