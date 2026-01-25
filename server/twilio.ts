@@ -134,6 +134,20 @@ export function clearTwilioClient() {
   twilioFromNumber = null;
 }
 
+// Get Twilio auth headers for media fetch
+export async function getTwilioAuthHeaders(): Promise<Record<string, string>> {
+  const creds = await getCredentials();
+  
+  // Create Basic auth header
+  const username = creds.source === 'database' ? creds.accountSid : creds.apiKey || creds.accountSid;
+  const password = creds.source === 'database' ? creds.authToken! : creds.apiKeySecret || '';
+  const authString = Buffer.from(`${username}:${password}`).toString('base64');
+  
+  return {
+    'Authorization': `Basic ${authString}`,
+  };
+}
+
 export async function getTwilioFromPhoneNumber(): Promise<string> {
   if (twilioFromNumber) return twilioFromNumber;
   
@@ -443,7 +457,6 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   let mediaType: string | undefined;
   
   if (NumMedia && parseInt(NumMedia) > 0 && MediaUrl0) {
-    mediaUrl = MediaUrl0;
     if (MediaContentType0?.startsWith('image/')) {
       mediaType = 'image';
     } else if (MediaContentType0?.startsWith('video/')) {
@@ -452,6 +465,30 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
       mediaType = 'audio';
     } else {
       mediaType = 'document';
+    }
+    
+    // Try to upload to S3 for persistent storage
+    try {
+      const { isS3Configured, uploadMediaFromUrl, getExtensionFromContentType } = await import("./s3");
+      if (await isS3Configured()) {
+        const ext = getExtensionFromContentType(MediaContentType0 || 'application/octet-stream');
+        const filename = `${MessageSid}${ext}`;
+        const authHeaders = await getTwilioAuthHeaders();
+        
+        const result = await uploadMediaFromUrl(MediaUrl0, 'whatsapp-media', filename, authHeaders);
+        if (result.success && result.url) {
+          mediaUrl = result.url;
+          console.log(`[Twilio] Media uploaded to S3: ${result.url}`);
+        } else {
+          console.warn(`[Twilio] S3 upload failed, using original URL: ${result.error}`);
+          mediaUrl = MediaUrl0;
+        }
+      } else {
+        mediaUrl = MediaUrl0;
+      }
+    } catch (s3Error) {
+      console.error('[Twilio] S3 upload error:', s3Error);
+      mediaUrl = MediaUrl0;
     }
   }
   
