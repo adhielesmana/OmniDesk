@@ -36,15 +36,23 @@ export async function getS3Config(): Promise<S3Config | null> {
   };
 }
 
+function configsMatch(a: S3Config | null, b: S3Config | null): boolean {
+  if (!a || !b) return false;
+  return a.accessKeyId === b.accessKeyId &&
+    a.secretAccessKey === b.secretAccessKey &&
+    a.region === b.region &&
+    a.bucket === b.bucket &&
+    a.endpoint === b.endpoint &&
+    a.usePathStyleEndpoint === b.usePathStyleEndpoint;
+}
+
 export async function getS3Client(): Promise<S3Client | null> {
   const config = await getS3Config();
   if (!config) {
     return null;
   }
 
-  if (s3Client && currentConfig && 
-      currentConfig.accessKeyId === config.accessKeyId &&
-      currentConfig.endpoint === config.endpoint) {
+  if (s3Client && configsMatch(currentConfig, config)) {
     return s3Client;
   }
 
@@ -187,7 +195,7 @@ export async function deleteFromS3(key: string): Promise<{ success: boolean; err
 export async function uploadMediaFromUrl(
   url: string,
   folder: string,
-  filename: string,
+  filenameBase: string,
   authHeaders?: Record<string, string>
 ): Promise<{ success: boolean; url?: string; error?: string }> {
   try {
@@ -201,6 +209,10 @@ export async function uploadMediaFromUrl(
 
     const contentType = response.headers.get("content-type") || "application/octet-stream";
     const buffer = Buffer.from(await response.arrayBuffer());
+    
+    const ext = getExtensionFromContentType(contentType);
+    const baseWithoutExt = filenameBase.replace(/\.[^/.]+$/, "");
+    const filename = `${baseWithoutExt}${ext}`;
     
     const key = `${folder}/${filename}`;
     return await uploadToS3(key, buffer, contentType);

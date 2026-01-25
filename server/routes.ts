@@ -2039,11 +2039,10 @@ wa.me/6208991066262`;
       let logoUrl: string;
       
       if (s3Configured) {
-        // Delete old S3 logo if exists
-        const oldLogoSetting = await storage.getAppSetting("organization_logo");
-        if (oldLogoSetting?.value && oldLogoSetting.value.includes("is3.cloudhost.id")) {
-          const oldKey = oldLogoSetting.value.split("/").slice(-2).join("/");
-          await deleteFromS3(oldKey).catch(() => {});
+        // Delete old S3 logo if exists using stored key
+        const oldLogoKey = await storage.getAppSetting("organization_logo_s3_key");
+        if (oldLogoKey?.value) {
+          await deleteFromS3(oldLogoKey.value).catch(() => {});
         }
         
         // Upload to S3
@@ -2055,6 +2054,7 @@ wa.me/6208991066262`;
         }
         
         logoUrl = result.url;
+        await storage.setAppSetting("organization_logo_s3_key", s3Key);
         console.log(`[Branding] Logo uploaded to S3: ${logoUrl}`);
       } else {
         // Fallback to local storage
@@ -2071,6 +2071,7 @@ wa.me/6208991066262`;
         
         fs.writeFileSync(filepath, req.file.buffer);
         logoUrl = `/api/branding/logo/${filename}`;
+        await storage.deleteAppSetting("organization_logo_s3_key");
         console.log(`[Branding] Logo saved locally: ${logoUrl}`);
       }
 
@@ -2085,22 +2086,22 @@ wa.me/6208991066262`;
   app.delete("/api/admin/branding/logo", requireAdmin, async (req, res) => {
     try {
       const logoSetting = await storage.getAppSetting("organization_logo");
-      if (logoSetting?.value) {
-        // Check if logo is in S3 or local
-        if (logoSetting.value.includes("is3.cloudhost.id") || logoSetting.value.includes("s3.")) {
-          // Delete from S3
-          const { deleteFromS3 } = await import("./s3");
-          const key = logoSetting.value.split("/").slice(-2).join("/");
-          await deleteFromS3(key).catch((e) => console.error("Failed to delete S3 logo:", e));
-        } else if (logoSetting.value.startsWith("/api/branding/logo/")) {
-          // Delete local file
-          const filename = logoSetting.value.replace("/api/branding/logo/", "");
-          const filepath = path.join(brandingFolder, filename);
-          if (fs.existsSync(filepath)) {
-            fs.unlinkSync(filepath);
-          }
+      const logoS3Key = await storage.getAppSetting("organization_logo_s3_key");
+      
+      if (logoS3Key?.value) {
+        // Delete from S3 using stored key
+        const { deleteFromS3 } = await import("./s3");
+        await deleteFromS3(logoS3Key.value).catch((e) => console.error("Failed to delete S3 logo:", e));
+        await storage.deleteAppSetting("organization_logo_s3_key");
+      } else if (logoSetting?.value && logoSetting.value.startsWith("/api/branding/logo/")) {
+        // Delete local file
+        const filename = logoSetting.value.replace("/api/branding/logo/", "");
+        const filepath = path.join(brandingFolder, filename);
+        if (fs.existsSync(filepath)) {
+          fs.unlinkSync(filepath);
         }
       }
+      
       await storage.deleteAppSetting("organization_logo");
       res.json({ success: true });
     } catch (error) {
@@ -3317,13 +3318,10 @@ wa.me/6208991066262`;
         let finalMediaUrl = webhookMessage.mediaUrl;
         if (webhookMessage.mediaUrl && ["instagram", "facebook"].includes(webhookMessage.platform)) {
           try {
-            const { isS3Configured, uploadMediaFromUrl, getExtensionFromContentType } = await import("./s3");
+            const { isS3Configured, uploadMediaFromUrl } = await import("./s3");
             if (await isS3Configured()) {
               const folder = webhookMessage.platform === "instagram" ? "instagram-media" : "facebook-media";
-              const ext = getExtensionFromContentType(webhookMessage.mediaType === "image" ? "image/jpeg" : 
-                webhookMessage.mediaType === "video" ? "video/mp4" : 
-                webhookMessage.mediaType === "audio" ? "audio/mpeg" : "application/octet-stream");
-              const filename = `${webhookMessage.externalId || Date.now()}${ext}`;
+              const filename = `${webhookMessage.externalId || Date.now()}`;
               
               const result = await uploadMediaFromUrl(webhookMessage.mediaUrl, folder, filename);
               if (result.success && result.url) {
