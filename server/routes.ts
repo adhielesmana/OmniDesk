@@ -3276,13 +3276,38 @@ wa.me/6208991066262`;
           }
         }
 
+        // Upload media to S3 if present (for Instagram/Facebook)
+        let finalMediaUrl = webhookMessage.mediaUrl;
+        if (webhookMessage.mediaUrl && ["instagram", "facebook"].includes(webhookMessage.platform)) {
+          try {
+            const { isS3Configured, uploadMediaFromUrl, getExtensionFromContentType } = await import("./s3");
+            if (await isS3Configured()) {
+              const folder = webhookMessage.platform === "instagram" ? "instagram-media" : "facebook-media";
+              const ext = getExtensionFromContentType(webhookMessage.mediaType === "image" ? "image/jpeg" : 
+                webhookMessage.mediaType === "video" ? "video/mp4" : 
+                webhookMessage.mediaType === "audio" ? "audio/mpeg" : "application/octet-stream");
+              const filename = `${webhookMessage.externalId || Date.now()}${ext}`;
+              
+              const result = await uploadMediaFromUrl(webhookMessage.mediaUrl, folder, filename);
+              if (result.success && result.url) {
+                finalMediaUrl = result.url;
+                console.log(`[${webhookMessage.platform}] Media uploaded to S3: ${result.url}`);
+              } else {
+                console.warn(`[${webhookMessage.platform}] S3 upload failed, using original URL: ${result.error}`);
+              }
+            }
+          } catch (s3Error) {
+            console.error(`[${webhookMessage.platform}] S3 upload error:`, s3Error);
+          }
+        }
+
         // Create message - echo messages are outbound, regular messages are inbound
         const message = await storage.createMessage({
           conversationId: conversation.id,
           externalId: webhookMessage.externalId,
           direction: isEcho ? "outbound" : "inbound",
           content: webhookMessage.content,
-          mediaUrl: webhookMessage.mediaUrl,
+          mediaUrl: finalMediaUrl,
           mediaType: webhookMessage.mediaType,
           status: "delivered",
           timestamp: webhookMessage.timestamp,
