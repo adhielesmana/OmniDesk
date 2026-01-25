@@ -2031,22 +2031,50 @@ wa.me/6208991066262`;
 
       const ext = req.file.mimetype.split("/")[1] === "jpeg" ? "jpg" : req.file.mimetype.split("/")[1];
       const filename = `logo_${Date.now()}.${ext}`;
-      const filepath = path.join(brandingFolder, filename);
 
-      const oldLogoSetting = await storage.getAppSetting("organization_logo");
-      if (oldLogoSetting?.value) {
-        const oldFilename = oldLogoSetting.value.replace("/api/branding/logo/", "");
-        const oldPath = path.join(brandingFolder, oldFilename);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
+      // Try S3 upload first
+      const { isS3Configured, uploadToS3, deleteFromS3 } = await import("./s3");
+      const s3Configured = await isS3Configured();
+      
+      let logoUrl: string;
+      
+      if (s3Configured) {
+        // Delete old S3 logo if exists
+        const oldLogoSetting = await storage.getAppSetting("organization_logo");
+        if (oldLogoSetting?.value && oldLogoSetting.value.includes("is3.cloudhost.id")) {
+          const oldKey = oldLogoSetting.value.split("/").slice(-2).join("/");
+          await deleteFromS3(oldKey).catch(() => {});
         }
+        
+        // Upload to S3
+        const s3Key = `branding/${filename}`;
+        const result = await uploadToS3(s3Key, req.file.buffer, req.file.mimetype);
+        
+        if (!result.success || !result.url) {
+          return res.status(500).json({ error: result.error || "S3 upload failed" });
+        }
+        
+        logoUrl = result.url;
+        console.log(`[Branding] Logo uploaded to S3: ${logoUrl}`);
+      } else {
+        // Fallback to local storage
+        const filepath = path.join(brandingFolder, filename);
+        
+        const oldLogoSetting = await storage.getAppSetting("organization_logo");
+        if (oldLogoSetting?.value && oldLogoSetting.value.startsWith("/api/branding/logo/")) {
+          const oldFilename = oldLogoSetting.value.replace("/api/branding/logo/", "");
+          const oldPath = path.join(brandingFolder, oldFilename);
+          if (fs.existsSync(oldPath)) {
+            fs.unlinkSync(oldPath);
+          }
+        }
+        
+        fs.writeFileSync(filepath, req.file.buffer);
+        logoUrl = `/api/branding/logo/${filename}`;
+        console.log(`[Branding] Logo saved locally: ${logoUrl}`);
       }
 
-      fs.writeFileSync(filepath, req.file.buffer);
-
-      const logoUrl = `/api/branding/logo/${filename}`;
       await storage.setAppSetting("organization_logo", logoUrl);
-
       res.json({ logoUrl });
     } catch (error) {
       console.error("Error uploading logo:", error);
@@ -2058,10 +2086,19 @@ wa.me/6208991066262`;
     try {
       const logoSetting = await storage.getAppSetting("organization_logo");
       if (logoSetting?.value) {
-        const filename = logoSetting.value.replace("/api/branding/logo/", "");
-        const filepath = path.join(brandingFolder, filename);
-        if (fs.existsSync(filepath)) {
-          fs.unlinkSync(filepath);
+        // Check if logo is in S3 or local
+        if (logoSetting.value.includes("is3.cloudhost.id") || logoSetting.value.includes("s3.")) {
+          // Delete from S3
+          const { deleteFromS3 } = await import("./s3");
+          const key = logoSetting.value.split("/").slice(-2).join("/");
+          await deleteFromS3(key).catch((e) => console.error("Failed to delete S3 logo:", e));
+        } else if (logoSetting.value.startsWith("/api/branding/logo/")) {
+          // Delete local file
+          const filename = logoSetting.value.replace("/api/branding/logo/", "");
+          const filepath = path.join(brandingFolder, filename);
+          if (fs.existsSync(filepath)) {
+            fs.unlinkSync(filepath);
+          }
         }
       }
       await storage.deleteAppSetting("organization_logo");
