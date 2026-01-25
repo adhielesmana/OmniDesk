@@ -2,6 +2,17 @@ import { useState, useMemo, memo } from "react";
 import { ExternalLink, MapPin, Play } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 
+function getProxiedMediaUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  
+  // Check if it's a Twilio media URL that needs proxying
+  if (url.includes('api.twilio.com') || url.includes('media.twiliocdn.com')) {
+    return `/api/twilio/media?url=${encodeURIComponent(url)}`;
+  }
+  
+  return url;
+}
+
 interface MessageContentProps {
   content: string;
   mediaUrl?: string | null;
@@ -223,6 +234,9 @@ export const MessageContent = memo(function MessageContent({
 
   const locationData = useMemo(() => parseLocationMetadata(metadata ?? null), [metadata]);
   const parsedContent = useMemo(() => parseMessageContent(content || ""), [content]);
+  
+  // Get proxied URL for Twilio media
+  const proxiedMediaUrl = useMemo(() => getProxiedMediaUrl(mediaUrl), [mediaUrl]);
 
   const hasMediaPlaceholder = ["[Image]", "[Video]", "[Audio]", "[Document]", "[Location]", "[Live Location]", "[Sticker]"].includes(content || "");
 
@@ -235,15 +249,15 @@ export const MessageContent = memo(function MessageContent({
 
   return (
     <div className="space-y-2">
-      {mediaUrl && (
+      {proxiedMediaUrl && (
         <div className="mb-2">
           {mediaType === "image" ? (
             <>
               <img
-                src={mediaUrl}
+                src={proxiedMediaUrl}
                 alt="Photo"
                 className="max-w-full max-h-80 rounded-lg object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                onClick={() => openLightbox(mediaUrl)}
+                onClick={() => openLightbox(proxiedMediaUrl)}
                 loading="lazy"
                 data-testid={`media-image-${messageId}`}
               />
@@ -256,7 +270,7 @@ export const MessageContent = memo(function MessageContent({
             </>
           ) : mediaType === "video" ? (
             <video
-              src={mediaUrl}
+              src={proxiedMediaUrl}
               controls
               className="max-w-full max-h-80 rounded-lg"
               preload="metadata"
@@ -265,7 +279,7 @@ export const MessageContent = memo(function MessageContent({
             />
           ) : mediaType === "audio" ? (
             <audio
-              src={mediaUrl}
+              src={proxiedMediaUrl}
               controls
               className="w-full"
               preload="metadata"
@@ -273,7 +287,7 @@ export const MessageContent = memo(function MessageContent({
             />
           ) : (
             <a
-              href={mediaUrl}
+              href={proxiedMediaUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={`flex items-center gap-2 p-3 rounded-lg hover-elevate ${
@@ -292,7 +306,7 @@ export const MessageContent = memo(function MessageContent({
         <LocationPreview location={locationData} isOutbound={isOutbound} />
       )}
 
-      {hasMediaPlaceholder && !mediaUrl && !locationData && (
+      {hasMediaPlaceholder && !proxiedMediaUrl && !locationData && (
         <div className={`flex items-center gap-2 p-3 rounded-lg ${
           isOutbound ? "bg-primary-foreground/10" : "bg-muted/50"
         } text-muted-foreground`}>

@@ -4979,6 +4979,49 @@ wa.me/6208991066262`;
     }
   });
 
+  // Proxy for Twilio media (requires authentication)
+  app.get("/api/twilio/media", requireAuth, async (req, res) => {
+    try {
+      const { url } = req.query;
+      
+      if (!url || typeof url !== 'string') {
+        return res.status(400).json({ error: "Missing media URL" });
+      }
+      
+      // Only allow Twilio media URLs
+      if (!url.includes('api.twilio.com') && !url.includes('media.twiliocdn.com')) {
+        return res.status(400).json({ error: "Invalid media URL" });
+      }
+      
+      const { getCredentials } = await import("./twilio");
+      const creds = await getCredentials();
+      
+      // Fetch media with Twilio credentials
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': 'Basic ' + Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64')
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`[Twilio Media] Failed to fetch: ${response.status}`);
+        return res.status(response.status).json({ error: "Failed to fetch media" });
+      }
+      
+      // Forward content type and cache headers
+      const contentType = response.headers.get('content-type') || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      
+      // Stream the response
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
+    } catch (error) {
+      console.error("[Twilio Media] Proxy error:", error);
+      res.status(500).json({ error: "Failed to proxy media" });
+    }
+  });
+
   // Serve media files
   app.get("/api/media/:filename", (req, res) => {
     try {
