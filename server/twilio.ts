@@ -456,14 +456,22 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   }
   
   // Parse timestamp from Twilio webhook (try multiple fields)
-  let messageTimestamp: Date | undefined;
+  // IMPORTANT: Always use UTC timestamps for consistent timezone handling
+  let messageTimestamp: Date;
   const rawTimestamp = Timestamp || DateSent || DateCreated;
   if (rawTimestamp) {
     const parsed = new Date(rawTimestamp);
     if (!isNaN(parsed.getTime())) {
       messageTimestamp = parsed;
       console.log(`[Twilio] Using webhook timestamp: ${messageTimestamp.toISOString()}`);
+    } else {
+      messageTimestamp = new Date(); // Current UTC time
+      console.log(`[Twilio] Invalid webhook timestamp, using current: ${messageTimestamp.toISOString()}`);
     }
+  } else {
+    // No timestamp from Twilio, use current UTC time
+    messageTimestamp = new Date();
+    console.log(`[Twilio] No webhook timestamp, using current: ${messageTimestamp.toISOString()}`);
   }
   
   // Create message (storage.createMessage also updates conversation metadata)
@@ -475,7 +483,7 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
     externalId: MessageSid,
     mediaUrl,
     mediaType,
-    timestamp: messageTimestamp,
+    timestamp: messageTimestamp, // Always explicitly set UTC timestamp
   });
   
   console.log(`[Twilio] Message saved to conversation ${conversation.id}`);
