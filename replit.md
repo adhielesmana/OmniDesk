@@ -64,10 +64,18 @@ Preferred communication style: Simple, everyday language.
 
 ## External Dependencies
 
+### S3 Storage
+- **S3-Compatible Storage**: Supports any S3-compatible storage provider for persistent media storage across deployments.
+- **Media Storage**: Incoming WhatsApp, Instagram, and Facebook message media automatically uploaded to S3.
+- **Folder Structure**: `whatsapp-media/`, `instagram-media/`, `facebook-media/`, `branding/`
+- **Local Fallback**: Gracefully falls back to local storage if S3 not configured.
+- **Settings Storage**: S3 credentials stored in `app_settings` table (s3_endpoint, s3_bucket, s3_region, s3_access_key_id, s3_secret_access_key, s3_use_path_style).
+
 ### Third-Party Services
 - **Baileys Library**: Unofficial WhatsApp Web API.
 - **Meta Graph API (v21.0)**: For Instagram and Facebook platforms (Instagram Messaging API, Facebook Messenger API).
 - **Twilio**: Official WhatsApp Business API and SMS gateway.
+- **S3 Storage**: S3-compatible storage (configured with is3.cloudhost.id).
 
 ### Database
 - **PostgreSQL**: Primary data store.
