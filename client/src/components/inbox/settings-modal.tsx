@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, Loader2 } from "lucide-react";
+import { Check, ExternalLink, RefreshCw, AlertCircle, Sparkles, Trash2, Loader2, HardDrive } from "lucide-react";
 import { SiWhatsapp, SiOpenai } from "react-icons/si";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +19,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import type { Platform, PlatformSettings } from "@shared/schema";
 
-type SettingsTab = Platform | "openai" | "autoreply";
+type SettingsTab = Platform | "openai" | "autoreply" | "s3";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -67,6 +68,15 @@ export function SettingsModal({
     accountSid: "",
     authToken: "",
     phoneNumber: "",
+  });
+
+  const [s3Settings, setS3Settings] = useState({
+    accessKeyId: "",
+    secretAccessKey: "",
+    region: "",
+    bucket: "",
+    endpoint: "",
+    usePathStyleEndpoint: true,
   });
 
   const { data: openaiStatus, isLoading: openaiLoading } = useQuery<OpenAIStatus>({
@@ -122,6 +132,86 @@ export function SettingsModal({
       toast({
         title: "Twilio Settings Deleted",
         description: "Your Twilio credentials have been removed.",
+      });
+    },
+  });
+
+  // S3 Storage Settings
+  const { data: s3Status, isLoading: s3Loading } = useQuery<{
+    configured: boolean;
+    accessKeyId: string | null;
+    region: string | null;
+    bucket: string | null;
+    endpoint: string | null;
+    usePathStyleEndpoint: boolean;
+  }>({
+    queryKey: ["/api/settings/s3"],
+    enabled: isOpen,
+  });
+
+  // Save S3 settings mutation
+  const saveS3Mutation = useMutation({
+    mutationFn: async (settings: typeof s3Settings) => {
+      const res = await apiRequest("POST", "/api/settings/s3", settings);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/s3"] });
+      setS3Settings({ accessKeyId: "", secretAccessKey: "", region: "", bucket: "", endpoint: "", usePathStyleEndpoint: true });
+      toast({
+        title: "S3 Settings Saved",
+        description: "Your S3 storage credentials have been saved successfully.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save S3 settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Test S3 connection mutation
+  const testS3Mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/settings/s3/test");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.success) {
+        toast({
+          title: "Connection Successful",
+          description: "S3 storage is connected and accessible.",
+        });
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: data.error || "Could not connect to S3 storage.",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to test S3 connection",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Delete S3 settings mutation
+  const deleteS3Mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/settings/s3");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/s3"] });
+      toast({
+        title: "S3 Settings Deleted",
+        description: "Your S3 storage credentials have been removed.",
       });
     },
   });
@@ -273,7 +363,7 @@ export function SettingsModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SettingsTab)}>
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="whatsapp" className="gap-2" data-testid="tab-whatsapp">
               <SiWhatsapp className="h-4 w-4 text-[#25D366]" />
               WhatsApp
@@ -281,6 +371,10 @@ export function SettingsModal({
             <TabsTrigger value="openai" className="gap-2" data-testid="tab-openai">
               <SiOpenai className="h-4 w-4" />
               OpenAI
+            </TabsTrigger>
+            <TabsTrigger value="s3" className="gap-2" data-testid="tab-s3">
+              <HardDrive className="h-4 w-4" />
+              Storage
             </TabsTrigger>
           </TabsList>
 
@@ -648,6 +742,167 @@ export function SettingsModal({
                     Get an OpenAI API Key
                     <ExternalLink className="h-3 w-3" />
                   </a>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="s3" className="space-y-4 mt-4">
+            <Card className={s3Status?.configured ? "border-green-500/50" : ""}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <HardDrive className="h-5 w-5 text-primary" />
+                      S3 Storage
+                    </CardTitle>
+                    <CardDescription className="mt-1">
+                      Store message media and app assets in S3-compatible storage
+                    </CardDescription>
+                  </div>
+                  {s3Loading ? (
+                    <Badge variant="secondary">Loading...</Badge>
+                  ) : (
+                    <Badge variant={s3Status?.configured ? "default" : "secondary"}>
+                      {s3Status?.configured ? (
+                        <>
+                          <Check className="h-3 w-3 mr-1" />
+                          Configured
+                        </>
+                      ) : (
+                        "Not Configured"
+                      )}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {s3Status?.configured && (
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-md">
+                    <p className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" />
+                      S3 storage is configured
+                    </p>
+                    {s3Status.bucket && (
+                      <p className="mt-1">Bucket: {s3Status.bucket}</p>
+                    )}
+                    {s3Status.endpoint && (
+                      <p className="mt-1">Endpoint: {s3Status.endpoint}</p>
+                    )}
+                    {s3Status.accessKeyId && (
+                      <p className="mt-1">Access Key: {s3Status.accessKeyId}</p>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="s3-access-key">Access Key ID</Label>
+                  <Input
+                    id="s3-access-key"
+                    placeholder="Enter your S3 access key ID"
+                    value={s3Settings.accessKeyId}
+                    onChange={(e) => setS3Settings({ ...s3Settings, accessKeyId: e.target.value })}
+                    data-testid="input-s3-access-key"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="s3-secret-key">Secret Access Key</Label>
+                  <Input
+                    id="s3-secret-key"
+                    type="password"
+                    placeholder="Enter your S3 secret access key"
+                    value={s3Settings.secretAccessKey}
+                    onChange={(e) => setS3Settings({ ...s3Settings, secretAccessKey: e.target.value })}
+                    data-testid="input-s3-secret-key"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="s3-bucket">Bucket Name</Label>
+                  <Input
+                    id="s3-bucket"
+                    placeholder="my-bucket"
+                    value={s3Settings.bucket}
+                    onChange={(e) => setS3Settings({ ...s3Settings, bucket: e.target.value })}
+                    data-testid="input-s3-bucket"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="s3-region">Region</Label>
+                  <Input
+                    id="s3-region"
+                    placeholder="us-east-1"
+                    value={s3Settings.region}
+                    onChange={(e) => setS3Settings({ ...s3Settings, region: e.target.value })}
+                    data-testid="input-s3-region"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="s3-endpoint">Custom Endpoint (Optional)</Label>
+                  <Input
+                    id="s3-endpoint"
+                    placeholder="https://s3.example.com"
+                    value={s3Settings.endpoint}
+                    onChange={(e) => setS3Settings({ ...s3Settings, endpoint: e.target.value })}
+                    data-testid="input-s3-endpoint"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    For S3-compatible services like MinIO, Cloudflare R2, or CloudHost
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="s3-path-style"
+                    checked={s3Settings.usePathStyleEndpoint}
+                    onCheckedChange={(checked) => setS3Settings({ ...s3Settings, usePathStyleEndpoint: !!checked })}
+                    data-testid="checkbox-s3-path-style"
+                  />
+                  <Label htmlFor="s3-path-style" className="text-sm font-normal">
+                    Use path-style endpoint (required for most S3-compatible services)
+                  </Label>
+                </div>
+
+                <div className="flex items-center gap-2 pt-2">
+                  <Button
+                    onClick={() => saveS3Mutation.mutate(s3Settings)}
+                    disabled={saveS3Mutation.isPending || !s3Settings.accessKeyId || !s3Settings.secretAccessKey || !s3Settings.bucket}
+                    data-testid="button-save-s3"
+                  >
+                    {saveS3Mutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : null}
+                    Save S3 Settings
+                  </Button>
+                  {s3Status?.configured && (
+                    <>
+                      <Button
+                        variant="outline"
+                        onClick={() => testS3Mutation.mutate()}
+                        disabled={testS3Mutation.isPending}
+                        data-testid="button-test-s3"
+                      >
+                        {testS3Mutation.isPending ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Test Connection
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => deleteS3Mutation.mutate()}
+                        disabled={deleteS3Mutation.isPending}
+                        data-testid="button-delete-s3"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

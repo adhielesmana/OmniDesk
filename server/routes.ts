@@ -4401,6 +4401,80 @@ wa.me/6208991066262`;
     }
   });
   
+  // ============= S3 STORAGE SETTINGS =============
+  
+  // Get S3 settings
+  app.get("/api/settings/s3", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const accessKeyId = await storage.getAppSetting('s3_access_key_id');
+      const secretAccessKey = await storage.getAppSetting('s3_secret_access_key');
+      const region = await storage.getAppSetting('s3_region');
+      const bucket = await storage.getAppSetting('s3_bucket');
+      const endpoint = await storage.getAppSetting('s3_endpoint');
+      const usePathStyle = await storage.getAppSetting('s3_use_path_style');
+      
+      res.json({
+        configured: !!(accessKeyId?.value && secretAccessKey?.value && bucket?.value),
+        accessKeyId: accessKeyId?.value ? "••••" + accessKeyId.value.slice(-4) : null,
+        region: region?.value || null,
+        bucket: bucket?.value || null,
+        endpoint: endpoint?.value || null,
+        usePathStyleEndpoint: usePathStyle?.value === "true",
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get S3 settings" });
+    }
+  });
+  
+  // Save S3 settings
+  app.post("/api/settings/s3", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { accessKeyId, secretAccessKey, region, bucket, endpoint, usePathStyleEndpoint } = req.body;
+      
+      if (!accessKeyId || !secretAccessKey || !bucket) {
+        return res.status(400).json({ error: "Access Key, Secret Key, and Bucket are required" });
+      }
+      
+      await storage.upsertAppSetting('s3_access_key_id', accessKeyId);
+      await storage.upsertAppSetting('s3_secret_access_key', secretAccessKey);
+      await storage.upsertAppSetting('s3_region', region || 'us-east-1');
+      await storage.upsertAppSetting('s3_bucket', bucket);
+      await storage.upsertAppSetting('s3_endpoint', endpoint || '');
+      await storage.upsertAppSetting('s3_use_path_style', usePathStyleEndpoint ? 'true' : 'false');
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message || "Failed to save S3 settings" });
+    }
+  });
+  
+  // Test S3 connection
+  app.post("/api/settings/s3/test", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { testS3Connection } = await import("./s3");
+      const result = await testS3Connection();
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message || "Connection test failed" });
+    }
+  });
+  
+  // Delete S3 settings
+  app.delete("/api/settings/s3", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAppSetting('s3_access_key_id');
+      await storage.deleteAppSetting('s3_secret_access_key');
+      await storage.deleteAppSetting('s3_region');
+      await storage.deleteAppSetting('s3_bucket');
+      await storage.deleteAppSetting('s3_endpoint');
+      await storage.deleteAppSetting('s3_use_path_style');
+      
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete S3 settings" });
+    }
+  });
+  
   // Send WhatsApp message via Twilio
   app.post("/api/twilio/whatsapp/send", requireAuth, async (req, res) => {
     try {
