@@ -44,29 +44,98 @@ function InboxContent({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
 
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
-  const pendingInvalidationsRef = useRef<Set<string>>(new Set());
+  const pendingConversationsRef = useRef<Set<string>>(new Set());
 
-  const handleWebSocketMessage = useCallback((data: { type: string; conversationId?: string }) => {
-    if (data.type === "new_message" || data.type === "conversation_updated" || data.type === "chats_synced") {
-      pendingInvalidationsRef.current.add("conversations");
-      if (data.conversationId && data.conversationId === selectedConversationId) {
-        pendingInvalidationsRef.current.add("selected");
+  const handleWebSocketMessage = useCallback((data: { type: string; conversationId?: string; conversation?: ConversationWithContact }) => {
+    if (data.type === "new_message" || data.type === "conversation_updated") {
+      // Track which conversations need updating
+      if (data.conversationId) {
+        pendingConversationsRef.current.add(data.conversationId);
       }
       
+      // Debounce the update to batch multiple rapid messages
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        // Longer debounce to prevent typing lag from constant refetches
-        if (pendingInvalidationsRef.current.has("conversations")) {
-          // Reset infinite query to force fresh data with correct sort order
-          queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
-        }
-        if (pendingInvalidationsRef.current.has("selected") && selectedConversationId) {
-          queryClient.invalidateQueries({
-            queryKey: ["/api/conversations", selectedConversationId],
+      debounceRef.current = setTimeout(async () => {
+        const conversationIds = Array.from(pendingConversationsRef.current);
+        pendingConversationsRef.current.clear();
+        
+        if (conversationIds.length === 0) return;
+        
+        // Fetch updated conversation data for changed conversations
+        try {
+          const res = await fetch(`/api/conversations?ids=${conversationIds.join(',')}`, {
+            credentials: "include",
           });
+          if (!res.ok) return;
+          
+          const updatedData = await res.json() as { conversations: ConversationWithContact[] };
+          const updatedConversations = updatedData.conversations || [];
+          
+          // Update the infinite query cache in place
+          queryClient.setQueriesData<{
+            pages: { conversations: ConversationWithContact[]; total: number; hasMore: boolean }[];
+            pageParams: number[];
+          }>(
+            { queryKey: ["/api/conversations"], exact: false },
+            (oldData) => {
+              if (!oldData?.pages) return oldData;
+              
+              // Create a map of existing conversations by ID
+              const existingConversations = new Map<string, ConversationWithContact>();
+              for (const page of oldData.pages) {
+                for (const conv of page.conversations) {
+                  existingConversations.set(conv.id, conv);
+                }
+              }
+              
+              // Update or add new conversations
+              for (const updatedConv of updatedConversations) {
+                existingConversations.set(updatedConv.id, updatedConv);
+              }
+              
+              // Sort all conversations by lastMessageAt (newest first)
+              const allConversations = Array.from(existingConversations.values())
+                .sort((a, b) => {
+                  // Pinned conversations first
+                  if (a.isPinned && !b.isPinned) return -1;
+                  if (!a.isPinned && b.isPinned) return 1;
+                  // Then by lastMessageAt
+                  const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+                  const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+                  return bTime - aTime;
+                });
+              
+              // Redistribute into pages
+              const pageSize = 30;
+              const newPages = oldData.pages.map((page, index) => {
+                const start = index * pageSize;
+                const end = start + pageSize;
+                const pageConversations = allConversations.slice(start, end);
+                return {
+                  ...page,
+                  conversations: pageConversations,
+                  hasMore: end < allConversations.length,
+                };
+              });
+              
+              return { ...oldData, pages: newPages };
+            }
+          );
+          
+          // Also update selected conversation messages if needed
+          if (selectedConversationId && conversationIds.includes(selectedConversationId)) {
+            queryClient.invalidateQueries({
+              queryKey: ["/api/conversations", selectedConversationId],
+            });
+          }
+        } catch (error) {
+          // Fallback to full refresh on error
+          queryClient.invalidateQueries({ queryKey: ["/api/conversations"], exact: false });
         }
-        pendingInvalidationsRef.current.clear();
-      }, 1000); // Increased from 500ms to reduce typing lag
+      }, 500);
+    } else if (data.type === "chats_synced") {
+      // For bulk sync, do a full refresh
+      queryClient.invalidateQueries({ queryKey: ["/api/conversations"], exact: false });
     }
   }, [selectedConversationId]);
 

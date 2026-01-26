@@ -130,6 +130,7 @@ export interface IStorage {
 
   // Conversations
   getConversations(departmentIds?: string[], options?: { limit?: number; offset?: number; search?: string }): Promise<{ conversations: ConversationWithContact[]; total: number; hasMore: boolean }>;
+  getConversationsByIds(ids: string[], departmentIds?: string[]): Promise<ConversationWithContact[]>;
   getConversation(id: string): Promise<ConversationWithMessages | undefined>;
   getConversationByContactId(contactId: string): Promise<Conversation | undefined>;
   getConversationsByContactId(contactId: string): Promise<Conversation[]>;
@@ -757,6 +758,41 @@ export class DatabaseStorage implements IStorage {
       total,
       hasMore: offset + conversationsData.length < total,
     };
+  }
+
+  async getConversationsByIds(ids: string[], departmentIds?: string[]): Promise<ConversationWithContact[]> {
+    if (ids.length === 0) return [];
+
+    let whereClause = inArray(conversations.id, ids);
+
+    // Apply department filter if provided
+    if (departmentIds !== undefined) {
+      if (departmentIds.length === 0) {
+        whereClause = and(
+          inArray(conversations.id, ids),
+          sql`${conversations.departmentId} IS NULL`
+        )!;
+      } else {
+        whereClause = and(
+          inArray(conversations.id, ids),
+          or(
+            inArray(conversations.departmentId, departmentIds),
+            sql`${conversations.departmentId} IS NULL`
+          )
+        )!;
+      }
+    }
+
+    const rows = await db
+      .select()
+      .from(conversations)
+      .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+      .where(whereClause);
+
+    return rows.map(row => ({
+      ...row.conversations,
+      contact: row.contacts!,
+    }));
   }
 
   async getConversation(id: string, messageLimit: number = 20): Promise<ConversationWithMessages | undefined> {

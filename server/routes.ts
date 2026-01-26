@@ -2428,6 +2428,7 @@ wa.me/6208991066262`;
       const limit = parseInt(req.query.limit as string) || 30;
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string | undefined;
+      const ids = req.query.ids as string | undefined;
 
       // Superadmin and admin can see all conversations, regular users only see their department's
       if (userRole !== "superadmin" && userRole !== "admin") {
@@ -2435,6 +2436,14 @@ wa.me/6208991066262`;
         if (userDepartmentIds !== "all") {
           departmentFilter = userDepartmentIds;
         }
+      }
+
+      // If specific IDs are requested, fetch only those conversations
+      if (ids) {
+        const idList = ids.split(',').filter(id => id.trim());
+        const conversations = await storage.getConversationsByIds(idList, departmentFilter);
+        res.json({ conversations, total: conversations.length, hasMore: false });
+        return;
       }
 
       const result = await storage.getConversations(departmentFilter, { limit, offset, search });
