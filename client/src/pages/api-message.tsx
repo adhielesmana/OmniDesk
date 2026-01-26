@@ -310,12 +310,12 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                   Create API Client
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-h-[90vh] flex flex-col">
-                <DialogHeader>
+              <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
+                <DialogHeader className="shrink-0">
                   <DialogTitle>Create API Client</DialogTitle>
                   <DialogDescription>Create a new API client for external applications</DialogDescription>
                 </DialogHeader>
-                <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+                <ScrollArea className="flex-1 min-h-0 pr-4">
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">Client Name *</Label>
@@ -355,16 +355,16 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                       </SelectContent>
                     </Select>
                     {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
-                      <div className="mt-2 p-3 bg-muted rounded-md max-h-[150px] overflow-y-auto">
-                        <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
-                        <pre className="text-sm whitespace-pre-wrap font-mono">
-                          {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
-                        </pre>
-                        <p className="text-xs text-muted-foreground mt-2">
-                          Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}
-                        </p>
-                      </div>
+                      <details className="mt-2">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Show template preview</summary>
+                        <div className="mt-2 p-3 bg-muted rounded-md max-h-[120px] overflow-y-auto">
+                          <pre className="text-sm whitespace-pre-wrap font-mono">
+                            {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
+                          </pre>
+                        </div>
+                      </details>
                     )}
+                    <p className="text-xs text-muted-foreground">Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}</p>
                   </div>
                   
                   {/* Variable Mapping Section for Create */}
@@ -558,12 +558,12 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       </Card>
 
       <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
-        <DialogContent className="max-h-[90vh] flex flex-col">
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Edit API Client</DialogTitle>
             <DialogDescription>Update API client settings</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
+          <ScrollArea className="flex-1 min-h-0 pr-4">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Client Name *</Label>
@@ -614,17 +614,16 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                 </SelectContent>
               </Select>
               {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
-                <div className="mt-2 p-3 bg-muted rounded-md max-h-[150px] overflow-y-auto">
-                  <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
-                  <pre className="text-sm whitespace-pre-wrap font-mono">
-                    {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
-                  </pre>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}
-                  </p>
-                </div>
+                <details className="mt-2">
+                  <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">Show template preview</summary>
+                  <div className="mt-2 p-3 bg-muted rounded-md max-h-[120px] overflow-y-auto">
+                    <pre className="text-sm whitespace-pre-wrap font-mono">
+                      {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
+                    </pre>
+                  </div>
+                </details>
               )}
-              <p className="text-xs text-muted-foreground">API payload must include matching variable values</p>
+              <p className="text-xs text-muted-foreground">Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}</p>
             </div>
             
             {/* Variable Mapping Section */}
