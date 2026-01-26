@@ -1018,74 +1018,178 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
 
 function ApiDocsTab() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>API Documentation</CardTitle>
-        <CardDescription>How to integrate with OmniDesk API</CardDescription>
-      </CardHeader>
-      <CardContent className="text-sm space-y-4">
-        <div>
-          <p className="font-medium mb-2">Authentication:</p>
-          <p className="text-muted-foreground mb-2">All requests must include HMAC signature headers:</p>
-          <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
-            <li><code className="bg-muted px-1 rounded">X-Client-Id</code>: Your client ID</li>
-            <li><code className="bg-muted px-1 rounded">X-Timestamp</code>: Unix timestamp in milliseconds</li>
-            <li><code className="bg-muted px-1 rounded">X-Signature</code>: HMAC-SHA256 signature (hex)</li>
-          </ul>
-          <div className="mt-3 p-2 bg-muted rounded text-xs">
-            <p className="font-medium mb-1">Signature Calculation:</p>
-            <code>message = clientId + "." + timestamp + "." + requestBody</code><br/>
-            <code>signature = HMAC-SHA256(message, secretKey).toHex()</code>
-            <p className="mt-2 text-muted-foreground">Note: For POST requests, sign the exact raw JSON body you send.</p>
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>API Documentation</CardTitle>
+          <CardDescription>How to integrate with OmniDesk API using static numbered variables</CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <p className="font-medium mb-2">Authentication:</p>
+            <p className="text-muted-foreground mb-2">All requests must include HMAC signature headers:</p>
+            <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
+              <li><code className="bg-muted px-1 rounded">X-Client-Id</code>: Your client ID</li>
+              <li><code className="bg-muted px-1 rounded">X-Timestamp</code>: Unix timestamp in milliseconds</li>
+              <li><code className="bg-muted px-1 rounded">X-Signature</code>: HMAC-SHA256 signature (hex)</li>
+            </ul>
+            <div className="mt-3 p-2 bg-muted rounded text-xs">
+              <p className="font-medium mb-1">Signature Calculation:</p>
+              <code>message = clientId + "." + timestamp + "." + requestBody</code><br/>
+              <code>signature = HMAC-SHA256(message, secretKey).toHex()</code>
+              <p className="mt-2 text-muted-foreground">Note: For POST requests, sign the exact raw JSON body you send.</p>
+            </div>
           </div>
-        </div>
-        <Separator />
-        <div>
-          <p className="font-medium mb-2">Send Single Message:</p>
-          <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages</code>
-          <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
-  "request_id": "unique-id-123",
+        </CardContent>
+      </Card>
+
+      <Card className="border-primary/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Badge variant="default">Recommended</Badge>
+            Static Variable Mapping
+          </CardTitle>
+          <CardDescription>
+            Use numbered metadata keys "1" through "10" that map directly to WhatsApp template placeholders
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <p className="font-medium mb-2">Minimum Payload (Only phone_number required):</p>
+            <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages</code>
+            <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
   "phone_number": "628123456789",
-  "recipient_name": "John Doe",
-  "message": "Hello from my app!",
-  "priority": 0,
-  "scheduled_at": "2024-01-15T10:00:00Z",
-  "metadata": { "order_id": "12345" }
+  "metadata": {
+    "1": "Customer Name",
+    "2": "INV-001234",
+    "3": "150.000",
+    "4": "https://invoice.example.com/inv/xxx",
+    "5": "Bapak/Ibu"
+  }
 }`}</pre>
+          </div>
+          
+          <div className="p-3 bg-primary/5 rounded-lg border border-primary/20">
+            <p className="font-medium mb-2">Variable Mapping Reference:</p>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="space-y-1">
+                <div><code className="bg-muted px-1 rounded">"1"</code> maps to <code className="bg-muted px-1 rounded">{"{{1}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"2"</code> maps to <code className="bg-muted px-1 rounded">{"{{2}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"3"</code> maps to <code className="bg-muted px-1 rounded">{"{{3}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"4"</code> maps to <code className="bg-muted px-1 rounded">{"{{4}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"5"</code> maps to <code className="bg-muted px-1 rounded">{"{{5}}"}</code></div>
+              </div>
+              <div className="space-y-1">
+                <div><code className="bg-muted px-1 rounded">"6"</code> maps to <code className="bg-muted px-1 rounded">{"{{6}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"7"</code> maps to <code className="bg-muted px-1 rounded">{"{{7}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"8"</code> maps to <code className="bg-muted px-1 rounded">{"{{8}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"9"</code> maps to <code className="bg-muted px-1 rounded">{"{{9}}"}</code></div>
+                <div><code className="bg-muted px-1 rounded">"10"</code> maps to <code className="bg-muted px-1 rounded">{"{{10}}"}</code></div>
+              </div>
+            </div>
+          </div>
+
           <div className="mt-2 text-xs text-muted-foreground">
-            <p className="font-medium">Fields:</p>
+            <p className="font-medium">Simplified Fields:</p>
             <ul className="list-disc list-inside ml-2 space-y-1">
-              <li><code className="bg-muted px-1 rounded">request_id</code>: Unique ID (prevents duplicates)</li>
-              <li><code className="bg-muted px-1 rounded">phone_number</code>: WhatsApp number (without +)</li>
-              <li><code className="bg-muted px-1 rounded">recipient_name</code>: Optional, for personalization</li>
-              <li><code className="bg-muted px-1 rounded">message</code>: Message content</li>
+              <li><code className="bg-muted px-1 rounded">phone_number</code>: <strong>Required</strong> - WhatsApp number (without +)</li>
+              <li><code className="bg-muted px-1 rounded">metadata</code>: Object with numbered keys "1" to "10" for template variables</li>
+              <li><code className="bg-muted px-1 rounded">request_id</code>: Optional - auto-generated if not provided</li>
+              <li><code className="bg-muted px-1 rounded">recipient_name</code>: Optional - use metadata."1" instead</li>
+              <li><code className="bg-muted px-1 rounded">message</code>: Optional - not needed when using templates</li>
               <li><code className="bg-muted px-1 rounded">priority</code>: Optional (0-10, higher = sooner)</li>
               <li><code className="bg-muted px-1 rounded">scheduled_at</code>: Optional ISO datetime</li>
             </ul>
           </div>
-        </div>
-        <Separator />
-        <div>
-          <p className="font-medium mb-2">Send Batch Messages:</p>
-          <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages/batch</code>
-          <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Example: Invoice Notification</CardTitle>
+          <CardDescription>Real-world example for sending invoice notifications</CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <p className="font-medium mb-2">Template Format (in WhatsApp):</p>
+            <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">{`Halo {{1}},
+
+{{5}} tagihan internet Anda:
+No. Invoice: {{2}}
+Total: Rp {{3}}
+
+Klik untuk bayar: {{4}}
+
+Terima kasih.`}</pre>
+          </div>
+          
+          <div>
+            <p className="font-medium mb-2">API Payload:</p>
+            <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">{`{
+  "phone_number": "6285156815391",
+  "metadata": {
+    "1": "Ahmad Wijaya",
+    "2": "INV260125001",
+    "3": "250.000",
+    "4": "https://invoice.maxnetplus.id/inv/abc123",
+    "5": "Berikut"
+  }
+}`}</pre>
+          </div>
+
+          <div>
+            <p className="font-medium mb-2">Result Message:</p>
+            <pre className="bg-muted p-2 rounded text-xs overflow-x-auto">{`Halo Ahmad Wijaya,
+
+Berikut tagihan internet Anda:
+No. Invoice: INV260125001
+Total: Rp 250.000
+
+Klik untuk bayar: https://invoice.maxnetplus.id/inv/abc123
+
+Terima kasih.`}</pre>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Batch Messages</CardTitle>
+          <CardDescription>Send multiple messages in a single request</CardDescription>
+        </CardHeader>
+        <CardContent className="text-sm space-y-4">
+          <div>
+            <code className="block bg-muted p-2 rounded text-xs">POST /api/external/messages/batch</code>
+            <pre className="bg-muted p-2 rounded text-xs mt-2 overflow-x-auto">{`{
   "messages": [
-    { "request_id": "1", "phone_number": "628123456789", "message": "Hello 1" },
-    { "request_id": "2", "phone_number": "628987654321", "message": "Hello 2" }
+    {
+      "phone_number": "628123456789",
+      "metadata": { "1": "Customer A", "2": "INV-001", "3": "100.000" }
+    },
+    {
+      "phone_number": "628987654321",
+      "metadata": { "1": "Customer B", "2": "INV-002", "3": "200.000" }
+    }
   ]
 }`}</pre>
-        </div>
-        <Separator />
-        <div>
-          <p className="font-medium mb-2">Rate Limiting:</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Rate Limiting & Sending Hours</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm">
           <ul className="list-disc list-inside text-muted-foreground space-y-1 ml-2">
             <li>Per-minute and daily limits configured per API client</li>
             <li>Response headers include remaining quota</li>
             <li>Messages are queued and sent with 1-5 minute delays</li>
-            <li>Sending hours: 7 AM - 9 PM (Jakarta time)</li>
+            <li>Sending hours: 7 AM - 9 PM (Jakarta time, GMT+7)</li>
+            <li>Messages outside these hours are held until 7 AM next day</li>
           </ul>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
