@@ -332,13 +332,13 @@ export async function apiAuthMiddleware(
 }
 
 const sendMessageSchema = z.object({
-  request_id: z.string().min(1).max(255),
+  request_id: z.string().min(1).max(255).optional(), // Auto-generated if not provided
   phone_number: z.string().min(10).max(20),
-  recipient_name: z.string().max(255).optional(),
-  message: z.string().min(1).max(4096),
+  recipient_name: z.string().max(255).optional(), // Optional, can use metadata.1 instead
+  message: z.string().max(4096).optional(), // Optional when using numbered metadata
   priority: z.number().int().min(0).max(100).optional().default(0),
   scheduled_at: z.string().datetime().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any()).optional(), // Use numbered keys: "1", "2", "3", etc.
   template_variables: z.object({
     recipient_name: z.string().optional(),
     message_type: z.string().optional(),
@@ -397,7 +397,10 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       });
     }
 
-    const { request_id, phone_number, recipient_name, message, priority, scheduled_at, metadata, template_variables } = validation.data;
+    const { phone_number, recipient_name, message, priority, scheduled_at, metadata, template_variables } = validation.data;
+    
+    // Auto-generate request_id if not provided
+    const request_id = validation.data.request_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     const existing = await storage.getApiMessageByRequestId(request_id);
     if (existing) {
@@ -407,6 +410,9 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
         status: existing.status,
       });
     }
+    
+    // Message is optional when using numbered metadata - use placeholder if not provided
+    const finalMessageContent = message || "Template message";
 
     const client = req.apiClient!;
     let finalMessage = message;
@@ -503,9 +509,9 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
         recipient_name: explicitVars.recipient_name || recipient_name || meta.recipient_name || 'Pelanggan',
         invoice_number: explicitVars.invoice_number || meta.invoice_number || '',
         grand_total: explicitVars.grand_total || (meta.grand_total ? formatRupiah(meta.grand_total) : ''),
-        invoice_url: explicitVars.invoice_url || message,
+        invoice_url: explicitVars.invoice_url || finalMessageContent,
         message_type: explicitVars.message_type || messageTypeText,
-        message: message,
+        message: finalMessageContent,
         phone_number: phone_number,
         ...Object.fromEntries(
           Object.entries(meta).filter(([k, v]) => typeof v === 'string')
@@ -525,7 +531,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       ...meta,
       ...(template_variables || {}),
       recipient_name: template_variables?.recipient_name || recipient_name || meta.recipient_name || 'Pelanggan',
-      originalMessage: message,
+      originalMessage: finalMessageContent,
       templateApplied,
       matchedTemplateName,
       matchedBy,
@@ -536,7 +542,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       clientId: client.id,
       phoneNumber: phone_number.replace(/\D/g, ""),
       recipientName: recipient_name || null,
-      message: finalMessage,
+      message: finalMessage || finalMessageContent,
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
       templateId: selectionResult?.template?.id || null,
@@ -584,10 +590,14 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
 
     for (const msg of validation.data.messages) {
       try {
-        const existing = await storage.getApiMessageByRequestId(msg.request_id);
+        // Auto-generate request_id if not provided
+        const msgRequestId = msg.request_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const msgContent = msg.message || "Template message";
+        
+        const existing = await storage.getApiMessageByRequestId(msgRequestId);
         if (existing) {
           results.push({
-            request_id: msg.request_id,
+            request_id: msgRequestId,
             success: false,
             message_id: existing.id,
             error: "Duplicate request_id",
@@ -595,7 +605,7 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           continue;
         }
 
-        let finalMessage = msg.message;
+        let finalMessage: string | null = msgContent;
         let templateApplied = false;
         let matchedTemplateName: string | null = null;
         let matchedBy: string | null = null;
@@ -618,12 +628,12 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
         if (!selectionResult.template) {
           const templateContext = {
             messageType: meta.messageType,
-            message: msg.message,
+            message: msgContent,
             variables: {
               recipient_name: msg.recipient_name || meta.recipient_name || 'Pelanggan',
               invoice_number: meta.invoice_number || '',
               grand_total: meta.grand_total ? formatRupiah(meta.grand_total) : '',
-              invoice_url: msg.message,
+              invoice_url: msgContent,
               phone_number: msg.phone_number,
               ...meta,
             }
@@ -642,8 +652,8 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
             message_type: explicitVars.message_type || meta.messageType || '',
             invoice_number: explicitVars.invoice_number || meta.invoice_number || '',
             grand_total: explicitVars.grand_total || (meta.grand_total ? formatRupiah(meta.grand_total) : ''),
-            invoice_url: explicitVars.invoice_url || meta.invoice_url || msg.message || '',
-            message: msg.message || '',
+            invoice_url: explicitVars.invoice_url || meta.invoice_url || msgContent,
+            message: msgContent,
             phone_number: msg.phone_number,
             ...Object.fromEntries(
               Object.entries(meta).filter(([k, v]) => typeof v === 'string')
@@ -659,7 +669,7 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
         // Template is required for all external API messages
         if (!templateApplied) {
           results.push({
-            request_id: msg.request_id,
+            request_id: msgRequestId,
             success: false,
             error: "Template required - no applicable message template found",
           });
@@ -671,18 +681,18 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           ...meta,
           ...explicitVars,
           recipient_name: explicitVars.recipient_name || msg.recipient_name || meta.recipient_name || 'Pelanggan',
-          originalMessage: msg.message,
+          originalMessage: msgContent,
           templateApplied,
           matchedTemplateName,
           matchedBy,
         };
         
         const queuedMessage = await storage.createApiMessage({
-          requestId: msg.request_id,
+          requestId: msgRequestId,
           clientId: client.id,
           phoneNumber: msg.phone_number.replace(/\D/g, ""),
           recipientName: msg.recipient_name || null,
-          message: finalMessage,
+          message: finalMessage || msgContent,
           priority: msg.priority || 0,
           scheduledAt: msg.scheduled_at ? new Date(msg.scheduled_at) : null,
           templateId: selectionResult?.template?.id || null,
@@ -690,14 +700,14 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
         });
 
         results.push({
-          request_id: msg.request_id,
+          request_id: msgRequestId,
           success: true,
           message_id: queuedMessage.id,
           template_applied: templateApplied,
         });
       } catch (err) {
         results.push({
-          request_id: msg.request_id,
+          request_id: msg.request_id || "unknown",
           success: false,
           error: "Failed to queue message",
         });
