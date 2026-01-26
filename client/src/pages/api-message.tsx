@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,6 +76,7 @@ interface ApiQueueMessage {
 
 export default function ApiMessagePage() {
   const { toast } = useToast();
+  const { isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState("clients");
 
   return (
@@ -89,6 +91,9 @@ export default function ApiMessagePage() {
           <Send className="h-5 w-5 text-primary" />
           <h1 className="text-lg font-semibold">API Message</h1>
         </div>
+        {!isAdmin && (
+          <Badge variant="secondary" className="ml-auto">View Only</Badge>
+        )}
       </header>
 
       <div className="flex-1 overflow-auto p-4">
@@ -109,11 +114,11 @@ export default function ApiMessagePage() {
           </TabsList>
 
           <TabsContent value="clients" className="space-y-4">
-            <ApiClientsTab toast={toast} />
+            <ApiClientsTab toast={toast} isAdmin={isAdmin} />
           </TabsContent>
 
           <TabsContent value="queue" className="space-y-4">
-            <ApiQueueTab toast={toast} />
+            <ApiQueueTab toast={toast} isAdmin={isAdmin} />
           </TabsContent>
 
           <TabsContent value="docs" className="space-y-4">
@@ -125,7 +130,7 @@ export default function ApiMessagePage() {
   );
 }
 
-function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>["toast"]; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [editingClient, setEditingClient] = useState<ApiClient | null>(null);
@@ -142,13 +147,15 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
     variableMappings: [] as ApiVariableMapping[],
   });
 
+  // Use admin route for admins, read-only route for regular users
   const { data: apiClients = [], isLoading } = useQuery<ApiClient[]>({
-    queryKey: ["/api/admin/api-clients"],
+    queryKey: [isAdmin ? "/api/admin/api-clients" : "/api/api-clients"],
   });
 
-  // Fetch templates for the selector
+  // Fetch templates for the selector (admin only)
   const { data: templates = [] } = useQuery<MessageTemplate[]>({
     queryKey: ["/api/admin/templates"],
+    enabled: isAdmin,
   });
 
   const createMutation = useMutation({
@@ -303,6 +310,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
               <CardTitle>External API Clients</CardTitle>
               <CardDescription>Manage API keys for external applications to send WhatsApp messages through OmniDesk</CardDescription>
             </div>
+            {isAdmin && (
             <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
               <DialogTrigger asChild>
                 <Button data-testid="button-create-api-client">
@@ -453,6 +461,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -510,44 +519,46 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (confirm("Regenerating the secret will invalidate the current one. Continue?")) {
-                              regenerateMutation.mutate(client.id);
-                            }
-                          }}
-                          disabled={regenerateMutation.isPending}
-                          data-testid={`button-regenerate-secret-${client.id}`}
-                        >
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          Regenerate Secret
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openEditDialog(client)}
-                          data-testid={`button-edit-api-client-${client.id}`}
-                        >
-                          <Pencil className="h-4 w-4 mr-1" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (confirm(`Delete API client "${client.name}"?`)) {
-                              deleteMutation.mutate(client.id);
-                            }
-                          }}
-                          disabled={deleteMutation.isPending}
-                          data-testid={`button-delete-api-client-${client.id}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                      {isAdmin && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm("Regenerating the secret will invalidate the current one. Continue?")) {
+                                regenerateMutation.mutate(client.id);
+                              }
+                            }}
+                            disabled={regenerateMutation.isPending}
+                            data-testid={`button-regenerate-secret-${client.id}`}
+                          >
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            Regenerate Secret
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => openEditDialog(client)}
+                            data-testid={`button-edit-api-client-${client.id}`}
+                          >
+                            <Pencil className="h-4 w-4 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (confirm(`Delete API client "${client.name}"?`)) {
+                                deleteMutation.mutate(client.id);
+                              }
+                            }}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-delete-api-client-${client.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -783,13 +794,14 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   );
 }
 
-function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] }) {
+function ApiQueueTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>["toast"]; isAdmin: boolean }) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [expandedMessage, setExpandedMessage] = useState<string | null>(null);
 
+  // Use admin route for admins, read-only route for regular users
   const { data: messages = [], isLoading, refetch } = useQuery<ApiQueueMessage[]>({
-    queryKey: ["/api/admin/api-message-queue"],
+    queryKey: [isAdmin ? "/api/admin/api-message-queue" : "/api/api-queue"],
     refetchInterval: 10000,
   });
 
@@ -964,7 +976,7 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                         </div>
                         <div className="flex items-center gap-2">
                           {getStatusBadge(msg.status)}
-                          {msg.status === "failed" && (
+                          {isAdmin && msg.status === "failed" && (
                             <Button
                               variant="ghost"
                               size="icon"
@@ -983,7 +995,7 @@ function ApiQueueTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] })
                               )}
                             </Button>
                           )}
-                          {(msg.status === "queued" || msg.status === "failed") && (
+                          {isAdmin && (msg.status === "queued" || msg.status === "failed") && (
                             <Button
                               variant="ghost"
                               size="icon"

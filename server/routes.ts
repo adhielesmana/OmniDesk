@@ -461,6 +461,47 @@ export async function registerRoutes(
   // ============= EXTERNAL API ROUTES =============
   app.use("/api/external", externalApiRouter);
 
+  // ============= USER READ-ONLY API ROUTES (for regular users) =============
+  // Read-only API clients list (no secrets exposed)
+  app.get("/api/api-clients", requireAuth, async (req, res) => {
+    try {
+      const clients = await storage.getApiClients();
+      const clientsReadOnly = clients.map((client) => ({
+        id: client.id,
+        name: client.name,
+        clientId: client.clientId,
+        isActive: client.isActive,
+        defaultTemplateId: client.defaultTemplateId,
+        rateLimitPerMinute: client.rateLimitPerMinute,
+        rateLimitPerDay: client.rateLimitPerDay,
+        requestCountToday: client.requestCountToday,
+        lastRequestAt: client.lastRequestAt,
+        createdAt: client.createdAt,
+      }));
+      res.json(clientsReadOnly);
+    } catch (error) {
+      console.error("Error fetching API clients (user):", error);
+      res.status(500).json({ error: "Failed to fetch API clients" });
+    }
+  });
+
+  // Read-only API queue (for regular users)
+  app.get("/api/api-queue", requireAuth, async (req, res) => {
+    try {
+      const messages = await storage.getApiMessageQueue();
+      const clients = await storage.getApiClients();
+      const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+      const messagesWithClient = messages.map((msg) => ({
+        ...msg,
+        clientName: clientMap.get(msg.clientId) || "Unknown",
+      }));
+      res.json(messagesWithClient);
+    } catch (error) {
+      console.error("Error fetching API queue (user):", error);
+      res.status(500).json({ error: "Failed to fetch API queue" });
+    }
+  });
+
   // ============= ADMIN API CLIENTS MANAGEMENT =============
   app.get("/api/admin/api-clients", requireAdmin, async (req, res) => {
     try {
