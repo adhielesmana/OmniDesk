@@ -913,18 +913,24 @@ async function processApiMessageQueue(): Promise<void> {
           const hasNumberedKeys = ["1", "2", "3", "4", "5"].some(k => metadata[k] !== undefined);
           
           if (hasNumberedKeys) {
-            // Direct numbered fields in metadata - use them as-is, no translation needed
+            // Direct numbered fields in metadata - shorten any URLs in them
             console.log(`API queue: Using direct numbered variables from metadata`);
-            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].forEach(k => {
+            for (const k of ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]) {
               if (metadata[k] !== undefined && metadata[k] !== null) {
-                contentVariables[k] = String(metadata[k]);
+                const value = String(metadata[k]);
+                // Check if this value looks like a URL and shorten it
+                if (value.match(/^https?:\/\//i)) {
+                  contentVariables[k] = await shortenUrlsInText(value, baseUrl, message.clientId);
+                } else {
+                  contentVariables[k] = value;
+                }
               }
-            });
+            }
           } else if (clientVariableMappings.length > 0) {
             // PRIORITY 2: Use API client's variable mappings
             console.log(`API queue: Using client variable mappings:`, JSON.stringify(clientVariableMappings));
             
-            clientVariableMappings.forEach((mapping) => {
+            for (const mapping of clientVariableMappings) {
               const { placeholder, payloadField } = mapping;
               let value = "";
               
@@ -935,24 +941,30 @@ async function processApiMessageQueue(): Promise<void> {
                 const raw = metadata.grand_total || metadata[payloadField] || "";
                 value = raw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
               } else if (payloadField === "invoice_url") {
-                // Use shortened URL if available
-                value = shortenedMessage || metadata.invoice_url || metadata[payloadField] || "";
+                // Shorten the invoice URL
+                const rawUrl = metadata.invoice_url || metadata[payloadField] || "";
+                value = rawUrl ? await shortenUrlsInText(rawUrl, baseUrl, message.clientId) : "";
               } else if (payloadField === "message_type") {
                 value = messageTypeText;
               } else {
                 // Get value from metadata using the payload field name
                 value = metadata[payloadField] || "";
+                // Check if this looks like a URL and shorten it
+                if (value && value.match(/^https?:\/\//i)) {
+                  value = await shortenUrlsInText(value, baseUrl, message.clientId);
+                }
               }
               
               contentVariables[placeholder] = value;
-            });
+            }
           } else {
             // Fallback: Use template's variables array for legacy compatibility
             // Template stores variables array like ["recipient_name", "invoice_number", "grand_total", "invoice_url", "message_type"]
             // Each position maps to Twilio's {{1}}, {{2}}, {{3}}, etc.
             const templateVariables = template!.variables || [];
             
-            templateVariables.forEach((varName: string, index: number) => {
+            for (let index = 0; index < templateVariables.length; index++) {
+              const varName = templateVariables[index] as string;
               const twilioPosition = (index + 1).toString(); // Twilio uses 1-indexed
               switch (varName) {
                 case "recipient_name":
@@ -964,17 +976,26 @@ async function processApiMessageQueue(): Promise<void> {
                 case "grand_total":
                   contentVariables[twilioPosition] = grandTotalFormatted;
                   break;
-                case "invoice_url":
-                  contentVariables[twilioPosition] = shortenedMessage || metadata.invoice_url || "";
+                case "invoice_url": {
+                  // Shorten the invoice URL
+                  const rawUrl = metadata.invoice_url || "";
+                  contentVariables[twilioPosition] = rawUrl ? await shortenUrlsInText(rawUrl, baseUrl, message.clientId) : "";
                   break;
+                }
                 case "message_type":
                   contentVariables[twilioPosition] = messageTypeText;
                   break;
-                default:
+                default: {
                   // Try to get from metadata directly
-                  contentVariables[twilioPosition] = metadata[varName] || "";
+                  let value = metadata[varName] || "";
+                  // Check if this looks like a URL and shorten it
+                  if (value && value.match(/^https?:\/\//i)) {
+                    value = await shortenUrlsInText(value, baseUrl, message.clientId);
+                  }
+                  contentVariables[twilioPosition] = value;
+                }
               }
-            });
+            }
           }
           
           // Validate that all template placeholders are mapped
