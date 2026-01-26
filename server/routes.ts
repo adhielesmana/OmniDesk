@@ -2008,6 +2008,8 @@ wa.me/6208991066262`;
     try {
       const logoSetting = await storage.getAppSetting("organization_logo");
       const nameSetting = await storage.getAppSetting("organization_name");
+      // Cache branding for 5 minutes (changes infrequently)
+      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=600");
       res.json({
         logoUrl: logoSetting?.value || null,
         organizationName: nameSetting?.value || null,
@@ -3433,6 +3435,8 @@ wa.me/6208991066262`;
         offset: offset ? parseInt(offset as string) : undefined,
       });
       
+      // Short cache for contacts list
+      res.setHeader("Cache-Control", "private, max-age=30, stale-while-revalidate=60");
       res.json(result);
     } catch (error) {
       console.error("Error fetching contacts:", error);
@@ -3880,6 +3884,8 @@ wa.me/6208991066262`;
   app.get("/api/quick-replies", async (req, res) => {
     try {
       const replies = await storage.getQuickReplies();
+      // Cache for 1 minute, stale-while-revalidate for 5 minutes
+      res.setHeader("Cache-Control", "private, max-age=60, stale-while-revalidate=300");
       res.json(replies);
     } catch (error) {
       console.error("Error fetching quick replies:", error);
