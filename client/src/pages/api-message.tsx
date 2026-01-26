@@ -355,7 +355,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                       </SelectContent>
                     </Select>
                     {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
-                      <div className="mt-2 p-3 bg-muted rounded-md">
+                      <div className="mt-2 p-3 bg-muted rounded-md max-h-[150px] overflow-y-auto">
                         <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
                         <pre className="text-sm whitespace-pre-wrap font-mono">
                           {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
@@ -614,7 +614,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                 </SelectContent>
               </Select>
               {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && (
-                <div className="mt-2 p-3 bg-muted rounded-md">
+                <div className="mt-2 p-3 bg-muted rounded-md max-h-[150px] overflow-y-auto">
                   <p className="text-xs text-muted-foreground mb-1">Template Content:</p>
                   <pre className="text-sm whitespace-pre-wrap font-mono">
                     {templates.find(t => t.id === formData.defaultTemplateId)?.content || 'Template not found'}
