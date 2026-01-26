@@ -406,6 +406,7 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   const {
     MessageSid,
     From,
+    To,
     Body,
     NumMedia,
     MediaUrl0,
@@ -421,9 +422,27 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   
   // Clean phone number (remove whatsapp: prefix if present)
   const phoneNumber = From?.replace('whatsapp:', '').replace('+', '');
+  const toNumber = To?.replace('whatsapp:', '').replace('+', '');
   
   if (!phoneNumber) {
     console.error('[Twilio] No phone number in webhook');
+    return;
+  }
+  
+  // Skip messages FROM the business's own number (prevents self-conversation spam)
+  // Get Twilio phone number from platform settings
+  const allSettings = await storage.getPlatformSettings();
+  const twilioSettings = allSettings.find(s => s.platform === 'twilio');
+  const twilioPhoneNumber = twilioSettings?.phoneNumberId?.replace('+', '');
+  
+  if (twilioPhoneNumber && phoneNumber === twilioPhoneNumber) {
+    console.log(`[Twilio] Skipping message from own number: ${phoneNumber}`);
+    return;
+  }
+  
+  // Also skip if From and To are the same (self-message)
+  if (phoneNumber === toNumber) {
+    console.log(`[Twilio] Skipping self-message: ${phoneNumber} -> ${toNumber}`);
     return;
   }
   
