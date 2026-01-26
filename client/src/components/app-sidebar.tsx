@@ -217,36 +217,38 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isAdmin && (
-          <>
-            <SidebarSeparator />
+        <SidebarSeparator />
 
-            <SidebarGroup>
-              <SidebarGroupLabel>Automation</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      onClick={() => setLocation("/blast")} 
-                      isActive={location === "/blast"}
-                      data-testid="button-blast-campaign"
-                    >
-                      <Megaphone className="h-5 w-5" />
-                      <span>Blast Campaign</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+        <SidebarGroup>
+          <SidebarGroupLabel>Automation</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton 
+                    onClick={() => setLocation("/blast")} 
+                    isActive={location === "/blast"}
+                    data-testid="button-blast-campaign"
+                  >
+                    <Megaphone className="h-5 w-5" />
+                    <span>Blast Campaign</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
-                  <SidebarMenuItem>
-                    <SidebarMenuButton 
-                      onClick={() => setLocation("/api-message")}
-                      isActive={location === "/api-message"}
-                      data-testid="button-api-message"
-                    >
-                      <Send className="h-5 w-5" />
-                      <span>API Message</span>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  onClick={() => setLocation("/api-message")}
+                  isActive={location === "/api-message"}
+                  data-testid="button-api-message"
+                >
+                  <Send className="h-5 w-5" />
+                  <span>API Message</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
+              {isAdmin && (
+                <>
                   <SidebarMenuItem>
                     <SidebarMenuButton 
                       onClick={() => setLocation("/autoreply")}
@@ -268,11 +270,11 @@ export function AppSidebar({
                       <span>Templates</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </>
-        )}
+                </>
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="p-2 space-y-2">
