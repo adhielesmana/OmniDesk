@@ -152,7 +152,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; defaultTemplateId?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+    mutationFn: async (data: { name: string; defaultTemplateId?: string; ipWhitelist?: string[]; variableMappings?: ApiVariableMapping[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
       const res = await apiRequest("POST", "/api/admin/api-clients", data);
       return res.json();
     },
@@ -225,6 +225,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       name: formData.name,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : undefined,
       ipWhitelist,
+      variableMappings: formData.variableMappings.length > 0 ? formData.variableMappings : undefined,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
     });
@@ -363,8 +364,49 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                         </p>
                       </div>
                     )}
-                    <p className="text-xs text-muted-foreground">API payload must include matching variable values: {`{{1}}`} → recipient_name, {`{{2}}`} → message_type, etc.</p>
                   </div>
+                  
+                  {/* Variable Mapping Section for Create */}
+                  {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && getTemplatePlaceholders(formData.defaultTemplateId).length > 0 && (
+                    <div className="space-y-3">
+                      <Label className="text-sm font-medium">Variable Mappings</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Map each template variable to an API payload field.
+                      </p>
+                      <div className="space-y-2">
+                        {getTemplatePlaceholders(formData.defaultTemplateId).map(placeholder => (
+                          <div key={placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                            <span className="text-sm font-mono w-12">{`{{${placeholder}}}`}</span>
+                            <Select
+                              value={getMappingForPlaceholder(placeholder) || "recipient_name"}
+                              onValueChange={(value) => updateVariableMapping(placeholder, value)}
+                            >
+                              <SelectTrigger className="flex-1" data-testid={`select-create-var-${placeholder}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                                <SelectItem value="message_type">Message Type</SelectItem>
+                                <SelectItem value="invoice_number">Invoice Number</SelectItem>
+                                <SelectItem value="grand_total">Grand Total (Rp)</SelectItem>
+                                <SelectItem value="invoice_url">Invoice URL / Message</SelectItem>
+                                <SelectItem value="phone_number">Phone Number</SelectItem>
+                                <SelectItem value="due_date">Due Date</SelectItem>
+                                <SelectItem value="company_name">Company Name</SelectItem>
+                                <SelectItem value="custom_1">Custom Field 1</SelectItem>
+                                <SelectItem value="custom_2">Custom Field 2</SelectItem>
+                                <SelectItem value="custom_3">Custom Field 3</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        API payload must include these fields. Example: {`"recipient_name": "John"`}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="ipWhitelist">Allowed IP Addresses (comma-separated)</Label>
                     <Input
@@ -585,34 +627,41 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
             {/* Variable Mapping Section */}
             {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && getTemplatePlaceholders(formData.defaultTemplateId).length > 0 && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium">Variable Mappings</Label>
-                  <Badge variant="outline" className="text-xs">API Payload → Template</Badge>
-                </div>
+                <Label className="text-sm font-medium">Variable Mappings</Label>
                 <p className="text-xs text-muted-foreground">
-                  Map API payload field names to template placeholders. When the API sends a field like "recipient_name", it will fill in the corresponding template variable.
+                  Map each template variable to an API payload field.
                 </p>
                 <div className="space-y-2">
                   {getTemplatePlaceholders(formData.defaultTemplateId).map(placeholder => (
-                    <div key={placeholder} className="flex items-center gap-2">
-                      <div className="w-16 flex-shrink-0">
-                        <Badge variant="secondary" className="font-mono">{`{{${placeholder}}}`}</Badge>
-                      </div>
-                      <span className="text-muted-foreground">=</span>
-                      <Input
-                        placeholder="API payload field name (e.g., recipient_name)"
-                        value={getMappingForPlaceholder(placeholder)}
-                        onChange={(e) => updateVariableMapping(placeholder, e.target.value)}
-                        className="flex-1"
-                        data-testid={`input-variable-mapping-${placeholder}`}
-                      />
+                    <div key={placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+                      <span className="text-sm font-mono w-12">{`{{${placeholder}}}`}</span>
+                      <Select
+                        value={getMappingForPlaceholder(placeholder) || "recipient_name"}
+                        onValueChange={(value) => updateVariableMapping(placeholder, value)}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-edit-var-${placeholder}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="recipient_name">Recipient Name</SelectItem>
+                          <SelectItem value="message_type">Message Type</SelectItem>
+                          <SelectItem value="invoice_number">Invoice Number</SelectItem>
+                          <SelectItem value="grand_total">Grand Total (Rp)</SelectItem>
+                          <SelectItem value="invoice_url">Invoice URL / Message</SelectItem>
+                          <SelectItem value="phone_number">Phone Number</SelectItem>
+                          <SelectItem value="due_date">Due Date</SelectItem>
+                          <SelectItem value="company_name">Company Name</SelectItem>
+                          <SelectItem value="custom_1">Custom Field 1</SelectItem>
+                          <SelectItem value="custom_2">Custom Field 2</SelectItem>
+                          <SelectItem value="custom_3">Custom Field 3</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   ))}
                 </div>
-                <div className="text-xs text-muted-foreground p-2 bg-blue-500/10 rounded-md">
-                  <strong>Example:</strong> If you map <code className="bg-muted px-1 rounded">{`{{1}}`}</code> to <code className="bg-muted px-1 rounded">recipient_name</code>, 
-                  when API sends <code className="bg-muted px-1 rounded">{`"recipient_name": "John"`}</code>, template will show "John" for {`{{1}}`}.
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  API payload must include these fields. Example: {`"recipient_name": "John"`}
+                </p>
               </div>
             )}
 

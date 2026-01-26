@@ -489,7 +489,7 @@ export async function registerRoutes(
 
   app.post("/api/admin/api-clients", requireAdmin, async (req, res) => {
     try {
-      const { name, aiPrompt, rateLimitPerMinute, rateLimitPerDay, ipWhitelist } = req.body;
+      const { name, aiPrompt, rateLimitPerMinute, rateLimitPerDay, ipWhitelist, variableMappings } = req.body;
       
       if (!name || typeof name !== "string" || name.trim().length === 0) {
         return res.status(400).json({ error: "Name is required" });
@@ -507,6 +507,7 @@ export async function registerRoutes(
         isActive: true,
         aiPrompt: aiPrompt?.trim() || null,
         defaultTemplateId: defaultTemplateId || null,
+        variableMappings: variableMappings || null,
         rateLimitPerMinute: rateLimitPerMinute || 60,
         rateLimitPerDay: rateLimitPerDay || 1000,
         ipWhitelist: ipWhitelist || null,
