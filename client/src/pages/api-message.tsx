@@ -310,11 +310,12 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                   Create API Client
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-h-[90vh] flex flex-col">
                 <DialogHeader>
                   <DialogTitle>Create API Client</DialogTitle>
                   <DialogDescription>Create a new API client for external applications</DialogDescription>
                 </DialogHeader>
+                <ScrollArea className="flex-1 max-h-[60vh] pr-4">
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">Client Name *</Label>
@@ -442,6 +443,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
                     </div>
                   </div>
                 </div>
+                </ScrollArea>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setShowCreateDialog(false)}>Cancel</Button>
                   <Button onClick={handleCreate} disabled={createMutation.isPending || !formData.name.trim()} data-testid="button-confirm-create-api-client">
@@ -556,11 +558,12 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
       </Card>
 
       <Dialog open={!!editingClient} onOpenChange={(open) => !open && setEditingClient(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Edit API Client</DialogTitle>
             <DialogDescription>Update API client settings</DialogDescription>
           </DialogHeader>
+          <ScrollArea className="flex-1 max-h-[60vh] pr-4">
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="edit-name">Client Name *</Label>
@@ -708,6 +711,7 @@ function ApiClientsTab({ toast }: { toast: ReturnType<typeof useToast>["toast"] 
               <Label htmlFor="edit-isActive">Active</Label>
             </div>
           </div>
+          </ScrollArea>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingClient(null)}>Cancel</Button>
             <Button onClick={handleUpdate} disabled={updateMutation.isPending || !formData.name.trim()} data-testid="button-confirm-edit-api-client">
