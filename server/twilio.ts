@@ -430,19 +430,31 @@ export async function processIncomingMessage(webhookData: any): Promise<void> {
   }
   
   // Skip messages FROM the business's own number (prevents self-conversation spam)
-  // Get Twilio phone number from platform settings
-  const allSettings = await storage.getPlatformSettings();
-  const twilioSettings = allSettings.find(s => s.platform === 'twilio');
-  const twilioPhoneNumber = twilioSettings?.phoneNumberId?.replace('+', '');
+  // Get Twilio phone number from app_settings table
+  const twilioPhoneSetting = await storage.getAppSetting('twilio_phone_number');
+  const twilioPhoneNumber = twilioPhoneSetting?.value?.replace('whatsapp:', '').replace('+', '');
   
-  if (twilioPhoneNumber && phoneNumber === twilioPhoneNumber) {
-    console.log(`[Twilio] Skipping message from own number: ${phoneNumber}`);
+  // Also get the 'to' number cleaned - this is our business number
+  // Compare normalized versions (without country code variations)
+  const normalizedFrom = phoneNumber.replace(/^0+/, '');
+  const normalizedTo = toNumber.replace(/^0+/, '');
+  const normalizedTwilio = twilioPhoneNumber?.replace(/^0+/, '') || '';
+  
+  // Skip if message is FROM our business number
+  if (normalizedTwilio && (normalizedFrom === normalizedTwilio || normalizedFrom.endsWith(normalizedTwilio) || normalizedTwilio.endsWith(normalizedFrom))) {
+    console.log(`[Twilio] Skipping message from own business number: ${phoneNumber} (configured: ${twilioPhoneNumber})`);
     return;
   }
   
-  // Also skip if From and To are the same (self-message)
-  if (phoneNumber === toNumber) {
+  // Skip if From and To are the same (self-message)
+  if (normalizedFrom === normalizedTo) {
     console.log(`[Twilio] Skipping self-message: ${phoneNumber} -> ${toNumber}`);
+    return;
+  }
+  
+  // Skip if the sender is the same as the To number (webhook echo of our own messages)
+  if (phoneNumber === toNumber || normalizedFrom === normalizedTo) {
+    console.log(`[Twilio] Skipping echo message: From=${phoneNumber}, To=${toNumber}`);
     return;
   }
   

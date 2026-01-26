@@ -3240,6 +3240,36 @@ wa.me/6208991066262`;
           res.sendStatus(200);
           return;
         }
+        
+        // Skip messages FROM the business's own phone number (self-messages)
+        // This handles WhatsApp Business API webhooks where status updates or echoes might come through
+        if (webhookMessage.platform === "whatsapp") {
+          // Check against Twilio phone number (stored in app_settings)
+          const twilioPhoneSetting = await storage.getAppSetting('twilio_phone_number');
+          const twilioNumber = twilioPhoneSetting?.value?.replace('whatsapp:', '').replace('+', '').replace(/^0+/, '');
+          const senderNormalized = webhookMessage.senderId?.replace('+', '').replace(/^0+/, '');
+          
+          // Also check against WABA phone number ID from platform settings
+          const wabaSettings = await storage.getPlatformSetting('whatsapp');
+          const wabaPhoneId = wabaSettings?.phoneNumberId;
+          
+          if (twilioNumber && senderNormalized && (
+            senderNormalized === twilioNumber ||
+            senderNormalized.endsWith(twilioNumber) ||
+            twilioNumber.endsWith(senderNormalized)
+          )) {
+            console.log(`[Webhook WhatsApp] Skipping message from own business number: ${webhookMessage.senderId}`);
+            res.sendStatus(200);
+            return;
+          }
+          
+          // Skip if sender matches the WABA phone number ID (for Cloud API)
+          if (wabaPhoneId && webhookMessage.senderId === wabaPhoneId) {
+            console.log(`[Webhook WhatsApp] Skipping message from own WABA phone: ${webhookMessage.senderId}`);
+            res.sendStatus(200);
+            return;
+          }
+        }
 
         // Find or create contact
         let contact = await storage.getContactByPlatformId(
