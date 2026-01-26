@@ -909,10 +909,19 @@ async function processApiMessageQueue(): Promise<void> {
           const grandTotalRaw = metadata.grand_total || "";
           const grandTotalFormatted = grandTotalRaw.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
           
-          // Check if API client has variable mappings configured
-          if (clientVariableMappings.length > 0) {
-            // Use API client's variable mappings: maps payload field names to template placeholders
-            // e.g., [{ placeholder: "1", payloadField: "recipient_name" }, { placeholder: "2", payloadField: "invoice_number" }]
+          // PRIORITY 1: Check if metadata already has numbered keys (1, 2, 3, 4, 5) - direct mapping
+          const hasNumberedKeys = ["1", "2", "3", "4", "5"].some(k => metadata[k] !== undefined);
+          
+          if (hasNumberedKeys) {
+            // Direct numbered fields in metadata - use them as-is, no translation needed
+            console.log(`API queue: Using direct numbered variables from metadata`);
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].forEach(k => {
+              if (metadata[k] !== undefined && metadata[k] !== null) {
+                contentVariables[k] = String(metadata[k]);
+              }
+            });
+          } else if (clientVariableMappings.length > 0) {
+            // PRIORITY 2: Use API client's variable mappings
             console.log(`API queue: Using client variable mappings:`, JSON.stringify(clientVariableMappings));
             
             clientVariableMappings.forEach((mapping) => {
