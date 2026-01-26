@@ -344,8 +344,25 @@ class WhatsAppService {
 
       const buffer = await this.streamToBuffer(stream);
       const fileName = `${messageId}.${extension}`;
-      const filePath = path.join(this.mediaFolder, fileName);
       
+      // Try to upload to S3 first
+      try {
+        const { isS3Configured, uploadToS3 } = await import("./s3");
+        if (await isS3Configured()) {
+          const s3Key = `whatsapp-media/${fileName}`;
+          const result = await uploadToS3(s3Key, buffer, mimetype);
+          if (result.success && result.url) {
+            console.log(`[WhatsApp] Media uploaded to S3: ${result.url}`);
+            return { filePath: result.url, mediaType, mimetype };
+          }
+          console.warn(`[WhatsApp] S3 upload failed, falling back to local: ${result.error}`);
+        }
+      } catch (s3Error) {
+        console.error("[WhatsApp] S3 upload error, falling back to local:", s3Error);
+      }
+      
+      // Fallback to local storage
+      const filePath = path.join(this.mediaFolder, fileName);
       fs.writeFileSync(filePath, buffer);
       
       return { filePath: `/api/media/${fileName}`, mediaType, mimetype };
