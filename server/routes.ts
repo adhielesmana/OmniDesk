@@ -5127,14 +5127,12 @@ wa.me/6208991066262`;
         return res.status(400).json({ error: "Invalid media URL" });
       }
       
-      const { getCredentials } = await import("./twilio");
-      const creds = await getCredentials();
+      const { getTwilioAuthHeaders } = await import("./twilio");
+      const authHeaders = await getTwilioAuthHeaders();
       
       // Fetch media with Twilio credentials
       const response = await fetch(url, {
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${creds.accountSid}:${creds.authToken}`).toString('base64')
-        }
+        headers: authHeaders
       });
       
       if (!response.ok) {
