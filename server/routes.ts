@@ -3265,27 +3265,13 @@ wa.me/6208991066262`;
             profilePictureUrl,
           });
         } else {
-          // Check if name looks like a username (no spaces, likely lowercase) vs display name
-          const looksLikeUsername = contact.name && 
-            !contact.name.includes(" ") && 
-            contact.name === contact.name.toLowerCase() &&
-            !contact.name.startsWith("Instagram User") &&
-            !contact.name.startsWith("Facebook User");
-          
-          const needsUpdate = !contact.name || 
-            contact.name === "Unknown" || 
-            contact.name.startsWith("Instagram User") || 
-            contact.name.startsWith("Facebook User") ||
-            looksLikeUsername;
-          
-          if (needsUpdate) {
-            // Try to update contact name if it's unknown or looks like a username
+          // Contact exists - don't update the name, use existing name from database
+          // Only update profile picture if missing
+          if (!contact.profilePictureUrl) {
             const profile = await fetchMetaProfile();
-            if (profile?.name && profile.name !== contact.name) {
-              console.log(`[Profile Update] Updating contact ${contact.id} name from "${contact.name}" to "${profile.name}"`);
+            if (profile?.profilePicture) {
               contact = await storage.updateContact(contact.id, {
-                name: profile.name,
-                profilePictureUrl: profile.profilePicture || contact.profilePictureUrl,
+                profilePictureUrl: profile.profilePicture,
               }) || contact;
             }
           }
@@ -4264,13 +4250,8 @@ wa.me/6208991066262`;
               currentName === phoneNumber ||
               currentName.match(/^\+?\d+$/));
             
-            if (needsNameUpdate) {
-              await storage.updateContact(existingContact.id, {
-                name: displayName,
-                phoneNumber: formattedPhone,
-              });
-              updatedCount++;
-            }
+            // Contact exists - don't update name, use existing data from database
+            // Only skip, no updates needed
           } else {
             // Create new contact from phonebook - store all contacts, even those without proper names
             await storage.createContact({
