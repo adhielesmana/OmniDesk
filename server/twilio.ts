@@ -197,8 +197,15 @@ export async function sendWhatsAppMessage(
     const client = await getTwilioClient();
     const fromNumber = await getTwilioFromPhoneNumber();
     
+    // Strip JID suffix if present (from Baileys format)
+    let cleanedTo = to.replace(/@s\.whatsapp\.net$/, '').replace(/@lid$/, '');
+    // Ensure + prefix for international format
+    if (!cleanedTo.startsWith('+') && !cleanedTo.startsWith('whatsapp:')) {
+      cleanedTo = `+${cleanedTo}`;
+    }
+    
     // Format phone numbers for WhatsApp
-    const toWhatsApp = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
+    const toWhatsApp = cleanedTo.startsWith('whatsapp:') ? cleanedTo : `whatsapp:${cleanedTo}`;
     const fromWhatsApp = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
     
     const messageOptions: any = {
