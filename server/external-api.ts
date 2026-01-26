@@ -472,6 +472,17 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       console.log(`API queue: Applied template "${template.name}" (matched by ${matchedBy}) for request ${request_id}`);
     }
 
+    // Merge all variables into metadata for blast-worker to use when building Twilio Content API variables
+    const mergedMetadata = {
+      ...meta,
+      ...(template_variables || {}),
+      recipient_name: template_variables?.recipient_name || recipient_name || meta.recipient_name || 'Pelanggan',
+      originalMessage: message,
+      templateApplied,
+      matchedTemplateName,
+      matchedBy,
+    };
+    
     const queuedMessage = await storage.createApiMessage({
       requestId: request_id,
       clientId: client.id,
@@ -481,7 +492,7 @@ externalApiRouter.post("/messages", async (req: Request, res: Response) => {
       priority: priority || 0,
       scheduledAt: scheduled_at ? new Date(scheduled_at) : null,
       templateId: selectionResult?.template?.id || null,
-      metadata: metadata ? JSON.stringify({ ...metadata, originalMessage: message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: message, templateApplied, matchedTemplateName, matchedBy }),
+      metadata: JSON.stringify(mergedMetadata),
     });
 
     return res.status(201).json({
@@ -607,6 +618,17 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           continue;
         }
 
+        // Merge all variables into metadata for blast-worker to use when building Twilio Content API variables
+        const mergedMetadata = {
+          ...meta,
+          ...explicitVars,
+          recipient_name: explicitVars.recipient_name || msg.recipient_name || meta.recipient_name || 'Pelanggan',
+          originalMessage: msg.message,
+          templateApplied,
+          matchedTemplateName,
+          matchedBy,
+        };
+        
         const queuedMessage = await storage.createApiMessage({
           requestId: msg.request_id,
           clientId: client.id,
@@ -616,7 +638,7 @@ externalApiRouter.post("/messages/bulk", async (req: Request, res: Response) => 
           priority: msg.priority || 0,
           scheduledAt: msg.scheduled_at ? new Date(msg.scheduled_at) : null,
           templateId: selectionResult?.template?.id || null,
-          metadata: msg.metadata ? JSON.stringify({ ...msg.metadata, originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }) : JSON.stringify({ originalMessage: msg.message, templateApplied, matchedTemplateName, matchedBy }),
+          metadata: JSON.stringify(mergedMetadata),
         });
 
         results.push({
