@@ -13,24 +13,6 @@ export type SendMessageFn = (recipientId: string, message: string) => Promise<vo
 // Default timezone for Indonesia (WIB)
 const DEFAULT_TIMEZONE = "Asia/Jakarta";
 
-// Quiet hours - don't send auto-replies outside business hours (reduces ban risk)
-const QUIET_HOURS_START = 21; // 9 PM
-const QUIET_HOURS_END = 7;    // 7 AM
-
-// Check if we're in quiet hours (don't send auto-replies)
-function isQuietHours(timezone: string = DEFAULT_TIMEZONE): boolean {
-  const now = new Date();
-  const hourString = now.toLocaleString("en-US", { 
-    timeZone: timezone, 
-    hour: "numeric", 
-    hour12: false 
-  });
-  const hour = parseInt(hourString, 10);
-  
-  // Quiet hours: 9PM (21:00) to 7AM (07:00)
-  return hour >= QUIET_HOURS_START || hour < QUIET_HOURS_END;
-}
-
 // Get current date/time info in the configured timezone
 function getLocalDateTime(timezone: string = DEFAULT_TIMEZONE): { 
   formattedDate: string; 
@@ -213,13 +195,6 @@ export async function handleAutoReply(
   // First check if enabled
   const enabled = await isAutoReplyEnabled();
   if (!enabled) return false;
-
-  // SAFETY: Check quiet hours to reduce ban risk (9PM-7AM Jakarta time)
-  // Only apply to WhatsApp - Instagram/Facebook don't have the same ban risk
-  if (platform === "whatsapp" && isQuietHours()) {
-    console.log("Auto-reply: Quiet hours active (9PM-7AM Jakarta), skipping WhatsApp to reduce ban risk");
-    return false;
-  }
 
   // Check for valid OpenAI key first
   const hasKey = await hasValidOpenAIKey();
