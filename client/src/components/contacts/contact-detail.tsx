@@ -180,7 +180,7 @@ export function ContactDetail({
             {contact.isBlocked ? "Blocked" : "Block"}
           </Button>
           <Button asChild variant="outline" size="sm" data-testid="button-view-conversation">
-            <Link href="/">
+            <Link href="/inbox">
               <MessageCircle className="h-4 w-4 mr-2" />
               View Conversation
             </Link>

@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 
+const LandingPage = lazy(() => import("@/pages/landing"));
 const InboxPage = lazy(() => import("@/pages/inbox"));
 const ContactsPage = lazy(() => import("@/pages/contacts"));
 const LoginPage = lazy(() => import("@/pages/login"));
@@ -33,7 +34,7 @@ function ProtectedRoute({ component: Component, adminOnly = false }: { component
   }
 
   if (adminOnly && !isAdmin) {
-    return <Redirect to="/" />;
+    return <Redirect to="/inbox" />;
   }
 
   return <Component />;
@@ -51,19 +52,40 @@ function PublicRoute({ component: Component }: { component: React.ComponentType 
   }
 
   if (isAuthenticated) {
-    return <Redirect to="/" />;
+    return <Redirect to="/inbox" />;
   }
 
   return <Component />;
 }
 
+function HomeRoute() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Redirect to="/inbox" />;
+  }
+
+  return <LandingPage />;
+}
+
 function Router() {
   return (
     <Switch>
+      <Route path="/">
+        <HomeRoute />
+      </Route>
       <Route path="/login">
         <PublicRoute component={LoginPage} />
       </Route>
-      <Route path="/">
+      <Route path="/inbox">
         <ProtectedRoute component={InboxPage} />
       </Route>
       <Route path="/contacts">

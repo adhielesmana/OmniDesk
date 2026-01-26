@@ -86,8 +86,8 @@ export function ContactsSidebar({
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={location === "/"}>
-                  <Link href="/" data-testid="link-inbox">
+                <SidebarMenuButton asChild isActive={location === "/inbox"}>
+                  <Link href="/inbox" data-testid="link-inbox">
                     <MessageCircle className="h-5 w-5" />
                     <span>Inbox</span>
                   </Link>
