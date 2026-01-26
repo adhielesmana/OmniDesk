@@ -250,7 +250,24 @@ export async function apiAuthMiddleware(
   );
 
   if (!isValid) {
-    return res.status(401).json({ error: "Invalid signature" });
+    // Log signature failure details for debugging (without exposing secrets)
+    console.log(`[External API] Signature verification failed for client ${client.name}:`);
+    console.log(`  - Client ID: ${clientId}`);
+    console.log(`  - Timestamp: ${timestamp}`);
+    console.log(`  - Body length: ${bodyString.length} chars`);
+    console.log(`  - Body preview: ${bodyString.substring(0, 100)}...`);
+    console.log(`  - Signature received: ${signature.substring(0, 16)}...`);
+    
+    return res.status(401).json({ 
+      error: "Invalid signature",
+      hint: "Ensure you're signing: clientId.timestamp.body using HMAC-SHA256 with your secret key",
+      debug: {
+        clientId: clientId,
+        timestampReceived: timestamp,
+        bodyLength: bodyString.length,
+        signatureLength: signature.length,
+      }
+    });
   }
 
   // Per-minute rate limiting (sliding window)
@@ -338,6 +355,37 @@ const bulkSendSchema = z.object({
 export const externalApiRouter = Router();
 
 externalApiRouter.use(apiAuthMiddleware);
+
+// Test/ping endpoint - validates authentication without sending a message
+externalApiRouter.get("/ping", async (req: Request, res: Response) => {
+  const client = req.apiClient!;
+  return res.json({
+    success: true,
+    message: "Authentication successful",
+    client: {
+      name: client.name,
+      isActive: client.isActive,
+      hasTemplate: !!client.defaultTemplateId,
+    },
+    serverTime: Date.now(),
+  });
+});
+
+// Test endpoint for POST - validates signature with body
+externalApiRouter.post("/test", async (req: Request, res: Response) => {
+  const client = req.apiClient!;
+  return res.json({
+    success: true,
+    message: "Signature verification successful",
+    client: {
+      name: client.name,
+      isActive: client.isActive,
+      hasTemplate: !!client.defaultTemplateId,
+    },
+    bodyReceived: req.body,
+    serverTime: Date.now(),
+  });
+});
 
 externalApiRouter.post("/messages", async (req: Request, res: Response) => {
   try {
