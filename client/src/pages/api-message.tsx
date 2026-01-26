@@ -144,7 +144,6 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
     rateLimitPerMinute: 60,
     rateLimitPerDay: 1000,
     isActive: true,
-    variableMappings: [] as ApiVariableMapping[],
   });
 
   // Use admin route for admins, read-only route for regular users
@@ -159,7 +158,7 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; defaultTemplateId?: string; ipWhitelist?: string[]; variableMappings?: ApiVariableMapping[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
+    mutationFn: async (data: { name: string; defaultTemplateId?: string; ipWhitelist?: string[]; rateLimitPerMinute?: number; rateLimitPerDay?: number }) => {
       const res = await apiRequest("POST", "/api/admin/api-clients", data);
       return res.json();
     },
@@ -167,7 +166,7 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
       queryClient.invalidateQueries({ queryKey: ["/api/admin/api-clients"] });
       setShowCreateDialog(false);
       setNewSecret({ clientId: data.clientId, secret: data.secretKey || "" });
-      setFormData({ name: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true, variableMappings: [] });
+      setFormData({ name: "", defaultTemplateId: "", ipWhitelist: "", rateLimitPerMinute: 60, rateLimitPerDay: 1000, isActive: true });
       toast({ title: "API client created successfully" });
     },
     onError: () => {
@@ -176,7 +175,7 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; name?: string; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; variableMappings?: ApiVariableMapping[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
+    mutationFn: async ({ id, ...data }: { id: string; name?: string; defaultTemplateId?: string | null; ipWhitelist?: string[] | null; rateLimitPerMinute?: number; rateLimitPerDay?: number; isActive?: boolean }) => {
       const res = await apiRequest("PATCH", `/api/admin/api-clients/${id}`, data);
       return res.json();
     },
@@ -232,7 +231,6 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
       name: formData.name,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : undefined,
       ipWhitelist,
-      variableMappings: formData.variableMappings.length > 0 ? formData.variableMappings : undefined,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
     });
@@ -248,7 +246,6 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
       name: formData.name,
       defaultTemplateId: formData.defaultTemplateId && formData.defaultTemplateId !== 'none' ? formData.defaultTemplateId : null,
       ipWhitelist,
-      variableMappings: formData.variableMappings.length > 0 ? formData.variableMappings : null,
       rateLimitPerMinute: formData.rateLimitPerMinute,
       rateLimitPerDay: formData.rateLimitPerDay,
       isActive: formData.isActive,
@@ -260,32 +257,7 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
     const template = templates.find(t => t.id === templateId);
     if (!template) return [];
     const matches = template.content.match(/\{\{(\d+)\}\}/g) || [];
-    return [...new Set(matches.map(m => m.replace(/[{}]/g, '')))].sort((a, b) => parseInt(a) - parseInt(b));
-  };
-
-  // Update variable mapping for a placeholder
-  const updateVariableMapping = (placeholder: string, payloadField: string) => {
-    setFormData(prev => {
-      const existingIndex = prev.variableMappings.findIndex(m => m.placeholder === placeholder);
-      const newMappings = [...prev.variableMappings];
-      if (payloadField === "") {
-        // Remove mapping if empty
-        if (existingIndex >= 0) {
-          newMappings.splice(existingIndex, 1);
-        }
-      } else if (existingIndex >= 0) {
-        newMappings[existingIndex] = { placeholder, payloadField };
-      } else {
-        newMappings.push({ placeholder, payloadField });
-      }
-      return { ...prev, variableMappings: newMappings };
-    });
-  };
-
-  // Get mapping for a specific placeholder
-  const getMappingForPlaceholder = (placeholder: string): string => {
-    const mapping = formData.variableMappings.find(m => m.placeholder === placeholder);
-    return mapping?.payloadField || "";
+    return Array.from(new Set(matches.map(m => m.replace(/[{}]/g, '')))).sort((a, b) => parseInt(a) - parseInt(b));
   };
 
   const openEditDialog = (client: ApiClient) => {
@@ -296,7 +268,6 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
       rateLimitPerMinute: client.rateLimitPerMinute,
       rateLimitPerDay: client.rateLimitPerDay,
       isActive: client.isActive,
-      variableMappings: client.variableMappings || [],
     });
     setEditingClient(client);
   };
@@ -375,43 +346,12 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
                     <p className="text-xs text-muted-foreground">Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}</p>
                   </div>
                   
-                  {/* Variable Mapping Section for Create */}
+                  {/* Static Variable Info */}
                   {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && getTemplatePlaceholders(formData.defaultTemplateId).length > 0 && (
-                    <div className="space-y-3">
-                      <Label className="text-sm font-medium">Variable Mappings</Label>
+                    <div className="p-3 rounded border bg-muted/30">
                       <p className="text-xs text-muted-foreground">
-                        Map each template variable to an API payload field.
-                      </p>
-                      <div className="space-y-2">
-                        {getTemplatePlaceholders(formData.defaultTemplateId).map(placeholder => (
-                          <div key={placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
-                            <span className="text-sm font-mono w-12">{`{{${placeholder}}}`}</span>
-                            <Select
-                              value={getMappingForPlaceholder(placeholder) || "recipient_name"}
-                              onValueChange={(value) => updateVariableMapping(placeholder, value)}
-                            >
-                              <SelectTrigger className="flex-1" data-testid={`select-create-var-${placeholder}`}>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="recipient_name">Recipient Name</SelectItem>
-                                <SelectItem value="message_type">Message Type</SelectItem>
-                                <SelectItem value="invoice_number">Invoice Number</SelectItem>
-                                <SelectItem value="grand_total">Grand Total (Rp)</SelectItem>
-                                <SelectItem value="invoice_url">Invoice URL / Message</SelectItem>
-                                <SelectItem value="phone_number">Phone Number</SelectItem>
-                                <SelectItem value="due_date">Due Date</SelectItem>
-                                <SelectItem value="company_name">Company Name</SelectItem>
-                                <SelectItem value="custom_1">Custom Field 1</SelectItem>
-                                <SelectItem value="custom_2">Custom Field 2</SelectItem>
-                                <SelectItem value="custom_3">Custom Field 3</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        ))}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        API payload must include these fields. Example: {`"recipient_name": "John"`}
+                        <span className="font-medium">API Payload:</span> Use numbered keys in metadata that match template placeholders.
+                        <br />Example: {`{"metadata": {"1": "John", "2": "INV-123", "3": "100000"}}`}
                       </p>
                     </div>
                   )}
@@ -591,15 +531,9 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
                 value={formData.defaultTemplateId || "none"}
                 onValueChange={(value) => {
                   const newTemplateId = value === "none" ? "" : value;
-                  // When template changes, filter variable mappings to only include placeholders that exist in the new template
-                  const newPlaceholders = newTemplateId ? getTemplatePlaceholders(newTemplateId) : [];
-                  const filteredMappings = formData.variableMappings.filter(m => 
-                    newPlaceholders.includes(m.placeholder)
-                  );
                   setFormData({ 
                     ...formData, 
-                    defaultTemplateId: newTemplateId,
-                    variableMappings: filteredMappings
+                    defaultTemplateId: newTemplateId
                   });
                 }}
               >
@@ -637,43 +571,12 @@ function ApiClientsTab({ toast, isAdmin }: { toast: ReturnType<typeof useToast>[
               <p className="text-xs text-muted-foreground">Variables: {templates.find(t => t.id === formData.defaultTemplateId)?.variables?.join(', ') || 'None'}</p>
             </div>
             
-            {/* Variable Mapping Section */}
+            {/* Static Variable Info */}
             {formData.defaultTemplateId && formData.defaultTemplateId !== 'none' && getTemplatePlaceholders(formData.defaultTemplateId).length > 0 && (
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">Variable Mappings</Label>
+              <div className="p-3 rounded border bg-muted/30">
                 <p className="text-xs text-muted-foreground">
-                  Map each template variable to an API payload field.
-                </p>
-                <div className="space-y-2">
-                  {getTemplatePlaceholders(formData.defaultTemplateId).map(placeholder => (
-                    <div key={placeholder} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
-                      <span className="text-sm font-mono w-12">{`{{${placeholder}}}`}</span>
-                      <Select
-                        value={getMappingForPlaceholder(placeholder) || "recipient_name"}
-                        onValueChange={(value) => updateVariableMapping(placeholder, value)}
-                      >
-                        <SelectTrigger className="flex-1" data-testid={`select-edit-var-${placeholder}`}>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="recipient_name">Recipient Name</SelectItem>
-                          <SelectItem value="message_type">Message Type</SelectItem>
-                          <SelectItem value="invoice_number">Invoice Number</SelectItem>
-                          <SelectItem value="grand_total">Grand Total (Rp)</SelectItem>
-                          <SelectItem value="invoice_url">Invoice URL / Message</SelectItem>
-                          <SelectItem value="phone_number">Phone Number</SelectItem>
-                          <SelectItem value="due_date">Due Date</SelectItem>
-                          <SelectItem value="company_name">Company Name</SelectItem>
-                          <SelectItem value="custom_1">Custom Field 1</SelectItem>
-                          <SelectItem value="custom_2">Custom Field 2</SelectItem>
-                          <SelectItem value="custom_3">Custom Field 3</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  API payload must include these fields. Example: {`"recipient_name": "John"`}
+                  <span className="font-medium">API Payload:</span> Use numbered keys in metadata that match template placeholders.
+                  <br />Example: {`{"metadata": {"1": "John", "2": "INV-123", "3": "100000"}}`}
                 </p>
               </div>
             )}
