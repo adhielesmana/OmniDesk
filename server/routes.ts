@@ -5181,8 +5181,8 @@ wa.me/6208991066262`;
     }
   });
 
-  // Proxy for Twilio media (requires authentication)
-  app.get("/api/twilio/media", requireAuth, async (req, res) => {
+  // Proxy for Twilio media (no auth required - validates Twilio URL and uses server-side credentials)
+  app.get("/api/twilio/media", async (req, res) => {
     try {
       const { url } = req.query;
       
