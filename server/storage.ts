@@ -52,7 +52,7 @@ import {
   apiRequestLogs,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, ilike, sql, asc, inArray, isNull, lte } from "drizzle-orm";
+import { eq, desc, and, or, ilike, like, sql, asc, inArray, isNull, lte } from "drizzle-orm";
 
 // Helper to extract canonical phone number from WhatsApp JID
 function getCanonicalPhoneNumber(id: string): string {
@@ -146,6 +146,8 @@ export interface IStorage {
   createMessage(message: InsertMessage): Promise<Message>;
   updateMessageStatus(id: string, status: Message["status"]): Promise<Message | undefined>;
   updateMessageStatusByExternalId(externalId: string, status: Message["status"]): Promise<Message | undefined>;
+  getMessagesWithTwilioUrls(): Promise<Message[]>;
+  updateMessageMediaUrl(id: number, mediaUrl: string): Promise<void>;
 
   // Platform Settings
   getPlatformSettings(): Promise<PlatformSettings[]>;
@@ -976,6 +978,25 @@ export class DatabaseStorage implements IStorage {
       .where(eq(messages.externalId, externalId))
       .limit(1);
     return !!existing;
+  }
+
+  async getMessagesWithTwilioUrls(): Promise<Message[]> {
+    return await db
+      .select()
+      .from(messages)
+      .where(
+        or(
+          like(messages.mediaUrl, '%api.twilio.com%'),
+          like(messages.mediaUrl, '%media.twiliocdn.com%')
+        )
+      );
+  }
+
+  async updateMessageMediaUrl(id: number, mediaUrl: string): Promise<void> {
+    await db
+      .update(messages)
+      .set({ mediaUrl })
+      .where(eq(messages.id, id.toString()));
   }
 
   // Platform Settings

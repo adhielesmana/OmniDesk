@@ -2,12 +2,14 @@ import { useState, useMemo, memo } from "react";
 import { ExternalLink, MapPin, Play } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/image-lightbox";
 
-function getProxiedMediaUrl(url: string | null | undefined): string | null {
+function getProxiedMediaUrl(url: string | null | undefined, messageId?: string): string | null {
   if (!url) return null;
   
   // Check if it's a Twilio media URL that needs proxying
   if (url.includes('api.twilio.com') || url.includes('media.twiliocdn.com')) {
-    return `/api/twilio/media?url=${encodeURIComponent(url)}`;
+    const params = new URLSearchParams({ url });
+    if (messageId) params.set('messageId', messageId);
+    return `/api/twilio/media?${params.toString()}`;
   }
   
   return url;
@@ -235,8 +237,8 @@ export const MessageContent = memo(function MessageContent({
   const locationData = useMemo(() => parseLocationMetadata(metadata ?? null), [metadata]);
   const parsedContent = useMemo(() => parseMessageContent(content || ""), [content]);
   
-  // Get proxied URL for Twilio media
-  const proxiedMediaUrl = useMemo(() => getProxiedMediaUrl(mediaUrl), [mediaUrl]);
+  // Get proxied URL for Twilio media (includes messageId for S3 migration)
+  const proxiedMediaUrl = useMemo(() => getProxiedMediaUrl(mediaUrl, messageId), [mediaUrl, messageId]);
 
   const hasMediaPlaceholder = ["[Image]", "[Video]", "[Audio]", "[Document]", "[Location]", "[Live Location]", "[Sticker]"].includes(content || "");
 

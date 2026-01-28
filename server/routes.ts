@@ -5181,10 +5181,10 @@ wa.me/6208991066262`;
     }
   });
 
-  // Proxy for Twilio media (no auth required - validates Twilio URL and uses server-side credentials)
+  // Proxy for Twilio media - also migrates to S3 on-the-fly
   app.get("/api/twilio/media", async (req, res) => {
     try {
-      const { url } = req.query;
+      const { url, messageId } = req.query;
       
       if (!url || typeof url !== 'string') {
         return res.status(400).json({ error: "Missing media URL" });
@@ -5208,17 +5208,103 @@ wa.me/6208991066262`;
         return res.status(response.status).json({ error: "Failed to fetch media" });
       }
       
-      // Forward content type and cache headers
       const contentType = response.headers.get('content-type') || 'application/octet-stream';
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+      const buffer = Buffer.from(await response.arrayBuffer());
       
-      // Stream the response
-      const buffer = await response.arrayBuffer();
-      res.send(Buffer.from(buffer));
+      // Try to migrate to S3 in background if messageId provided
+      if (messageId && typeof messageId === 'string') {
+        (async () => {
+          try {
+            const { isS3Configured, uploadToS3, getExtensionFromContentType } = await import("./s3");
+            if (await isS3Configured()) {
+              const ext = getExtensionFromContentType(contentType);
+              const filename = `twilio_${messageId}_${Date.now()}${ext}`;
+              const s3Key = `whatsapp-media/${filename}`;
+              
+              const result = await uploadToS3(s3Key, buffer, contentType);
+              if (result.success && result.url) {
+                // Update database with S3 URL
+                await storage.updateMessageMediaUrl(parseInt(messageId), result.url);
+                console.log(`[Twilio Media] Migrated to S3: ${result.url}`);
+              }
+            }
+          } catch (err) {
+            console.error('[Twilio Media] Background S3 migration failed:', err);
+          }
+        })();
+      }
+      
+      // Forward content type and cache headers
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.send(buffer);
     } catch (error) {
       console.error("[Twilio Media] Proxy error:", error);
       res.status(500).json({ error: "Failed to proxy media" });
+    }
+  });
+
+  // Migrate all Twilio media to S3
+  app.post("/api/admin/migrate-twilio-media", requireAuth, async (req, res) => {
+    try {
+      if (req.session.user?.role !== "superadmin") {
+        return res.status(403).json({ error: "Superadmin access required" });
+      }
+      
+      const { isS3Configured, uploadMediaFromUrl, getExtensionFromContentType } = await import("./s3");
+      
+      if (!await isS3Configured()) {
+        return res.status(400).json({ error: "S3 is not configured" });
+      }
+      
+      // Find all messages with Twilio URLs
+      const messages = await storage.getMessagesWithTwilioUrls();
+      
+      if (messages.length === 0) {
+        return res.json({ migrated: 0, message: "No Twilio media URLs found" });
+      }
+      
+      const { getTwilioAuthHeaders } = await import("./twilio");
+      const authHeaders = await getTwilioAuthHeaders();
+      
+      let migrated = 0;
+      let failed = 0;
+      
+      for (const msg of messages) {
+        try {
+          if (!msg.mediaUrl) continue;
+          
+          // First fetch to get content type
+          const headRes = await fetch(msg.mediaUrl, { method: 'HEAD', headers: authHeaders });
+          const contentType = headRes.headers.get('content-type') || 'application/octet-stream';
+          const ext = getExtensionFromContentType(contentType);
+          const filename = `twilio_${msg.id}_${Date.now()}${ext}`;
+          
+          const result = await uploadMediaFromUrl(msg.mediaUrl, 'whatsapp-media', filename, authHeaders);
+          
+          if (result.success && result.url) {
+            await storage.updateMessageMediaUrl(msg.id, result.url);
+            migrated++;
+            console.log(`[Migration] Migrated message ${msg.id} to S3`);
+          } else {
+            failed++;
+            console.warn(`[Migration] Failed to migrate message ${msg.id}: ${result.error}`);
+          }
+        } catch (err) {
+          failed++;
+          console.error(`[Migration] Error migrating message ${msg.id}:`, err);
+        }
+      }
+      
+      res.json({ 
+        total: messages.length,
+        migrated, 
+        failed,
+        message: `Migrated ${migrated} media files to S3` 
+      });
+    } catch (error) {
+      console.error("[Migration] Error:", error);
+      res.status(500).json({ error: "Migration failed" });
     }
   });
 
