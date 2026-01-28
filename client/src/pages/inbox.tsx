@@ -263,11 +263,22 @@ function InboxContent({
       queryClient.resetQueries({ queryKey: ["/api/conversations"], exact: false });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Failed to send message",
-        description: error.message || "Please try again.",
-        variant: "destructive",
-      });
+      // Check if it's a Twilio account suspension error
+      if (error.message.includes('TWILIO_ACCOUNT_SUSPENDED') || 
+          error.message.toLowerCase().includes('suspended') ||
+          error.message.toLowerCase().includes('credit')) {
+        toast({
+          title: "Twilio Account Suspended",
+          description: "Your Twilio account has been suspended due to credit limit. Please contact Finance to renew your Twilio subscription.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Failed to send message",
+          description: error.message || "Please try again.",
+          variant: "destructive",
+        });
+      }
     },
   });
 

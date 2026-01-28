@@ -9,6 +9,17 @@ import { handleAutoReply } from './autoreply';
 let twilioClient: Twilio | null = null;
 let twilioFromNumber: string | null = null;
 
+// Check if error indicates account suspension/credit limit issue
+function isTwilioSuspensionError(error: any): boolean {
+  const suspensionCodes = [20003, 20005, 21608, 21610, 21611, 21614];
+  const isSuspended = error.code && suspensionCodes.includes(error.code);
+  const suspensionKeywords = ['suspended', 'credit', 'balance', 'not active', 'account disabled'];
+  const hasSuspensionKeyword = suspensionKeywords.some(kw => 
+    error.message?.toLowerCase().includes(kw)
+  );
+  return isSuspended || hasSuspensionKeyword;
+}
+
 // Get credentials from database (app_settings table)
 async function getCredentialsFromDatabase(): Promise<{
   accountSid: string;
@@ -224,6 +235,15 @@ export async function sendWhatsAppMessage(
     return { success: true, messageId: message.sid };
   } catch (error: any) {
     console.error('[Twilio] Failed to send WhatsApp message:', error);
+    
+    if (isTwilioSuspensionError(error)) {
+      return { 
+        success: false, 
+        error: error.message, 
+        errorCode: 'TWILIO_ACCOUNT_SUSPENDED' 
+      };
+    }
+    
     return { success: false, error: error.message };
   }
 }
@@ -374,6 +394,15 @@ export async function sendWhatsAppTemplate(
   } catch (error: any) {
     console.error('[Twilio] Failed to send WhatsApp template:', error);
     console.error('[Twilio] Template:', contentSid, 'Variables:', JSON.stringify(contentVariables));
+    
+    if (isTwilioSuspensionError(error)) {
+      return { 
+        success: false, 
+        error: error.message, 
+        errorCode: 'TWILIO_ACCOUNT_SUSPENDED' 
+      };
+    }
+    
     return { success: false, error: error.message };
   }
 }
@@ -397,6 +426,15 @@ export async function sendSMSMessage(
     return { success: true, messageId: message.sid };
   } catch (error: any) {
     console.error('[Twilio] Failed to send SMS:', error);
+    
+    if (isTwilioSuspensionError(error)) {
+      return { 
+        success: false, 
+        error: error.message, 
+        errorCode: 'TWILIO_ACCOUNT_SUSPENDED' 
+      };
+    }
+    
     return { success: false, error: error.message };
   }
 }

@@ -2560,7 +2560,11 @@ wa.me/6208991066262`;
           
           if (!twilioResult.success) {
             console.error("[Twilio] Send failed:", twilioResult.error);
-            return res.status(400).json({ error: twilioResult.error || "Failed to send via Twilio" });
+            const response: any = { error: twilioResult.error || "Failed to send via Twilio" };
+            if ((twilioResult as any).errorCode) {
+              response.errorCode = (twilioResult as any).errorCode;
+            }
+            return res.status(400).json(response);
           }
         } else if (whatsappService.isConnected()) {
           // Fall back to unofficial WhatsApp (Baileys)
